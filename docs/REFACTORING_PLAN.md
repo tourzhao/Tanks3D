@@ -60,8 +60,8 @@ Status: implemented. The current ledger is
 7,181 runtime checks, including 35 versioned stage-layout hashes, seeded and
 scripted randomness, production-path player input, and observable event
 scenarios. Ten independent core/game executables add 154 suites and
-1,107 focused checks; four raylib-free app-command executables add twenty-two
-suites and 115 checks, for 193 suites and 8,403 checks across the aggregate
+1,107 focused checks; five raylib-free app-layer executables add twenty-seven
+suites and 136 checks, for 198 suites and 8,424 checks across the aggregate
 gate. The current
 instrumented result is recorded in
 [`COVERAGE_BASELINE.md`](COVERAGE_BASELINE.md).
@@ -683,9 +683,10 @@ The minimum scripted integration scenarios are:
 
 For visual regression, retain the existing tank, bonus, forest, base-damage,
 base-steel, enemy-creation, settlement, and advanced-settings showcase modes.
-Capture them at 1280x720 with fixed animation and effect seeds once those seams
-exist. GPU screenshots are review artifacts with a tolerant perceptual comparison,
-not an exact-pixel merge gate.
+The default-off release-capture path now supplies a fixed gameplay seed and
+normalized 1280x720 export. Scene animation still uses the live rendering clock,
+so GPU screenshots remain human-review artifacts with a tolerant perceptual
+comparison, not an exact-pixel merge gate.
 During the settlement showcase, also verify by ear that the active engine loop
 stops at report entry, each count cue aligns with a visible step, and confirming
 the report does not replay skipped count cues.
@@ -1024,6 +1025,21 @@ top-level payload, an archived symbolic link, and a runtime OGG mutation whose
 ZIP checksum was recomputed. The latter reaches `codesign` with an unchanged
 archive path manifest, proving detection by the existing ad-hoc resource seal;
 it is an integrity check, not publisher authentication.
+The forty-fourth increment adds a default-off release-screenshot contract for
+exact-candidate evidence. A raylib-free parser validates the PNG path and
+1-3,600 rendered-frame gate; five suites and 21 checks cover defaults, ordering,
+boundaries, malformed values, and duplicates. The application fixes the capture
+seed, locks the logical canvas, ignores borderless switching, normalizes Retina
+framebuffers to 1280x720, refuses overwrite or a missing parent, saves after a
+complete game frame, and exits through normal resource cleanup. The explicit
+local GPU smoke remains outside headless CI and was visually checked for a real,
+unobscured frame. The current gate therefore has 17 integrated suites and 7,181
+checks, 154 core/game suites and 1,107 checks, and 27 app-layer suites and 136
+checks: 198 suites and 8,424 checks across sixteen profiles. The 40 production
+files contain 19,401 lines; `main.cpp` is 7,273 lines and the new parser header
+is 150 lines. Coverage is 49.70%/63.30%/45.24%/52.27% overall and
+23.42%/59.14%/29.42%/20.83% for `main.cpp`; the parser reaches
+100%/100%/100%/95.45%. ASan/UBSan and the distribution verifier pass.
 PR 3.5 remains partial because concrete bonus presentation, messages and map
 commits, plus the concrete settlement event,
 audio/display, navigation, map-load, and player commits still live in `Game3D`.

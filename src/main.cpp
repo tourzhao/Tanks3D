@@ -17,6 +17,7 @@
 #include <rlgl.h>
 
 #include "app/command_side_effect_dispatch.h"
+#include "app/release_screenshot_options.h"
 #include "app/shell_cancellation_presentation.h"
 #include "app/shell_map_core_presentation.h"
 #include "app/shell_tank_presentation.h"
@@ -80,6 +81,9 @@ using tanks3d::app::Float3;
 using tanks3d::app::RequestTankAudioAction;
 using tanks3d::app::RequestMapCoreAudioAction;
 using tanks3d::app::Rgba8;
+using tanks3d::app::ReleaseScreenshotOptions;
+using tanks3d::app::kReleaseScreenshotHeight;
+using tanks3d::app::kReleaseScreenshotWidth;
 using tanks3d::app::ShellCancellationPresentationCommand;
 using tanks3d::app::ShellCancellationPresentationStep;
 using tanks3d::app::ShellMapCorePresentationAction;
@@ -98,6 +102,7 @@ using tanks3d::app::makePlayerTankArmorImpactAction;
 using tanks3d::app::makeShellCancellationPresentationCommand;
 using tanks3d::app::makeShellMapCorePresentationCommand;
 using tanks3d::app::makeShellTankPresentationCommand;
+using tanks3d::app::parseReleaseScreenshotOptions;
 using tanks3d::app::dispatchCommandSideEffect;
 using tanks3d::app::shellMapCorePresentationStep;
 using tanks3d::app::shellTankPresentationStep;
@@ -298,6 +303,7 @@ using tanks3d_test::kExpectedStageLayoutSignatures;
 using tanks3d_test::stageLayoutSignature;
 
 constexpr int kEnemiesPerStage = 20;
+constexpr std::uint32_t kReleaseScreenshotSeed = 0x5c43e3d1U;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kClassicBaseEnemySpeed = 5.0f;
 constexpr float kEnemyMovementSpeedScale = 0.80f;
@@ -6874,6 +6880,59 @@ int main(int argc, char **argv)
     if (firstArgument == "--dump-stage-signatures")
         return dumpStageSignatures(resourceRoot);
 
+    std::vector<std::string> commandLineArguments;
+    commandLineArguments.reserve(
+        static_cast<std::size_t>(std::max(0, argc - 1)));
+    for (int argument = 1; argument < argc; ++argument)
+        commandLineArguments.emplace_back(argv[argument]);
+    const auto releaseScreenshotParse =
+        parseReleaseScreenshotOptions(commandLineArguments);
+    if (!releaseScreenshotParse.valid())
+    {
+        std::cerr << "Invalid release screenshot options: "
+                  << releaseScreenshotParse.error << '\n';
+        return 2;
+    }
+    const ReleaseScreenshotOptions releaseScreenshot =
+        releaseScreenshotParse.options;
+    if (releaseScreenshot.requested())
+    {
+        const fs::path outputPath = releaseScreenshot.outputPath;
+        std::error_code pathError;
+        const bool outputExists = fs::exists(outputPath, pathError);
+        if (pathError)
+        {
+            std::cerr << "Unable to inspect release screenshot output: "
+                      << pathError.message() << '\n';
+            return 2;
+        }
+        const bool outputIsSymlink = fs::is_symlink(outputPath, pathError);
+        if (pathError == std::errc::no_such_file_or_directory)
+            pathError.clear();
+        if (pathError)
+        {
+            std::cerr << "Unable to inspect release screenshot output: "
+                      << pathError.message() << '\n';
+            return 2;
+        }
+        if (outputExists || outputIsSymlink)
+        {
+            std::cerr << "Release screenshot output already exists: "
+                      << outputPath << '\n';
+            return 2;
+        }
+        const fs::path parent = outputPath.has_parent_path()
+                                    ? outputPath.parent_path()
+                                    : fs::path{"."};
+        if (!fs::is_directory(parent, pathError) || pathError)
+        {
+            std::cerr << "Release screenshot parent directory is not "
+                         "accessible: "
+                      << parent << '\n';
+            return 2;
+        }
+    }
+
     bool gltfTankQaRequested = false;
     fs::path gltfTankQaPath;
     for (int argument = 1; argument < argc; ++argument)
@@ -6892,8 +6951,12 @@ int main(int argc, char **argv)
 
     // Use the explicit 60 Hz frame budget below. Combining it with a 120 Hz
     // ProMotion swap interval makes GLFW/raylib busy-wait between swaps.
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
-    InitWindow(1280, 720, "TANKS 3D - ISOMETRIC ARMORED COMBAT");
+    unsigned int windowFlags = FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT;
+    if (!releaseScreenshot.requested())
+        windowFlags |= FLAG_WINDOW_RESIZABLE;
+    SetConfigFlags(windowFlags);
+    InitWindow(kReleaseScreenshotWidth, kReleaseScreenshotHeight,
+               "TANKS 3D - ISOMETRIC ARMORED COMBAT");
     SetExitKey(KEY_NULL);
     InitAudioDevice();
 
@@ -6912,7 +6975,11 @@ int main(int argc, char **argv)
     if (gltfTankQaRequested)
         tankAssets.configureGltfProbe(gltfTankQaPath);
     tankAssets.load(resourceRoot, lighting.shader(), lighting.depthShader());
-    Game3D game(resourceRoot, &audio);
+    const std::uint32_t gameSeed = releaseScreenshot.requested()
+                                       ? kReleaseScreenshotSeed
+                                       : static_cast<std::uint32_t>(
+                                             std::random_device{}());
+    Game3D game(resourceRoot, gameSeed, &audio);
     ViewTargets viewTargets;
     bool inGame = false;
     bool bonusShowcase = false;
@@ -6923,6 +6990,9 @@ int main(int argc, char **argv)
     bool enemyCreationShowcase = false;
     bool forestCoverShowcase = false;
     bool exitRequested = false;
+    bool releaseScreenshotSaved = false;
+    int renderedGameFrames = 0;
+    int processResult = 0;
     std::string menuError;
 
     for (int argument = 1; argument < argc; ++argument)
@@ -7017,6 +7087,12 @@ int main(int argc, char **argv)
         game.spawnEnemyCreationShowcase();
     if (inGame && forestCoverShowcase)
         game.spawnForestCoverShowcase();
+    if (releaseScreenshot.requested() && !inGame)
+    {
+        std::cerr << "--release-screenshot requires a quick-start mode\n";
+        processResult = 2;
+        exitRequested = true;
+    }
 
     auto previousFrame = std::chrono::steady_clock::now() - std::chrono::microseconds(16667);
     while (!exitRequested && !WindowShouldClose())
@@ -7025,7 +7101,7 @@ int main(int argc, char **argv)
         LaptopFramePacer framePacer(frameStart);
         const float dt = std::chrono::duration<float>(frameStart - previousFrame).count();
         previousFrame = frameStart;
-        if (IsKeyPressed(KEY_F11))
+        if (!releaseScreenshot.requested() && IsKeyPressed(KEY_F11))
             ToggleBorderlessWindowed();
         if (IsKeyPressed(KEY_F8))
             lighting.toggleQuality();
@@ -7133,6 +7209,45 @@ int main(int argc, char **argv)
         tankAssets.setAnimationClock(GetTime());
         renderGame(game, viewTargets, lighting, tankAssets, environment,
                    bonusAssets, postProcess);
+        ++renderedGameFrames;
+        if (releaseScreenshot.due(renderedGameFrames))
+        {
+            Image image = LoadImageFromScreen();
+            bool exported = false;
+            if (image.data != nullptr)
+            {
+                if (image.width != kReleaseScreenshotWidth ||
+                    image.height != kReleaseScreenshotHeight)
+                {
+                    ImageResize(&image, kReleaseScreenshotWidth,
+                                kReleaseScreenshotHeight);
+                }
+                exported = ExportImage(
+                    image, releaseScreenshot.outputPath.c_str());
+                UnloadImage(image);
+            }
+            if (exported)
+            {
+                releaseScreenshotSaved = true;
+                std::cout << "Saved release screenshot: "
+                          << releaseScreenshot.outputPath << '\n';
+            }
+            else
+            {
+                std::cerr << "Unable to save release screenshot: "
+                          << releaseScreenshot.outputPath << '\n';
+                processResult = 1;
+            }
+            exitRequested = true;
+        }
+    }
+
+    if (releaseScreenshot.requested() && !releaseScreenshotSaved &&
+        processResult == 0)
+    {
+        std::cerr << "Release screenshot capture ended before its requested "
+                     "frame\n";
+        processResult = 1;
     }
 
     viewTargets.release();
@@ -7154,5 +7269,5 @@ int main(int argc, char **argv)
 #else
     CloseWindow();
 #endif
-    return 0;
+    return processResult;
 }

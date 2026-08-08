@@ -52,13 +52,19 @@ ad-hoc signature proves bundle integrity but is not Developer ID signing or
 Apple notarization, so this remains an Alpha package. See
 `docs/RELEASE_CHECKLIST.md` before publishing it.
 
+The player-facing description for the preserved Alpha 1 candidate is in
+[`docs/releases/v0.1.0-alpha.1.md`](docs/releases/v0.1.0-alpha.1.md).
+
 ## Controls
 
-- Menus: arrow keys change a setting; `Enter` confirms; `Esc` returns.
+- Menus: arrow keys or `WASD` change a setting; `Enter` or `Space` confirms.
+  `Esc` returns from Advanced Settings; `Esc` or `Q` exits from the main setup
+  screen.
 - Player 1: arrow keys move; Right Option, Right Control, or `Space` fires.
 - Player 2: `WASD` moves; Left Option, Left Control, or `F` fires.
-- During play: `Enter` pauses, `Esc` returns to setup, `R` restarts, `F11`
-  toggles fullscreen, and `N`/`B` changes stage.
+- During play: `Enter` pauses, `Esc` returns to setup, and `R` restarts.
+  `F8` changes rendering quality, `F11` toggles borderless mode, and `N`/`B`
+  changes stage.
 
 Movement remains aligned to the map axes. Players select one or two tanks,
 national vehicle trees, stage, lives, and advanced enemy speed, firing, spawn,
@@ -152,8 +158,10 @@ and direct-fire streaks reset when the player tank is destroyed.
   hits, map/base-core impacts, opposing-shell cancellation, and bonus commands.
   Detached actions own events, FX/camera parameters, requested cues, and final
   contact where applicable; domain commits such as Shovel steel and shell impact
-  remain explicit at the orchestration edge. `src/audio/` owns the shared
-  22-value `AudioCue` contract and the raylib-free `AudioOutput` runtime
+  remain explicit at the orchestration edge. The same layer owns the pure,
+  tested parser for default-off release screenshot arguments; framebuffer
+  capture remains at the `main.cpp` application boundary. `src/audio/` owns the
+  shared 22-value `AudioCue` contract and the raylib-free `AudioOutput` runtime
   boundary; neither module owns devices or renderer resources. `Game3D` keeps
   only a nullable, non-owning `AudioOutput *`. The concrete `AudioBank` remains
   stack-owned by `main`, which controls device setup plus resource load/unload,
@@ -216,6 +224,8 @@ build/Tanks3D --quick-start --gltf-tank-qa
 
 For narrower checks, use `make test-core`, `make test-game`, `make test-rules`,
 `make test-app`, `make test-unit`, `make test-session`, or `make test-assets`.
+Use `make test-release-screenshot` for the explicit local 1280x720 GPU smoke;
+it opens a window and remains outside CI and headless release gates.
 Use `make test-dist` to rebuild and validate only the self-contained archive.
 `make test-architecture` compiles every `core/`, `game/`, `app/`, and `audio/`
 value boundary without raylib include paths, with warnings as errors. It rejects
@@ -233,8 +243,8 @@ boundaries. The digest is a replay aid, not a cross-version compatibility
 guarantee. Normal play continues to choose a fresh seed at process startup.
 
 The complete automated gate currently runs 17 integrated suites with 7,181
-checks, 154 core/game suites with 1,107 checks, and 22 app-command suites with
-115 checks: 193 suites and 8,403 checks across fifteen profiles. The direct
+checks, 154 core/game suites with 1,107 checks, and 27 app-layer suites with
+136 checks: 198 suites and 8,424 checks across sixteen profiles. The direct
 PlayerSystem executable contributes 31 suites and 64 checks. Its direct and
 production-path coverage includes spawn-position adapter mapping, both
 progression modes, complete 19-field write masks, invalid-input atomicity,

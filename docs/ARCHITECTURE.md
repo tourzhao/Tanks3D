@@ -14,15 +14,15 @@ expanding the existing `Game3D` class.
 
 ## Current Shape and Risks
 
-The thirty-nine production source/header files contain 19,136 lines.
-`src/main.cpp` remains one 7,158-line production translation unit; 10,826 lines
+The forty production source/header files contain 19,401 lines.
+`src/main.cpp` remains one 7,273-line production translation unit; 10,826 lines
 of transitional self-tests still live in `tests/self_tests.inl` and are
 textually compiled into that unit. Thirteen pure headers and seven pure
 implementation sources under
 `src/core/` and `src/game/` are independently compiled and tested without
 raylib. `player_system.h/.cpp` are 277/289 lines; their 1,793-line direct test is
 outside the production denominator. The four `src/app/` implementation modules,
-their shared POD values,
+their shared POD values and header-only release-screenshot parser,
 synchronous side-effect boundary, and the `src/audio/` cue/output headers are
 also compiled without raylib and guarded against reverse dependencies.
 `Game3D` still combines inactive player respawn side effects plus phase,
@@ -505,19 +505,29 @@ streak, popup time, and positive HP, restoring non-positive HP from maximum HP;
 unvalidated: reset/recovery copies even zero, negative, or extreme legacy values,
 and Preserve does not clamp positive HP. `Game3D` retains the `id == 0` versus
 other-ID spawn-point mapping, entity snapshot/writeback, slot-owned shell cleanup,
-events, and audio. PlayerSystem now has 31 direct suites and 64 checks. Current
-totals are 17 integrated suites and 7,181 checks, 154 core/game suites and 1,107
-checks, and 22 app suites and 115 checks: 193 suites and 8,403 checks across
-fifteen profiles. The 39 production files contain 19,136 lines; `main.cpp` is
-7,158 lines, `self_tests.inl` is 10,826 lines, `player_system.h/.cpp` are 277/289
-lines, and the direct test is 1,793 lines. The pure boundary remains 13 headers
-plus seven implementations. All 154 regions, eight functions, 229 lines, and
-134 branches in `player_system.cpp` are covered. Overall coverage is
-49.70%/62.98%/45.17%/52.40%; `main.cpp` reaches
-23.85%/59.14%/29.94%/21.34%, while `core/coordinates.h` remains
-98.73%/100%/99.09%/97.50%. The observable-event suite reaches 76 checks, including
-post-commit respawn cue ordering. ASan/UBSan passes all 17 integrated suites and
-7,181 checks.
+events, and audio. PlayerSystem then had 31 direct suites and 64 checks. At that
+increment, totals were 17 integrated suites and 7,181 checks, 154 core/game
+suites and 1,107 checks, and 22 app suites and 115 checks: 193 suites and 8,403
+checks across fifteen profiles. The 39 production files contained 19,136 lines;
+`main.cpp` was 7,158 lines, `self_tests.inl` was 10,826 lines, and
+`player_system.h/.cpp` were 277/289 lines; the direct test was 1,793 lines. The
+pure boundary remained 13 headers plus seven implementations. All 154 regions,
+eight functions, 229 lines, and 134 branches in `player_system.cpp` were
+covered. Overall coverage was
+49.70%/62.98%/45.17%/52.40%; `main.cpp` reached
+23.85%/59.14%/29.94%/21.34%, while `core/coordinates.h` remained
+98.73%/100%/99.09%/97.50%. The observable-event suite reached 76 checks,
+including post-commit respawn cue ordering. ASan/UBSan passed all 17 integrated
+suites and 7,181 checks.
+The forty-fourth release-screenshot increment adds a header-only app parser plus
+a `main.cpp` framebuffer adapter without changing gameplay or maps. Five new
+suites and 21 checks bring the current aggregate to 198 suites and 8,424 checks
+across sixteen profiles. The 40 production files contain 19,401 lines;
+`main.cpp` is 7,273 lines. Overall coverage is
+49.70%/63.30%/45.24%/52.27%, `main.cpp` reaches
+23.42%/59.14%/29.42%/20.83%, and the parser reaches
+100%/100%/100%/95.45%. ASan/UBSan, the distribution verifier, and the explicit
+1280x720 Retina GPU smoke pass.
 `Shell` and `ShellOwner` remain entity types. `Game3D` retains the live-shell
 loop, supplies the carrier-release callback through `CombatSystem`, consumes
 projected events beside audio and effects, and consumes each command's final
@@ -745,6 +755,9 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   99.55% line coverage. The map/core implementation
   reaches 99.37% line and 94.63% branch coverage, the tank implementation
   reaches 98.29% and 86.05%, and cancellation reaches 100% in all four metrics.
+  A fifth raylib-free app executable covers the header-only, default-off release
+  screenshot path/frame parser with five suites and 21 checks; `main.cpp`
+  retains framebuffer capture and renderer-resource lifetime.
   PR 3.3 remains in progress because the concrete sink implementation and final
   shell-impact side effect still belong to `Game3D`.
 - `game/bonus_system.h` and `game/bonus_system.cpp` own `Pickup` XZ state,
@@ -827,7 +840,7 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   the full headless gates. Instrumented compiled-module
   tests reuse canonical production coverage objects; the CombatSystem test
   driver is also instrumented for inline event value semantics. Ten pure-rule
-  and four app-command executables now contribute to fifteen profiles, which
+  and five app-layer executables now contribute to sixteen profiles, which
   merge without duplicate-map warnings.
 - The macOS Alpha distribution path statically links the installed raylib,
   matches its real deployment target, carries all project and third-party

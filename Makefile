@@ -16,6 +16,9 @@ OBJECT_DIR := build/obj
 APP := build/Tanks3D.app
 APP_EXECUTABLE := $(APP)/Contents/MacOS/Tanks3D
 APP_RESOURCES := $(APP)/Contents/Resources
+RELEASE_SCREENSHOT_SMOKE_DIR := build/release-screenshot-smoke
+RELEASE_SCREENSHOT_SMOKE_FILE := \
+	$(RELEASE_SCREENSHOT_SMOKE_DIR)/tank-showcase.png
 COMMAND_SIDE_EFFECT_DISPATCH_SOURCE := \
 	src/app/command_side_effect_dispatch.cpp
 SHELL_CANCELLATION_PRESENTATION_SOURCE := \
@@ -43,6 +46,7 @@ DEPFILES := $(OBJECTS:.o=.d)
 AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
 APP_HEADERS := src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
+	src/app/release_screenshot_options.h \
 	src/app/shell_cancellation_presentation.h \
 	src/app/shell_map_core_presentation.h \
 	src/app/shell_tank_presentation.h
@@ -101,6 +105,10 @@ COMMAND_SIDE_EFFECT_DISPATCH_TEST_SOURCE := \
 	tests/command_side_effect_dispatch_tests.cpp
 COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET := \
 	build/tests/command_side_effect_dispatch_tests
+RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE := \
+	tests/release_screenshot_options_tests.cpp
+RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET := \
+	build/tests/release_screenshot_options_tests
 SHELL_TANK_PRESENTATION_TEST_SOURCE := \
 	tests/shell_tank_presentation_tests.cpp
 SHELL_TANK_PRESENTATION_TEST_TARGET := \
@@ -114,6 +122,7 @@ SHELL_MAP_CORE_PRESENTATION_TEST_SOURCE := \
 SHELL_MAP_CORE_PRESENTATION_TEST_TARGET := \
 	build/tests/shell_map_core_presentation_tests
 APP_TEST_TARGETS := $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET) \
+	$(RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET) \
 	$(SHELL_CANCELLATION_PRESENTATION_TEST_TARGET) \
 	$(SHELL_MAP_CORE_PRESENTATION_TEST_TARGET) \
 	$(SHELL_TANK_PRESENTATION_TEST_TARGET)
@@ -240,6 +249,8 @@ COMPILED_COVERAGE_TEST_DEPFILES := \
 	$(SETTLEMENT_SYSTEM_COVERAGE_TEST_OBJECT:.o=.d)
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/command_side_effect_dispatch_tests
+RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET := \
+	$(COVERAGE_DIR)/release_screenshot_options_tests
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_OBJECT := \
 	$(COVERAGE_DIR)/app/command_side_effect_dispatch.o
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT := \
@@ -269,6 +280,7 @@ COMPILED_COVERAGE_TEST_DEPFILES += \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d)
 APP_COVERAGE_TARGETS := \
 	$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET) \
+	$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET) \
 	$(SHELL_CANCELLATION_PRESENTATION_COVERAGE_TARGET) \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TARGET) \
 	$(SHELL_TANK_PRESENTATION_COVERAGE_TARGET)
@@ -324,7 +336,7 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 .PHONY: all clean debug run run-app test test-core test-game test-rules \
 	test-app test-core-boundaries test-pure-boundaries \
 	test-app-boundaries test-architecture test-unit test-session \
-	test-assets test-bundle test-sanitize coverage \
+	test-assets test-bundle test-release-screenshot test-sanitize coverage \
 	check-dist-prereqs test-dist dist test-alpha-candidate \
 	verify-alpha-candidate alpha-candidate
 
@@ -479,6 +491,32 @@ run: all
 run-app: all
 	open $(APP)
 
+# Local macOS visual-QA smoke only. It intentionally stays outside `test`, CI,
+# and the Alpha candidate gates because it opens a real GPU window.
+test-release-screenshot: all
+	$(RM) -r $(RELEASE_SCREENSHOT_SMOKE_DIR)
+	mkdir -p $(RELEASE_SCREENSHOT_SMOKE_DIR)
+	./$(TARGET) --quick-start --tank-showcase \
+		--release-screenshot=$(abspath $(RELEASE_SCREENSHOT_SMOKE_FILE)) \
+		--release-screenshot-frame=2
+	test -s $(RELEASE_SCREENSHOT_SMOKE_FILE)
+	LC_ALL=C file $(RELEASE_SCREENSHOT_SMOKE_FILE) | \
+		grep -q 'PNG image data, 1280 x 720'
+	test "$$(sips -g pixelWidth $(RELEASE_SCREENSHOT_SMOKE_FILE) | \
+		awk '/pixelWidth:/{print $$2}')" = 1280
+	test "$$(sips -g pixelHeight $(RELEASE_SCREENSHOT_SMOKE_FILE) | \
+		awk '/pixelHeight:/{print $$2}')" = 720
+	@if ./$(TARGET) --quick-start --tank-showcase \
+		--release-screenshot=$(abspath $(RELEASE_SCREENSHOT_SMOKE_FILE)) \
+		--release-screenshot-frame=2; then \
+		echo 'existing screenshot was overwritten' >&2; exit 1; \
+	fi
+	@if ./$(TARGET) --quick-start \
+		--release-screenshot=$(abspath $(RELEASE_SCREENSHOT_SMOKE_DIR))/missing/shot.png \
+		--release-screenshot-frame=2; then \
+		echo 'missing screenshot parent was accepted' >&2; exit 1; \
+	fi
+
 test: all test-bundle test-rules test-app
 	./$(TARGET) --self-test
 
@@ -569,6 +607,13 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET): \
 	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
 		-Werror $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_SOURCE) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) -o $@
+
+$(RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET): \
+		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
+		src/app/release_screenshot_options.h tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
+		-Werror $(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) -o $@
 
 $(SHELL_CANCELLATION_PRESENTATION_TEST_TARGET): \
 		$(SHELL_CANCELLATION_PRESENTATION_TEST_SOURCE) \
@@ -757,6 +802,14 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET): \
 	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_OBJECT) -o $@
+
+$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET): \
+		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
+		src/app/release_screenshot_options.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra \
+		-Wpedantic -Werror $(COVERAGE_FLAGS) \
+		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) -o $@
 
 $(SHELL_TANK_PRESENTATION_COVERAGE_TARGET): \
 		$(SHELL_TANK_PRESENTATION_COVERAGE_TEST_OBJECT) \

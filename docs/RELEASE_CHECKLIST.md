@@ -66,6 +66,26 @@ then prepare the public notes from the
 missing evidence, and an absent source commit or release tag are blockers, not
 passing results.
 
+Capture publication images from the executable inside the extracted candidate,
+not from a development build. For example:
+
+```sh
+Tanks3D.app/Contents/MacOS/Tanks3D \
+    --quick-start \
+    --release-screenshot=/absolute/path/one-player.png \
+    --release-screenshot-frame=240
+```
+
+Frame 240 is the default and normally clears the 3.2-second stage introduction
+at 60 Hz. Capture mode uses a fixed gameplay seed, locks the logical canvas,
+ignores the borderless toggle, normalizes Retina output to 1280x720, refuses to
+overwrite an existing path, saves one PNG, and exits. Use
+`--quick-start-2p`, the national quick-start options, and the settlement
+showcase to cover the required release views. Record the candidate ZIP hash,
+exact command, Mac model, macOS version, capture time, and PNG hash in the QA
+report. `make test-release-screenshot` is an explicit local GPU smoke test; it
+opens a window and intentionally remains outside CI and candidate gates.
+
 - Test the extracted ZIP on a clean Mac matching the declared minimum system.
 - Complete one-player and two-player stages, including pause/Esc, every pickup,
   all three national bases, player death/respawn, base loss, stage settlement,
