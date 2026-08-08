@@ -1,8 +1,8 @@
 # Coverage Baseline
 
 This report records the pre-modularization self-test baseline begun on
-2026-08-04 and refreshed on 2026-08-08 after the forty-fourth release-screenshot
-increment.
+2026-08-04 and refreshed on 2026-08-08 after the forty-fifth atomic screenshot
+writer increment.
 It is a measurement, not a whole-project merge threshold. The larger self-test
 is still textually included from `tests/self_tests.inl` in `src/main.cpp`; the
 new core/game rule suites and app-layer suites are independent executables that
@@ -24,9 +24,11 @@ reported:
 
 | Scope | Region | Function | Line | Branch |
 | --- | ---: | ---: | ---: | ---: |
-| All forty production source/header files | 49.70% | 63.30% | 45.24% | 52.27% |
-| `src/main.cpp` | 23.42% | 59.14% | 29.42% | 20.83% |
+| All forty-two production source/header files | 49.77% | 63.83% | 45.38% | 52.16% |
+| `src/main.cpp` | 23.32% | 59.14% | 29.29% | 20.72% |
 | `src/app/command_side_effect_dispatch.cpp` | 100.00% | 100.00% | 99.55% | 100.00% |
+| `src/app/release_screenshot_file.cpp` | 59.60% | 100.00% | 68.70% | 51.79% |
+| `src/app/release_screenshot_file.h` | 100.00% | 100.00% | 100.00% | N/A |
 | `src/app/shell_cancellation_presentation.cpp` | 100.00% | 100.00% | 100.00% | 100.00% |
 | `src/app/shell_map_core_presentation.cpp` | 93.36% | 100.00% | 99.37% | 94.63% |
 | `src/app/shell_tank_presentation.cpp` | 75.71% | 100.00% | 98.29% | 86.05% |
@@ -48,8 +50,8 @@ reported:
 | `src/game/stage_map.cpp` | 97.97% | 100.00% | 98.18% | 93.40% |
 | `StageMap::impactShell` | 100.00% | 100.00% | 100.00% | 97.37% |
 
-The overall percentages now include all forty production files and 19,401
-production lines: `src/main.cpp` is 7,273 lines and the textually included
+The overall percentages now include all forty-two production files and 19,662
+production lines: `src/main.cpp` is 7,302 lines and the textually included
 `tests/self_tests.inl` is 10,826 lines. Thirteen pure headers and seven pure
 implementation sources are compiled independently. `player_system.h` is 277
 lines, `player_system.cpp` is 289 lines, and its 1,793-line direct test remains
@@ -553,9 +555,9 @@ validated `CombatSystem` player commit.
 
 The integrated game run executes seventeen suites and 7,181 checks. The ten
 raylib-free core/game executables add 154 suites and 1,107 checks; the five
-raylib-free app-layer executables add twenty-seven suites and 136 checks, for
-198 suites and 8,424 checks across the aggregate gate. The release-screenshot
-parser contributes five suites and 21 checks. The standalone
+raylib-free app-layer executables add thirty suites and 154 checks, for 201
+suites and 8,442 checks across the aggregate gate. The release-screenshot
+parser and atomic writer contribute eight suites and 39 checks. The standalone
 `StageGenerator` executable contributes two suites and 43 checks; the
 `StageMap` executable retains four suites and 136 checks. The new
 `CombatSystem` executable contributes twenty suites and 132 checks, while the

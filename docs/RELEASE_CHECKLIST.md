@@ -79,7 +79,8 @@ Tanks3D.app/Contents/MacOS/Tanks3D \
 Frame 240 is the default and normally clears the 3.2-second stage introduction
 at 60 Hz. Capture mode uses a fixed gameplay seed, locks the logical canvas,
 ignores the borderless toggle, normalizes Retina output to 1280x720, refuses to
-overwrite an existing path, saves one PNG, and exits. Use
+replace an existing path even if it appears during capture, saves one PNG, and
+exits. Use
 `--quick-start-2p`, the national quick-start options, and the settlement
 showcase to cover the required release views. Record the candidate ZIP hash,
 exact command, Mac model, macOS version, capture time, and PNG hash in the QA

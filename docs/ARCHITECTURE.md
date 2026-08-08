@@ -14,15 +14,15 @@ expanding the existing `Game3D` class.
 
 ## Current Shape and Risks
 
-The forty production source/header files contain 19,401 lines.
-`src/main.cpp` remains one 7,273-line production translation unit; 10,826 lines
+The forty-two production source/header files contain 19,662 lines.
+`src/main.cpp` remains one 7,302-line production translation unit; 10,826 lines
 of transitional self-tests still live in `tests/self_tests.inl` and are
 textually compiled into that unit. Thirteen pure headers and seven pure
 implementation sources under
 `src/core/` and `src/game/` are independently compiled and tested without
 raylib. `player_system.h/.cpp` are 277/289 lines; their 1,793-line direct test is
-outside the production denominator. The four `src/app/` implementation modules,
-their shared POD values and header-only release-screenshot parser,
+outside the production denominator. The five `src/app/` implementation modules,
+their shared POD values and release-screenshot option parser,
 synchronous side-effect boundary, and the `src/audio/` cue/output headers are
 also compiled without raylib and guarded against reverse dependencies.
 `Game3D` still combines inactive player respawn side effects plus phase,
@@ -519,15 +519,25 @@ covered. Overall coverage was
 98.73%/100%/99.09%/97.50%. The observable-event suite reached 76 checks,
 including post-commit respawn cue ordering. ASan/UBSan passed all 17 integrated
 suites and 7,181 checks.
-The forty-fourth release-screenshot increment adds a header-only app parser plus
+The forty-fourth release-screenshot increment added a header-only app parser plus
 a `main.cpp` framebuffer adapter without changing gameplay or maps. Five new
-suites and 21 checks bring the current aggregate to 198 suites and 8,424 checks
-across sixteen profiles. The 40 production files contain 19,401 lines;
-`main.cpp` is 7,273 lines. Overall coverage is
+suites and 21 checks brought the aggregate to 198 suites and 8,424 checks
+across sixteen profiles. The 40 production files contained 19,401 lines;
+`main.cpp` was 7,273 lines. Overall coverage was
 49.70%/63.30%/45.24%/52.27%, `main.cpp` reaches
-23.42%/59.14%/29.42%/20.83%, and the parser reaches
+23.42%/59.14%/29.42%/20.83%, and the parser reached
 100%/100%/100%/95.45%. ASan/UBSan, the distribution verifier, and the explicit
-1280x720 Retina GPU smoke pass.
+1280x720 Retina GPU smoke passed.
+The forty-fifth increment adds the raylib-free atomic file writer. PNG bytes are
+flushed through a private same-directory file, then published with a hard link
+that fails if the destination appeared after startup. The eight screenshot
+suites and 39 checks cover this deterministic race plus regular files,
+symlinks, invalid inputs, missing parents, and temporary cleanup. The current
+aggregate is 201 suites and 8,442 checks across sixteen profiles. The 42
+production files contain 19,662 lines; `main.cpp` is 7,302 lines. Overall
+coverage is 49.77%/63.83%/45.38%/52.16%; `main.cpp` reaches
+23.32%/59.14%/29.29%/20.72%, and the writer reaches
+59.60%/100%/68.70%/51.79%. ASan/UBSan and the explicit Retina GPU smoke pass.
 `Shell` and `ShellOwner` remain entity types. `Game3D` retains the live-shell
 loop, supplies the carrier-release callback through `CombatSystem`, consumes
 projected events beside audio and effects, and consumes each command's final
@@ -755,9 +765,9 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   99.55% line coverage. The map/core implementation
   reaches 99.37% line and 94.63% branch coverage, the tank implementation
   reaches 98.29% and 86.05%, and cancellation reaches 100% in all four metrics.
-  A fifth raylib-free app executable covers the header-only, default-off release
-  screenshot path/frame parser with five suites and 21 checks; `main.cpp`
-  retains framebuffer capture and renderer-resource lifetime.
+  A fifth raylib-free app executable covers the default-off screenshot options
+  and atomic no-replace writer with eight suites and 39 checks; `main.cpp`
+  retains framebuffer capture, PNG encoding, and renderer-resource lifetime.
   PR 3.3 remains in progress because the concrete sink implementation and final
   shell-impact side effect still belong to `Game3D`.
 - `game/bonus_system.h` and `game/bonus_system.cpp` own `Pickup` XZ state,

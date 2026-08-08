@@ -21,12 +21,14 @@ RELEASE_SCREENSHOT_SMOKE_FILE := \
 	$(RELEASE_SCREENSHOT_SMOKE_DIR)/tank-showcase.png
 COMMAND_SIDE_EFFECT_DISPATCH_SOURCE := \
 	src/app/command_side_effect_dispatch.cpp
+RELEASE_SCREENSHOT_FILE_SOURCE := src/app/release_screenshot_file.cpp
 SHELL_CANCELLATION_PRESENTATION_SOURCE := \
 	src/app/shell_cancellation_presentation.cpp
 SHELL_MAP_CORE_PRESENTATION_SOURCE := \
 	src/app/shell_map_core_presentation.cpp
 SHELL_TANK_PRESENTATION_SOURCE := src/app/shell_tank_presentation.cpp
 APP_SOURCES := $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
+	$(RELEASE_SCREENSHOT_FILE_SOURCE) \
 	$(SHELL_CANCELLATION_PRESENTATION_SOURCE) \
 	$(SHELL_MAP_CORE_PRESENTATION_SOURCE) \
 	$(SHELL_TANK_PRESENTATION_SOURCE)
@@ -46,6 +48,7 @@ DEPFILES := $(OBJECTS:.o=.d)
 AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
 APP_HEADERS := src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
+	src/app/release_screenshot_file.h \
 	src/app/release_screenshot_options.h \
 	src/app/shell_cancellation_presentation.h \
 	src/app/shell_map_core_presentation.h \
@@ -251,6 +254,10 @@ COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/command_side_effect_dispatch_tests
 RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/release_screenshot_options_tests
+RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT := \
+	$(COVERAGE_DIR)/app/release_screenshot_file.o
+RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT := \
+	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/release_screenshot_options_tests.o
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_OBJECT := \
 	$(COVERAGE_DIR)/app/command_side_effect_dispatch.o
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT := \
@@ -275,6 +282,7 @@ SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT := \
 	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/shell_map_core_presentation_tests.o
 COMPILED_COVERAGE_TEST_DEPFILES += \
 	$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT:.o=.d) \
+	$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(SHELL_TANK_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(SHELL_CANCELLATION_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d)
@@ -610,10 +618,13 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET): \
 
 $(RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET): \
 		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
+		$(RELEASE_SCREENSHOT_FILE_SOURCE) \
+		src/app/release_screenshot_file.h \
 		src/app/release_screenshot_options.h tests/test_support.h
 	mkdir -p $(dir $@)
 	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
-		-Werror $(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) -o $@
+		-Werror $(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
+		$(RELEASE_SCREENSHOT_FILE_SOURCE) -o $@
 
 $(SHELL_CANCELLATION_PRESENTATION_TEST_TARGET): \
 		$(SHELL_CANCELLATION_PRESENTATION_TEST_SOURCE) \
@@ -727,6 +738,17 @@ $(COMBAT_SYSTEM_COVERAGE_TEST_OBJECT): $(COMBAT_SYSTEM_TEST_SOURCE)
 	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic \
 		-Werror $(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) -c $< -o $@
 
+# This driver instruments the inline option parser; the file writer uses the
+# canonical production object to avoid duplicate coverage maps.
+$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT): \
+		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
+		src/app/release_screenshot_options.h \
+		src/app/release_screenshot_file.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic \
+		-Werror $(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) \
+		-c $(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) -o $@
+
 $(STAGE_GENERATOR_COVERAGE_TARGET): \
 		$(STAGE_GENERATOR_COVERAGE_TEST_OBJECT) \
 		$(STAGE_GENERATOR_COVERAGE_OBJECT) $(PURE_HEADERS) \
@@ -804,12 +826,14 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET): \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_OBJECT) -o $@
 
 $(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET): \
-		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
+		$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT) \
+		$(RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT) \
+		src/app/release_screenshot_file.h \
 		src/app/release_screenshot_options.h tests/test_support.h
 	mkdir -p $(dir $@)
-	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra \
-		-Wpedantic -Werror $(COVERAGE_FLAGS) \
-		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) -o $@
+	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
+		$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT) \
+		$(RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT) -o $@
 
 $(SHELL_TANK_PRESENTATION_COVERAGE_TARGET): \
 		$(SHELL_TANK_PRESENTATION_COVERAGE_TEST_OBJECT) \

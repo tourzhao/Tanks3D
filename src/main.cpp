@@ -17,6 +17,7 @@
 #include <rlgl.h>
 
 #include "app/command_side_effect_dispatch.h"
+#include "app/release_screenshot_file.h"
 #include "app/release_screenshot_options.h"
 #include "app/shell_cancellation_presentation.h"
 #include "app/shell_map_core_presentation.h"
@@ -84,6 +85,7 @@ using tanks3d::app::Rgba8;
 using tanks3d::app::ReleaseScreenshotOptions;
 using tanks3d::app::kReleaseScreenshotHeight;
 using tanks3d::app::kReleaseScreenshotWidth;
+using tanks3d::app::saveReleaseScreenshotFileNoReplace;
 using tanks3d::app::ShellCancellationPresentationCommand;
 using tanks3d::app::ShellCancellationPresentationStep;
 using tanks3d::app::ShellMapCorePresentationAction;
@@ -7214,6 +7216,7 @@ int main(int argc, char **argv)
         {
             Image image = LoadImageFromScreen();
             bool exported = false;
+            std::string exportMessage;
             if (image.data != nullptr)
             {
                 if (image.width != kReleaseScreenshotWidth ||
@@ -7222,20 +7225,46 @@ int main(int argc, char **argv)
                     ImageResize(&image, kReleaseScreenshotWidth,
                                 kReleaseScreenshotHeight);
                 }
-                exported = ExportImage(
-                    image, releaseScreenshot.outputPath.c_str());
+                int encodedSize = 0;
+                unsigned char *encoded =
+                    ExportImageToMemory(image, ".png", &encodedSize);
+                if (encoded != nullptr && encodedSize > 0)
+                {
+                    const auto fileResult =
+                        saveReleaseScreenshotFileNoReplace(
+                            releaseScreenshot.outputPath, encoded,
+                            static_cast<std::size_t>(encodedSize));
+                    exported = fileResult.saved();
+                    exportMessage = fileResult.message;
+                }
+                else
+                {
+                    exportMessage = "PNG encoding failed";
+                }
+                if (encoded != nullptr)
+                    MemFree(encoded);
                 UnloadImage(image);
+            }
+            else
+            {
+                exportMessage = "framebuffer read failed";
             }
             if (exported)
             {
                 releaseScreenshotSaved = true;
                 std::cout << "Saved release screenshot: "
                           << releaseScreenshot.outputPath << '\n';
+                if (!exportMessage.empty())
+                    std::cerr << "Release screenshot warning: "
+                              << exportMessage << '\n';
             }
             else
             {
                 std::cerr << "Unable to save release screenshot: "
-                          << releaseScreenshot.outputPath << '\n';
+                          << releaseScreenshot.outputPath;
+                if (!exportMessage.empty())
+                    std::cerr << ": " << exportMessage;
+                std::cerr << '\n';
                 processResult = 1;
             }
             exitRequested = true;

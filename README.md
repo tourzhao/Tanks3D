@@ -52,8 +52,8 @@ ad-hoc signature proves bundle integrity but is not Developer ID signing or
 Apple notarization, so this remains an Alpha package. See
 `docs/RELEASE_CHECKLIST.md` before publishing it.
 
-The player-facing description for the preserved Alpha 1 candidate is in
-[`docs/releases/v0.1.0-alpha.1.md`](docs/releases/v0.1.0-alpha.1.md).
+The source repository keeps the player-facing description for the preserved
+Alpha 1 candidate at `docs/releases/v0.1.0-alpha.1.md`.
 
 ## Controls
 
@@ -159,8 +159,9 @@ and direct-fire streaks reset when the player tank is destroyed.
   Detached actions own events, FX/camera parameters, requested cues, and final
   contact where applicable; domain commits such as Shovel steel and shell impact
   remain explicit at the orchestration edge. The same layer owns the pure,
-  tested parser for default-off release screenshot arguments; framebuffer
-  capture remains at the `main.cpp` application boundary. `src/audio/` owns the
+  tested parser and atomic no-replace file writer for default-off release
+  screenshots; framebuffer capture and PNG encoding remain at the `main.cpp`
+  application boundary. `src/audio/` owns the
   shared 22-value `AudioCue` contract and the raylib-free `AudioOutput` runtime
   boundary; neither module owns devices or renderer resources. `Game3D` keeps
   only a nullable, non-owning `AudioOutput *`. The concrete `AudioBank` remains
@@ -243,8 +244,8 @@ boundaries. The digest is a replay aid, not a cross-version compatibility
 guarantee. Normal play continues to choose a fresh seed at process startup.
 
 The complete automated gate currently runs 17 integrated suites with 7,181
-checks, 154 core/game suites with 1,107 checks, and 27 app-layer suites with
-136 checks: 198 suites and 8,424 checks across sixteen profiles. The direct
+checks, 154 core/game suites with 1,107 checks, and 30 app-layer suites with
+154 checks: 201 suites and 8,442 checks across sixteen profiles. The direct
 PlayerSystem executable contributes 31 suites and 64 checks. Its direct and
 production-path coverage includes spawn-position adapter mapping, both
 progression modes, complete 19-field write masks, invalid-input atomicity,

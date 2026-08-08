@@ -60,8 +60,8 @@ Status: implemented. The current ledger is
 7,181 runtime checks, including 35 versioned stage-layout hashes, seeded and
 scripted randomness, production-path player input, and observable event
 scenarios. Ten independent core/game executables add 154 suites and
-1,107 focused checks; five raylib-free app-layer executables add twenty-seven
-suites and 136 checks, for 198 suites and 8,424 checks across the aggregate
+1,107 focused checks; five raylib-free app-layer executables add thirty
+suites and 154 checks, for 201 suites and 8,442 checks across the aggregate
 gate. The current
 instrumented result is recorded in
 [`COVERAGE_BASELINE.md`](COVERAGE_BASELINE.md).
@@ -1033,13 +1033,27 @@ seed, locks the logical canvas, ignores borderless switching, normalizes Retina
 framebuffers to 1280x720, refuses overwrite or a missing parent, saves after a
 complete game frame, and exits through normal resource cleanup. The explicit
 local GPU smoke remains outside headless CI and was visually checked for a real,
-unobscured frame. The current gate therefore has 17 integrated suites and 7,181
+unobscured frame. That gate had 17 integrated suites and 7,181
 checks, 154 core/game suites and 1,107 checks, and 27 app-layer suites and 136
 checks: 198 suites and 8,424 checks across sixteen profiles. The 40 production
 files contain 19,401 lines; `main.cpp` is 7,273 lines and the new parser header
 is 150 lines. Coverage is 49.70%/63.30%/45.24%/52.27% overall and
 23.42%/59.14%/29.42%/20.83% for `main.cpp`; the parser reaches
 100%/100%/100%/95.45%. ASan/UBSan and the distribution verifier pass.
+The forty-fifth increment closes the screenshot output race found during final
+review. PNG encoding now occurs in memory; a raylib-free writer uses a private
+same-directory file, flushes and closes it, then publishes with an atomic hard
+link that cannot replace an existing regular file or symlink. A deterministic
+pre-publish hook creates the formerly racy target inside the unit test and proves
+its bytes survive; regular-file, symlink, missing-parent, invalid-input, and
+temporary-cleanup paths are covered as well. The screenshot executable now has
+eight suites and 39 checks, bringing the current aggregate to 201 suites and
+8,442 checks across sixteen profiles. The 42 production files contain 19,662
+lines; `main.cpp` is 7,302 lines. Coverage is
+49.77%/63.83%/45.38%/52.16% overall and
+23.32%/59.14%/29.29%/20.72% for `main.cpp`; the file writer reaches
+59.60%/100%/68.70%/51.79% and the option parser remains
+100%/100%/100%/95.45%. ASan/UBSan and the Retina GPU smoke pass.
 PR 3.5 remains partial because concrete bonus presentation, messages and map
 commits, plus the concrete settlement event,
 audio/display, navigation, map-load, and player commits still live in `Game3D`.
