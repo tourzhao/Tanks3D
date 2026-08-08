@@ -857,6 +857,14 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   notices, applies an ad-hoc integrity signature, and verifies the ZIP checksum,
   manifest, system-only dependencies, signature, and full self-test after a
   clean extraction. Developer ID signing and notarization remain release work.
+- Post-tag verification clones the attested source commit privately and runs
+  that commit's strict candidate verifier, so later documentation cannot move
+  or silently reinterpret the release tag. A separate machine-readable status
+  gate binds manual evidence and approvals to that candidate. Interactive,
+  command, gameplay-event, and raw performance records use strict JSON formats;
+  fixed Alpha thresholds and ordered human approvals cannot be redefined after
+  a run. Its `--allow-blocked` mode validates honest work in progress but never
+  grants publication approval.
 
 Every migration change must keep `make clean`, `make debug`,
 `make test-architecture`, and `make test` green. Visual

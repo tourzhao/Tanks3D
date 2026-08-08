@@ -11,6 +11,7 @@
 | --- | --- |
 | Report owner | NOT RECORDED — BLOCKED |
 | Test date and timezone | NOT RECORDED — BLOCKED |
+| Planned release date (`YYYY-MM-DD`) | NOT RECORDED — BLOCKED |
 | Candidate directory (`build/release/<tag>`) | NOT RECORDED — BLOCKED |
 | Artifact filename | NOT RECORDED — BLOCKED |
 | Published `.sha256` filename | NOT RECORDED — BLOCKED |
@@ -28,8 +29,14 @@ downloaded files, not a similarly named local build:
 
 ```sh
 shasum -a 256 -c <artifact>.zip.sha256
-make verify-alpha-candidate ALPHA_CANDIDATE_DIR=build/release/<tag>
+make verify-tagged-alpha-candidate DIST_CHANNEL=<alpha.N>
+make check-alpha-release-evidence DIST_CHANNEL=<alpha.N>
 ```
+
+The evidence command permits honest blockers and is not approval. After this
+report, its release page, evidence, known-issue review, audio decision, and both
+approvals are final and committed, the no-exception release-ready target with
+`DIST_CHANNEL=<alpha.N>` must pass from a clean worktree.
 
 ## Clean-Mac Environment
 
@@ -45,8 +52,18 @@ and must not depend on the source checkout or Homebrew raylib.
 | macOS version and build number | NOT RECORDED — BLOCKED |
 | Fresh account or clean-machine method | NOT RECORDED — BLOCKED |
 | Download URL and browser/client | NOT RECORDED — BLOCKED |
+| Downloaded filename and independently recomputed SHA-256 | NOT RECORDED — BLOCKED |
+| Exact checksum command and exit code | NOT RECORDED — BLOCKED |
 | Prior app/approval absent | NOT VERIFIED — BLOCKED |
 | Meets filename minimum macOS version | NOT VERIFIED — BLOCKED |
+| Source checkout absent / Homebrew raylib unused | NOT VERIFIED — BLOCKED |
+
+Attach a hashed `tanks3d-command-log-v1` JSON record for the checksum command.
+Its candidate SHA, machine, exact argument vector, timestamps, stdout/stderr,
+and exit code must describe the downloaded archive named above. Reserved or
+placeholder download hosts are invalid. Use the reproducible download command
+`curl --fail --location --output <artifact>.zip <https-url>` and record `curl`
+as the download client.
 
 ## Quarantine and Gatekeeper
 
@@ -63,6 +80,12 @@ notarization.
 | First Finder launch | Screenshot and verbatim dialog text | NOT RUN |
 | Documented launch path | Exact player steps tested from a fresh account | NOT RUN |
 | Successful launch | App reaches the main menu without removing its signature | NOT RUN |
+
+Record the four quarantine/signature commands in the candidate-bound
+`tanks3d-command-log-v1` JSON artifact; prose copied into this table is not
+command evidence. Download, checksum, ZIP quarantine, app quarantine,
+`codesign`, and `spctl` entries must have non-overlapping timestamps in that
+order and remain inside the same Gatekeeper session.
 
 For this ad-hoc-signed Alpha, a Gatekeeper rejection is an observed limitation,
 not something to hide. The gate may pass only when the actual behavior and a
@@ -95,6 +118,16 @@ startup smoke test is insufficient.
 | Window resize, HUD, camera, and minimap | NOT RUN | NOT RUN | |
 | Music/audio cues and volume behavior | NOT RUN | NOT RUN | |
 | Complete stage without crash, hang, or soft lock | NOT RUN | NOT RUN | |
+
+## Published Controls
+
+Exercise every binding printed in the release page: menu arrows/`WASD`,
+`Enter`/`Space`, both players' movement and fire keys, pause, `Esc`, `R`, `F8`,
+`F11`, `N`/`B`, and setup-screen `Q`/`Esc` exit.
+
+| Tester / UTC time | Candidate-bound recording or signed report | Result |
+| --- | --- | --- |
+| NOT RECORDED | NOT ATTACHED | NOT RUN |
 
 ## National Base Matrix
 
@@ -130,20 +163,23 @@ effect. `Bandage` must also be checked for its spawn restrictions.
 
 ## Extended-Session Performance
 
-Run continuously for at least 30 minutes on the clean test Mac. Set acceptance
-criteria before the run; missing criteria or measurements block approval.
+Run continuously for at least 30 minutes on the clean test Mac. The fixed Alpha
+thresholds are average FPS >= 50, 1% low FPS >= 30, sampling every 0.25–5
+seconds with at least 90% time coverage, and memory growth <= 256 MB. Attach a
+candidate-bound `tanks3d-performance-log-v1` JSON file containing the raw
+timestamped FPS and memory samples; summaries without samples do not pass.
 
 | Required field | Recorded value |
 | --- | --- |
 | Duration, stages, and player mode mix | NOT RECORDED — BLOCKED |
 | Measurement tools and sampling interval | NOT RECORDED — BLOCKED |
-| FPS acceptance criterion | NOT SET — BLOCKED |
+| Fixed average / 1% low criteria | 50 / 30 FPS |
 | Average / minimum / 1% low FPS | NOT MEASURED — BLOCKED |
 | Thermal state, throttling, and fan observation | NOT MEASURED — BLOCKED |
-| Memory growth or leak observation | NOT MEASURED — BLOCKED |
+| Maximum allowed / observed memory growth | 256 MB / NOT MEASURED — BLOCKED |
 | Rendering artifacts or camera/HUD failures | NOT RECORDED — BLOCKED |
 | Audio dropouts, distortion, overlap, or missing cues | NOT RECORDED — BLOCKED |
-| Crashes, hangs, or soft locks | NOT RECORDED — BLOCKED |
+| Crash / hang / soft-lock counts (each must be zero) | NOT RECORDED — BLOCKED |
 | Logs and capture locations | NOT RECORDED — BLOCKED |
 | Extended-session result | NOT RUN — BLOCKED |
 
@@ -155,6 +191,12 @@ workaround. Writing “none” requires the tester's signature below.
 | ID | Severity | Reproduction | Impact / workaround | Release decision | Owner |
 | --- | --- | --- | --- | --- | --- |
 | NOT RECORDED | | | | | |
+
+| Review field | Recorded value |
+| --- | --- |
+| Conclusion (`NONE_KNOWN` or `RECORDED`) | NONE — BLOCKED |
+| Reviewer and UTC time | NOT RECORDED — BLOCKED |
+| Typed signature | NOT SIGNED — BLOCKED |
 
 Required screenshots or recordings:
 
@@ -169,6 +211,13 @@ Required screenshots or recordings:
 | Actual Gatekeeper dialog/launch path | NOT RECORDED | NO |
 | Extended-session metrics | NOT RECORDED | NO |
 
+Interactive PASS evidence must include hashed
+`tanks3d-interactive-session-v1` and `tanks3d-gameplay-event-log-v1` JSON
+artifacts. They bind the candidate SHA, tester, machine, test interval, each
+coverage token, result, review time, and supporting artifact hashes. A static
+screenshot, arbitrary video, or free-form one-line report cannot substitute for
+the signed event record. The tester and reviewer must be different people.
+
 ## Inherited 22-Sound Decision
 
 Review `ASSET_LICENSES.md`, `THIRD_PARTY_NOTICES.md`, the archive's `licenses/`
@@ -179,18 +228,44 @@ missing authority, or missing evidence blocks release.
 - [ ] **ACCEPT** — The release owner acknowledges the documented chain-of-title
   limitation and explicitly accepts it for this Alpha.
 - [ ] **CONFIRM** — Permission/provenance has been confirmed with the relevant
-  rights holder; attach the confirmation.
+  rights holder. The v1 gate deliberately cannot trust a self-authored record;
+  add an externally trusted cryptographic signer in a new requirements profile
+  before using this option.
 - [ ] **REPLACE** — The inherited set has been replaced; attach sources, licenses,
   hashes, and proof that the archive manifest contains only the approved set.
+
+The v1 status gate approves only an explicit owner `ACCEPT` decision. It cannot
+approve `CONFIRM` without a trusted signature profile or `REPLACE` against an
+already attested candidate. Add the relevant verification and attest a new
+candidate before selecting either option.
 
 | Required decision field | Recorded value |
 | --- | --- |
 | Selected option | NONE — BLOCKED |
 | Rationale | NOT RECORDED — BLOCKED |
 | Evidence URL/path | NOT RECORDED — BLOCKED |
+| Five base review checks plus decision-specific check | NOT VERIFIED — BLOCKED |
 | Decision owner and authority | NOT RECORDED — BLOCKED |
 | Typed signature | NOT SIGNED — BLOCKED |
 | Date and timezone | NOT RECORDED — BLOCKED |
+
+## Release gate summary
+
+| Gate | Status |
+| --- | --- |
+| Gameplay matrix | BLOCKED |
+| National bases | BLOCKED |
+| Pickups | BLOCKED |
+| Settlement | BLOCKED |
+| Published controls | BLOCKED |
+| Clean Mac | BLOCKED |
+| Gatekeeper | BLOCKED |
+| Extended session | BLOCKED |
+| Evidence manifest | BLOCKED |
+| Known issues | BLOCKED |
+| Audio decision | BLOCKED |
+| QA approval | BLOCKED |
+| Release-owner approval | BLOCKED |
 
 ## Final Approval
 
@@ -207,5 +282,9 @@ missing authority, or missing evidence blocks release.
 | --- | --- | --- | --- | --- |
 | QA lead | NOT RECORDED | NOT SIGNED | NOT RECORDED | BLOCKED |
 | Release owner | NOT RECORDED | NOT SIGNED | NOT RECORDED | BLOCKED |
+
+The QA lead and release owner must be different people. These signatures attest
+that the named humans performed/reviewed the work; the consistency gate does not
+cryptographically prove a physical test occurred.
 
 **Overall Alpha gate:** BLOCKED

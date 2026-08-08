@@ -1,0 +1,385 @@
+{
+  "schema": "tanks3d-release-status-v1",
+  "requirements": "docs/release-requirements/macos-alpha-v1.json",
+  "release": {
+    "version": "0.1.0",
+    "channel": "alpha.3",
+    "tag": "v0.1.0-alpha.3",
+    "source_commit": "1185eb4854cfbb3e6c63e76d0ebd6e36ec527e9e",
+    "candidate_dir": "build/release/v0.1.0-alpha.3",
+    "artifact": {
+      "path": "build/release/v0.1.0-alpha.3/Tanks3D-0.1.0-alpha.3-macos-arm64-macos26.0.zip",
+      "sha256": "8b6f6db510535080a6ede1097fd84efed8565c97b58a47307797feb83c718753"
+    },
+    "checksum": {
+      "path": "build/release/v0.1.0-alpha.3/Tanks3D-0.1.0-alpha.3-macos-arm64-macos26.0.zip.sha256",
+      "sha256": "1f1979c51caf4564daf2dc60d9a518622ea1e038934a8e2fe5a2e46e21a77d84"
+    },
+    "attestation": {
+      "path": "build/release/v0.1.0-alpha.3/attestation.txt",
+      "sha256": "14f0f29dcca3d57efd0175a90de75b8928fb1fecdd94d1418c7569e0c96bb07a"
+    },
+    "gate_log": {
+      "path": "build/release/v0.1.0-alpha.3/alpha-candidate-gates.log",
+      "sha256": "6a0d8e9d5f249459f1b58ee923331f5c6efb0638766c75615114c6ab0d03f0e5"
+    },
+    "build_config": {
+      "path": "build/release/v0.1.0-alpha.3/build-config.txt",
+      "sha256": "b1cff8b9e2ba72f798fe63346223120a18c9566cf25dbdbc2fbdb2de05454d70"
+    }
+  },
+  "report": {
+    "qa_owner": "",
+    "completed_at_utc": null,
+    "release_date": null
+  },
+  "documents": {
+    "release_page": {
+      "path": "docs/releases/v0.1.0-alpha.3.md",
+      "sha256": "3fcb3b455ccd72d1e23136c1da71239040ec852db70cb7a56a2e46cf9da0c25e"
+    },
+    "qa_report": {
+      "path": "docs/releases/v0.1.0-alpha.3-qa.md",
+      "sha256": "ded316979de8d5aa8d44453d827fa16e754023e6eb7f3e4379e5d758a6163d35"
+    }
+  },
+  "gameplay": [
+    {"id": "start_and_control", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "start_and_control", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "movement_and_collision", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "movement_and_collision", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "fire_hits_and_shell_cancellation", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "fire_hits_and_shell_cancellation", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "pause_and_resume", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "pause_and_resume", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "escape_returns_to_setup", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "escape_returns_to_setup", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "hp_death_and_respawn", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "hp_death_and_respawn", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "streak_increment_and_reset", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "streak_increment_and_reset", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "base_breach_and_core_loss", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "base_breach_and_core_loss", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "classified_ko_rows_and_totals", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "classified_ko_rows_and_totals", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "grenade_excluded_from_direct_ko", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "grenade_excluded_from_direct_ko", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "settlement_transition", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "settlement_transition", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "fullscreen_toggle", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "fullscreen_toggle", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "resize_hud_camera_and_minimap", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "resize_hud_camera_and_minimap", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "audio_cues_and_volume", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Hardware listening test not run."},
+    {"id": "audio_cues_and_volume", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Hardware listening test not run."},
+    {"id": "complete_stage_stability", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."},
+    {"id": "complete_stage_stability", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Full interactive stage not run."}
+  ],
+  "bases": [
+    {"id": "usa", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; live-play matrix not run."},
+    {"id": "usa", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; live-play matrix not run."},
+    {"id": "ussr", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; live-play matrix not run."},
+    {"id": "ussr", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; live-play matrix not run."},
+    {"id": "germany", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; live-play matrix not run."},
+    {"id": "germany", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; live-play matrix not run."}
+  ],
+  "pickups": [
+    {"id": "grenade", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "grenade", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "helmet", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "helmet", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "clock", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "clock", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "shovel", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "shovel", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "tank", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "tank", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "star", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "star", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "gun", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "gun", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "boat", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "boat", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "bandage_heal", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "bandage_heal", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Showcase image exists; interactive pickup check not run."},
+    {"id": "bandage_absent_at_full_hp", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Restriction not observed interactively."},
+    {"id": "bandage_absent_at_full_hp", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Restriction not observed interactively."},
+    {"id": "bandage_disabled_at_max_hp_1", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Restriction not observed interactively."},
+    {"id": "bandage_disabled_at_max_hp_1", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Restriction not observed interactively."},
+    {"id": "pickup_lifetime_12_5_seconds", "mode": "one_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Lifetime not measured interactively."},
+    {"id": "pickup_lifetime_12_5_seconds", "mode": "two_player", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Lifetime not measured interactively."}
+  ],
+  "settlement": [
+    {"id": "basic_tank_ko", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."},
+    {"id": "fast_tank_ko", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."},
+    {"id": "power_tank_ko", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."},
+    {"id": "armor_tank_ko", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."},
+    {"id": "ko_total", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."},
+    {"id": "score_points", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."},
+    {"id": "grenade_exclusion", "status": "NOT_RUN", "tester": "", "tested_at_utc": null, "evidence_ids": [], "checks_confirmed": [], "notes": "Rendered showcase exists; live tally not checked."}
+  ],
+  "published_controls": {
+    "id": "published_controls_match",
+    "status": "NOT_RUN",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "notes": "Published controls have not been verified against the exact candidate."
+  },
+  "clean_mac": {
+    "status": "NOT_RUN",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "details": {
+      "mac_model": "",
+      "chip": "",
+      "uname_machine": "",
+      "ram": "",
+      "macos_version": "",
+      "macos_build": "",
+      "clean_machine_method": "",
+      "download_url": "",
+      "download_client": "",
+      "downloaded_artifact_filename": "",
+      "downloaded_artifact_sha256": "",
+      "checksum_command": "",
+      "checksum_exit_code": "",
+      "prior_app_absent": "",
+      "prior_approval_absent": "",
+      "minimum_macos_met": "",
+      "source_checkout_absent": "",
+      "homebrew_raylib_unused": ""
+    },
+    "notes": "Requires a fresh Apple Silicon account or machine."
+  },
+  "gatekeeper": {
+    "status": "BLOCKED",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "details": {
+      "zip_quarantine_command": "",
+      "zip_quarantine_exit_code": "",
+      "zip_quarantine_output": "",
+      "app_quarantine_command": "",
+      "app_quarantine_exit_code": "",
+      "app_quarantine_output": "",
+      "codesign_command": "",
+      "codesign_exit_code": "",
+      "spctl_command": "",
+      "spctl_exit_code": "",
+      "first_finder_launch": "",
+      "dialog_text": "",
+      "documented_launch_path": "",
+      "main_menu_reached": "",
+      "signature_preserved": "",
+      "conclusion": "",
+      "release_note_wording_verified": ""
+    },
+    "notes": "Development-Mac diagnostics do not replace quarantine testing."
+  },
+  "extended_session": {
+    "status": "NOT_RUN",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "details": {
+      "duration_minutes": "",
+      "stages_completed": "",
+      "mode_mix": "",
+      "measurement_tools": "",
+      "sampling_interval_seconds": "",
+      "fps_acceptance_criterion": "",
+      "average_fps": "",
+      "minimum_fps": "",
+      "minimum_average_fps": "",
+      "minimum_one_percent_low_fps": "",
+      "one_percent_low_fps": "",
+      "thermal_state": "",
+      "throttling": "",
+      "fan_observation": "",
+      "memory_start_mb": "",
+      "memory_end_mb": "",
+      "memory_growth_observation": "",
+      "maximum_memory_growth_mb": "",
+      "rendering_artifacts": "",
+      "audio_issues": "",
+      "crashes_hangs_or_softlocks": "",
+      "crash_count": "",
+      "hang_count": "",
+      "softlock_count": "",
+      "logs_and_capture_locations": ""
+    },
+    "notes": "Thirty-minute clean-Mac session not run."
+  },
+  "evidence": [
+    {
+      "id": "main_menu_and_advanced_settings",
+      "status": "NOT_RUN",
+      "artifacts": [],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "No exact-candidate menu capture is recorded."
+    },
+    {
+      "id": "one_player_gameplay",
+      "status": "PASS",
+      "artifacts": [
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/one-player.png", "sha256": "af7d125188b3906215d6a1424d6f343317357953e4cf720fbb92a43b40440cf9", "kind": "png"}
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "Codex exact-candidate visual review",
+      "reviewed_at_utc": "2026-08-08T18:45:29Z",
+      "notes": "Rendering evidence only; not an interactive gameplay PASS."
+    },
+    {
+      "id": "two_player_gameplay",
+      "status": "PASS",
+      "artifacts": [
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/two-player.png", "sha256": "6fd33d607320d8c6ff0355f227516261ec66d2428744795ee29bdf9e7e8ed11f", "kind": "png"}
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "Codex exact-candidate visual review",
+      "reviewed_at_utc": "2026-08-08T18:46:02Z",
+      "notes": "Rendering evidence only; not an interactive gameplay PASS."
+    },
+    {
+      "id": "national_bases",
+      "status": "PASS",
+      "artifacts": [
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/base-usa.png", "sha256": "1b8af0f3950b393e1169cca68731f00ba7a48a81ab3d8a46d5053ff060f0ef5f", "kind": "png"},
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/base-ussr.png", "sha256": "3f61c1a8fca5d0894551c2aaf4e271f338bc436198fd88a871988f08b04bfa22", "kind": "png"},
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/base-germany.png", "sha256": "f0ebbf75ccbd69e7c32d9b0e6666f001289ed09ec3503b0c1873c5b532434add", "kind": "png"}
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "Codex exact-candidate visual review",
+      "reviewed_at_utc": "2026-08-08T18:46:29Z",
+      "notes": "Rendering evidence only; not a live-play base PASS."
+    },
+    {
+      "id": "pickup_and_minimap",
+      "status": "PASS",
+      "artifacts": [
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/bonuses.png", "sha256": "c751adf3657d79d740889d3f37e07e7cbb80ebc39909b12aca479832585fc753", "kind": "png"}
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "Codex exact-candidate visual review",
+      "reviewed_at_utc": "2026-08-08T18:47:58Z",
+      "notes": "Rendering evidence only; not an interactive pickup PASS."
+    },
+    {
+      "id": "settlement_report",
+      "status": "PASS",
+      "artifacts": [
+        {"path": "docs/assets/releases/v0.1.0-alpha.3/settlement.png", "sha256": "6067b9be7deda258b648be7a1008df5ce00f4b4c40e1ba0a922721a0efde1d23", "kind": "png"}
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "Codex exact-candidate visual review",
+      "reviewed_at_utc": "2026-08-08T18:47:12Z",
+      "notes": "Rendering evidence only; not a live tally PASS."
+    },
+    {
+      "id": "gatekeeper_launch",
+      "status": "BLOCKED",
+      "artifacts": [],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "No quarantined-download Finder launch on a clean Mac."
+    },
+    {
+      "id": "extended_session_metrics",
+      "status": "NOT_RUN",
+      "artifacts": [],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "No thirty-minute metrics artifact."
+    }
+  ],
+  "known_issues": {
+    "status": "NOT_RUN",
+    "conclusion": "NONE",
+    "reviewer": "",
+    "reviewed_at_utc": null,
+    "signature": "",
+    "issues": [],
+    "notes": "Known-issue review has not been completed."
+  },
+  "audio": {
+    "decision": "NONE",
+    "checks_confirmed": [],
+    "rationale": "",
+    "evidence": [],
+    "owner": "",
+    "authority": "",
+    "signature": "",
+    "decided_at_utc": null
+  },
+  "approvals": [
+    {"role": "qa_lead", "status": "BLOCKED", "name": "", "signature": "", "approved_at_utc": null, "evidence_ids": [], "notes": "Manual QA is incomplete."},
+    {"role": "release_owner", "status": "BLOCKED", "name": "", "signature": "", "approved_at_utc": null, "evidence_ids": [], "notes": "Audio decision and manual QA are incomplete."}
+  ]
+}

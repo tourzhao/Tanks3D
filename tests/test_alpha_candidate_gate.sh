@@ -16,6 +16,7 @@ production_root=$(CDPATH= cd "$production_root" 2>/dev/null && pwd -P) || {
 }
 production_builder="$production_root/scripts/build_alpha_candidate.sh"
 production_verifier="$production_root/scripts/verify_alpha_candidate.sh"
+production_tagged_verifier="$production_root/scripts/verify_tagged_alpha_candidate.sh"
 
 fail()
 {
@@ -25,6 +26,8 @@ fail()
 
 [ -f "$production_builder" ] || fail "candidate builder is missing"
 [ -f "$production_verifier" ] || fail "candidate verifier is missing"
+[ -f "$production_tagged_verifier" ] || \
+    fail "tagged candidate verifier is missing"
 command -v git >/dev/null 2>&1 || fail "git is required"
 command -v zip >/dev/null 2>&1 || fail "zip is required"
 command -v shasum >/dev/null 2>&1 || fail "shasum is required"
@@ -43,6 +46,8 @@ apply_fixture_files()
     mkdir -p "$fixture_dir/scripts" "$fixture_dir/macos"
     cp "$production_builder" "$fixture_dir/scripts/build_alpha_candidate.sh"
     cp "$production_verifier" "$fixture_dir/scripts/verify_alpha_candidate.sh"
+    cp "$production_tagged_verifier" \
+        "$fixture_dir/scripts/verify_tagged_alpha_candidate.sh"
     cat > "$fixture_dir/scripts/verify_macos_dist.sh" <<'EOF'
 #!/bin/sh
 
@@ -221,6 +226,40 @@ expect_verifier_rejection()
     printf 'PASS verifier rejection: %s\n' "$rejection_name"
 }
 
+tagged_temporary_root="$test_root/tagged-verifier-tmp"
+mkdir -p "$tagged_temporary_root"
+
+assert_no_tagged_temporary_snapshot()
+{
+    for snapshot_entry in \
+            "$tagged_temporary_root"/tanks3d-tagged-alpha.*; do
+        if [ -e "$snapshot_entry" ] || [ -L "$snapshot_entry" ]; then
+            fail "tagged verifier left a private snapshot behind"
+        fi
+    done
+}
+
+expect_tagged_verifier_rejection()
+{
+    rejection_name=$1
+    expected_message=$2
+    rejection_fixture=$3
+    rejection_candidate=$4
+    rejection_log="$test_root/tagged-verifier-$rejection_name.log"
+    if env TMPDIR="$tagged_temporary_root" \
+            sh "$rejection_fixture/scripts/verify_tagged_alpha_candidate.sh" \
+            "$rejection_fixture" "$rejection_candidate" \
+            > "$rejection_log" 2>&1; then
+        fail "$rejection_name tagged candidate was accepted"
+    fi
+    grep -F "$expected_message" "$rejection_log" >/dev/null || {
+        sed -n '1,220p' "$rejection_log" >&2
+        fail "$rejection_name tagged candidate failed for the wrong reason"
+    }
+    assert_no_tagged_temporary_snapshot
+    printf 'PASS tagged verifier rejection: %s\n' "$rejection_name"
+}
+
 unversioned_fixture="$test_root/unversioned"
 apply_fixture_files "$unversioned_fixture"
 expect_build_rejection unversioned "project root is not a Git worktree" \
@@ -348,4 +387,75 @@ sh "$valid_fixture/scripts/verify_alpha_candidate.sh" \
     "$valid_fixture" "$valid_candidate" >/dev/null || \
     fail "restored candidate did not verify"
 
-echo "Alpha candidate gate tests passed: 11 build rejections, 6 verifier rejections, 1 success."
+attested_commit=$(sed -n 's/^source_commit=//p' \
+    "$valid_candidate/attestation.txt")
+attested_tag=$(sed -n 's/^source_tag=//p' \
+    "$valid_candidate/attestation.txt")
+printf '%s\n' 'committed after the attested release' >> \
+    "$valid_fixture/source.txt"
+git -C "$valid_fixture" add source.txt 2>/dev/null
+git -C "$valid_fixture" commit -qm \
+    "Advance HEAD after the attested release" 2>/dev/null
+
+expect_verifier_rejection post-tag-current-head \
+    "current HEAD does not match the attested commit" \
+    "$valid_fixture" "$valid_candidate"
+
+printf '%s\n' '#!/bin/sh' \
+    'echo "current HEAD verifier must not run" >&2' \
+    'exit 99' > "$valid_fixture/scripts/verify_alpha_candidate.sh"
+chmod +x "$valid_fixture/scripts/verify_alpha_candidate.sh"
+git -C "$valid_fixture" add scripts/verify_alpha_candidate.sh 2>/dev/null
+git -C "$valid_fixture" commit -qm \
+    "Make the post-tag verifier an intentional failure" 2>/dev/null
+
+tagged_success_log="$test_root/tagged-verifier-success.log"
+env TMPDIR="$tagged_temporary_root" \
+    sh "$valid_fixture/scripts/verify_tagged_alpha_candidate.sh" \
+    "$valid_fixture" "$valid_candidate" > "$tagged_success_log" 2>&1 || {
+        sed -n '1,260p' "$tagged_success_log" >&2
+        fail "valid post-tag candidate did not verify from its source snapshot"
+    }
+grep -F "Attested source snapshot: $attested_commit ($attested_tag)" \
+    "$tagged_success_log" >/dev/null || \
+    fail "tagged verifier success did not identify its attested source"
+assert_no_tagged_temporary_snapshot
+printf 'PASS tagged verification after HEAD advanced\n'
+
+printf '%s\n' 'tagged verifier tamper' >> "$artifact"
+expect_tagged_verifier_rejection artifact-tamper \
+    "artifact digest does not match the attestation" \
+    "$valid_fixture" "$valid_candidate"
+cp "$artifact_backup" "$artifact"
+
+git -C "$valid_fixture" tag -f "$attested_tag" HEAD >/dev/null 2>&1
+expect_tagged_verifier_rejection moved-tag \
+    "attested release tag does not identify the attested commit" \
+    "$valid_fixture" "$valid_candidate"
+git -C "$valid_fixture" tag -f "$attested_tag" \
+    "$attested_commit" >/dev/null 2>&1
+
+printf '%s\n' 'dirty post-tag worktree' > \
+    "$valid_fixture/dirty-post-tag.txt"
+expect_tagged_verifier_rejection dirty-current-tree \
+    "current Git worktree is not clean" \
+    "$valid_fixture" "$valid_candidate"
+rm -f "$valid_fixture/dirty-post-tag.txt"
+
+symlink_target="$test_root/tagged-artifact-symlink-target.zip"
+cp "$artifact" "$symlink_target"
+rm -f "$artifact"
+ln -s "$symlink_target" "$artifact"
+expect_tagged_verifier_rejection symbolic-link-entry \
+    "candidate contains a non-regular or symbolic-link entry" \
+    "$valid_fixture" "$valid_candidate"
+rm -f "$artifact"
+mv "$symlink_target" "$artifact"
+
+env TMPDIR="$tagged_temporary_root" \
+    sh "$valid_fixture/scripts/verify_tagged_alpha_candidate.sh" \
+    "$valid_fixture" "$valid_candidate" >/dev/null || \
+    fail "restored post-tag candidate did not verify"
+assert_no_tagged_temporary_snapshot
+
+echo "Alpha candidate gate tests passed: 11 build rejections, 7 strict verifier rejections, 4 tagged verifier rejections, 2 successes."

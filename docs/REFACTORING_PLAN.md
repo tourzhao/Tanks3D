@@ -1054,6 +1054,26 @@ lines; `main.cpp` is 7,302 lines. Coverage is
 23.32%/59.14%/29.29%/20.72% for `main.cpp`; the file writer reaches
 59.60%/100%/68.70%/51.79% and the option parser remains
 100%/100%/100%/95.45%. ASan/UBSan and the Retina GPU smoke pass.
+The forty-sixth increment hardens the post-tag release process without changing
+gameplay, maps, assets, or the runtime-suite ledger. A private-clone verifier
+rechecks an immutable attested tag after documentation commits advance `HEAD`;
+its contract covers four tagged-candidate rejection classes and two success
+paths in addition to the existing eleven build and seven strict-verifier
+rejections. A standard-library Python gate binds the candidate, release page,
+QA report, fixed-size publication captures, manual matrices, published controls,
+interactive evidence, clean-Mac download/quarantine facts, numeric 30-minute
+criteria, known issues, the decision-specific inherited-audio review, chronology,
+and both approvals. Twenty-three focused tests include a synthetic complete
+release plus false-PASS attempts. The real Alpha 3 record remains explicitly
+blocked until its external human evidence and signatures exist.
+The final adversarial pass replaces free-form PASS support with strict,
+candidate-bound interactive-session, gameplay-event, command, and raw
+performance JSON records. Alpha performance limits are compiled into the
+requirements profile, both release documents carry one canonical gate table,
+and review/approval timestamps follow the completed tests. The v1 profile also
+refuses a self-authored `CONFIRM` claim; that path needs an externally trusted
+cryptographic rights-holder signature. This keeps the gate useful as an audit
+boundary rather than a checklist that can approve self-asserted strings.
 PR 3.5 remains partial because concrete bonus presentation, messages and map
 commits, plus the concrete settlement event,
 audio/display, navigation, map-load, and player commits still live in `Game3D`.

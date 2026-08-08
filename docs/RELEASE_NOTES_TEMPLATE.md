@@ -4,6 +4,9 @@
 > fields, `TBD`, placeholder links, missing attachments, or unverified claims do
 > not count as complete and block publication.
 
+The final versioned page must use the exact marker
+`**Release status: APPROVED.**`; retain `BLOCKED` while any status gate remains.
+
 ## Release Identity and Downloads
 
 - Version/channel: NOT RECORDED — BLOCKED
@@ -43,6 +46,8 @@ security.
 
 Observed Gatekeeper message/result: NOT RECORDED — BLOCKED
 
+Gatekeeper conclusion: **BLOCKED**
+
 ## Highlights
 
 Replace these prompts with concise, verified player-facing changes:
@@ -61,26 +66,34 @@ Confirm every line against the published build before release:
 - Player 2 movement/fire: NOT VERIFIED — BLOCKED
 - Pause, setup/menu return, restart, stage navigation, and fullscreen: NOT VERIFIED — BLOCKED
 
-## QA Summary
+## Release gate summary
 
-| Gate | Result | Evidence |
-| --- | --- | --- |
-| Verified candidate attestation and all automated gates | NOT RECORDED | NOT LINKED |
-| Clean Apple Silicon Mac and quarantined download | NOT RUN | NOT LINKED |
-| Gatekeeper behavior and tested launch path | NOT RUN | NOT LINKED |
-| Complete one-player stage | NOT RUN | NOT LINKED |
-| Complete two-player stage | NOT RUN | NOT LINKED |
-| Three national bases | NOT RUN | NOT LINKED |
-| Every pickup and conditional Bandage behavior | NOT RUN | NOT LINKED |
-| 30-minute FPS/thermal/rendering/audio session | NOT RUN | NOT LINKED |
+| Gate | Status |
+| --- | --- |
+| Gameplay matrix | BLOCKED |
+| National bases | BLOCKED |
+| Pickups | BLOCKED |
+| Settlement | BLOCKED |
+| Published controls | BLOCKED |
+| Clean Mac | BLOCKED |
+| Gatekeeper | BLOCKED |
+| Extended session | BLOCKED |
+| Evidence manifest | BLOCKED |
+| Known issues | BLOCKED |
+| Audio decision | BLOCKED |
+| QA approval | BLOCKED |
+| Release-owner approval | BLOCKED |
 
-Any non-PASS or unlinked required row blocks publication.
+For an approved page, every row must be `PASS` and must agree with the linked,
+hashed QA report. Any non-PASS row blocks publication.
 
 ## Known Issues and Limitations
 
 Include Gatekeeper friction, OS/architecture limits, gameplay defects, rendering
 or audio problems, and workarounds. “None known” is allowed only when it is the
 signed conclusion of the linked QA report.
+
+Known-issues review: **NONE — BLOCKED**
 
 | ID | Severity | Description | Reproduction / workaround | Resolution plan |
 | --- | --- | --- | --- | --- |
@@ -110,6 +123,10 @@ retain their own terms. Link the notices shipped inside the exact artifact.
 - Decision evidence: NOT LINKED — BLOCKED
 
 The audio decision must exactly match the signed section of the QA report.
+Under the v1 profile, the final page must state `Audio decision: **ACCEPT**`
+exactly. `CONFIRM` is unavailable until a new profile verifies an externally
+trusted cryptographic rights-holder signature; `REPLACE` requires a newly
+attested candidate and replacement-manifest validation.
 
 ## Release Approval
 

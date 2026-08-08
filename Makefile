@@ -77,7 +77,13 @@ DIST_VERIFY_SCRIPT := scripts/verify_macos_dist.sh
 DIST_VERIFY_NEGATIVE_TEST := tests/test_macos_dist_verifier.sh
 ALPHA_CANDIDATE_BUILD_SCRIPT := scripts/build_alpha_candidate.sh
 ALPHA_CANDIDATE_VERIFY_SCRIPT := scripts/verify_alpha_candidate.sh
+ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT := \
+	scripts/verify_tagged_alpha_candidate.sh
 ALPHA_CANDIDATE_GATE_TEST := tests/test_alpha_candidate_gate.sh
+RELEASE_REQUIREMENTS_PROFILE := \
+	docs/release-requirements/macos-alpha-v1.json
+RELEASE_STATUS_VERIFY_SCRIPT := scripts/verify_release_status.py
+RELEASE_STATUS_TEST := tests/test_release_status_verifier.py
 
 CORE_TEST_SOURCES := tests/core_coordinates_tests.cpp \
 	tests/core_gameplay_rules_tests.cpp
@@ -187,6 +193,8 @@ DIST_CHECKSUM := $(DIST_ARCHIVE).sha256
 ALPHA_CANDIDATE_TAG := v$(APP_VERSION)-$(DIST_CHANNEL)
 ALPHA_CANDIDATE_DIR ?= \
 	$(abspath build/release/$(ALPHA_CANDIDATE_TAG))
+RELEASE_STATUS_FILE ?= \
+	docs/releases/$(ALPHA_CANDIDATE_TAG)-status.json
 DIST_COMPILE_FLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
 	-mmacosx-version-min=$(DIST_MACOS_MIN)
 DIST_LINK_FLAGS := -mmacosx-version-min=$(DIST_MACOS_MIN) \
@@ -346,7 +354,9 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	test-app-boundaries test-architecture test-unit test-session \
 	test-assets test-bundle test-release-screenshot test-sanitize coverage \
 	check-dist-prereqs test-dist dist test-alpha-candidate \
-	verify-alpha-candidate alpha-candidate
+	verify-alpha-candidate verify-tagged-alpha-candidate alpha-candidate \
+	test-release-status check-alpha-release-evidence \
+	verify-alpha-release-ready
 
 all: $(TARGET) $(APP_EXECUTABLE)
 
@@ -481,17 +491,41 @@ test-dist: $(DIST_CHECKSUM) $(DIST_RESOURCE_MANIFEST) $(DIST_VERIFY_SCRIPT) \
 
 dist: test test-dist
 
-test-alpha-candidate: $(ALPHA_CANDIDATE_BUILD_SCRIPT) \
-		$(ALPHA_CANDIDATE_VERIFY_SCRIPT) $(ALPHA_CANDIDATE_GATE_TEST)
-	sh $(ALPHA_CANDIDATE_GATE_TEST) $(abspath .)
+test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
+		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST)
+	python3 -B $(RELEASE_STATUS_TEST)
+
+test-alpha-candidate: test-release-status $(ALPHA_CANDIDATE_BUILD_SCRIPT) \
+		$(ALPHA_CANDIDATE_VERIFY_SCRIPT) \
+		$(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) \
+		$(ALPHA_CANDIDATE_GATE_TEST)
+	sh $(ALPHA_CANDIDATE_GATE_TEST) "$(abspath .)"
 
 verify-alpha-candidate: $(ALPHA_CANDIDATE_VERIFY_SCRIPT)
-	sh $(ALPHA_CANDIDATE_VERIFY_SCRIPT) $(abspath .) \
-		$(ALPHA_CANDIDATE_DIR)
+	sh $(ALPHA_CANDIDATE_VERIFY_SCRIPT) "$(abspath .)" \
+		"$(ALPHA_CANDIDATE_DIR)"
+
+verify-tagged-alpha-candidate: $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT)
+	sh $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) "$(abspath .)" \
+		"$(ALPHA_CANDIDATE_DIR)"
+
+check-alpha-release-evidence: test-release-status \
+		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_FILE)
+	python3 -B $(RELEASE_STATUS_VERIFY_SCRIPT) --allow-blocked \
+		--project-root "$(abspath .)" \
+		--status "$(abspath $(RELEASE_STATUS_FILE))"
+
+verify-alpha-release-ready: test-release-status \
+		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_FILE)
+	python3 -B $(RELEASE_STATUS_VERIFY_SCRIPT) \
+		--project-root "$(abspath .)" \
+		--status "$(abspath $(RELEASE_STATUS_FILE))"
 
 alpha-candidate: $(ALPHA_CANDIDATE_BUILD_SCRIPT) \
-		$(ALPHA_CANDIDATE_VERIFY_SCRIPT) $(ALPHA_CANDIDATE_GATE_TEST)
-	sh $(ALPHA_CANDIDATE_BUILD_SCRIPT) $(abspath .) $(DIST_CHANNEL)
+		$(ALPHA_CANDIDATE_VERIFY_SCRIPT) \
+		$(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) \
+		$(ALPHA_CANDIDATE_GATE_TEST)
+	sh $(ALPHA_CANDIDATE_BUILD_SCRIPT) "$(abspath .)" "$(DIST_CHANNEL)"
 
 run: all
 	cd build && ./Tanks3D

@@ -3,6 +3,10 @@ build/
 *.o
 *.dSYM/
 
+# Python release tooling
+__pycache__/
+*.py[cod]
+
 # macOS and editor metadata
 .DS_Store
 *.swp

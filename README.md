@@ -14,7 +14,8 @@ for period context; their inclusion is not an endorsement.
 ## Requirements and build
 
 The source build requires macOS, a C++17 compiler,
-[Homebrew](https://brew.sh/), and raylib. The current development build is
+[Homebrew](https://brew.sh/), and raylib. Release-status tooling additionally
+uses Python 3 and only its standard library. The current development build is
 tested with Apple Clang and raylib 6.0:
 
 ```sh
@@ -45,7 +46,7 @@ file, extracts the ZIP into a temporary directory, and reruns the complete
 self-test from that extracted app. Outputs are written under `build/dist/`.
 
 The archive name records the architecture and the real deployment target, for
-example `Tanks3D-0.1.0-alpha.1-macos-arm64-macos26.0.zip`. That target is read
+example `Tanks3D-0.1.0-alpha.3-macos-arm64-macos26.0.zip`. That target is read
 from the installed raylib and must match the game build; supplying a raylib
 built for an older macOS target produces an appropriately named package. The
 ad-hoc signature proves bundle integrity but is not Developer ID signing or
@@ -55,6 +56,27 @@ Apple notarization, so this remains an Alpha package. See
 The source repository keeps the current candidate release page at
 `docs/releases/v0.1.0-alpha.3.md` and the preserved Alpha 1 page at
 `docs/releases/v0.1.0-alpha.1.md`.
+
+For the current candidate, run:
+
+```sh
+make test-release-status
+make verify-tagged-alpha-candidate DIST_CHANNEL=alpha.3
+make check-alpha-release-evidence DIST_CHANNEL=alpha.3
+make verify-alpha-release-ready DIST_CHANNEL=alpha.3
+```
+
+The evidence check validates an honestly incomplete report and prints every
+blocker; it is not release approval. The final command omits that exception and
+must pass before public upload. Both candidate checks require the five local,
+ignored files under `build/release/v0.1.0-alpha.3/` and a clean worktree. See
+the [Alpha 3 status](docs/releases/v0.1.0-alpha.3-status.json) and
+[release checklist](docs/RELEASE_CHECKLIST.md). Manual PASS records use
+candidate-bound structured session, command, event, and performance logs; the
+fixed 30-minute Alpha budget requires >=50 average FPS, >=30 1% low FPS, and
+<=256 MB memory growth. For the inherited 22-sound set, v1 accepts only the
+release owner's explicit `ACCEPT` risk decision; `CONFIRM` needs a future
+profile with an externally trusted cryptographic rights-holder signature.
 
 ## Controls
 

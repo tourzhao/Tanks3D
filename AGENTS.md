@@ -3,10 +3,9 @@
 ## Project Structure & Module Organization
 
 Tanks 3D is a C++17/raylib macOS game. `src/main.cpp` remains the integration
-hotspot for rules, input, audio, and rendering; follow `docs/ARCHITECTURE.md` and
-`docs/REFACTORING_PLAN.md` when moving code. Feature headers live beside it,
-while the transitional self-test lives in `tests/`. Runtime assets are under
-`resources/`, app metadata under `macos/`, and generated files only in `build/`.
+hotspot; follow `docs/ARCHITECTURE.md` and `docs/REFACTORING_PLAN.md` when moving
+code. Tests live in `tests/`, assets in `resources/`, app metadata in `macos/`,
+and generated files only in `build/`.
 
 ## Build, Test, and Development Commands
 
@@ -18,8 +17,11 @@ while the transitional self-test lives in `tests/`. Runtime assets are under
 - `make test-bundle` verifies the exact `.app` resource manifest.
 - `make test-sanitize` checks memory and undefined behavior; `make coverage`
   reports production-only coverage.
-- `make run` launches the executable from its expected working directory.
-- `make run-app` opens the macOS application bundle.
+- `make test-release-status` checks the Python release-gate contract.
+- `make check-alpha-release-evidence DIST_CHANNEL=alpha.3` validates an
+  incomplete status; `make verify-alpha-release-ready DIST_CHANNEL=alpha.3`
+  is the required no-blocker publication gate.
+- `make run` launches the executable; `make run-app` opens the app bundle.
 
 ## Coding Style & Naming Conventions
 
@@ -30,7 +32,6 @@ clean. Record the source, author, license, and exact mapping for new assets.
 
 Keep new gameplay rules independent of rendering. Prefer command input, seeded
 random sources, and game events over raylib input or audio calls in rule code.
-Move behavior unchanged before redesigning visual code.
 
 ## Testing Guidelines
 
@@ -41,6 +42,9 @@ changes; run `make test-sanitize` before submitting refactors. Treat
 replace golden hashes merely to silence a failing refactor.
 Manually check menus, one/two-player controls, pause, pickups, stage completion,
 and the battle report after visible changes.
+Never treat the release evidence target's `--allow-blocked` mode as approval.
+Post-tag candidates must be rechecked with `verify-tagged-alpha-candidate` from
+a clean worktree; do not move an attested tag to accommodate later docs.
 
 ## Commit & Pull Request Guidelines
 
