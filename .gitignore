@@ -1,0 +1,18 @@
+# Compiled output
+build/
+*.o
+*.dSYM/
+
+# macOS and editor metadata
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local signing and configuration
+*.entitlements.local
+.env
+.env.*
+!.env.example

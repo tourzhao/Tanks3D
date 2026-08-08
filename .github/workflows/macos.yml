@@ -1,0 +1,47 @@
+name: macOS build and self-test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install raylib
+        run: brew install raylib
+
+      - name: Clean previous outputs
+        run: make clean
+
+      - name: Build warning-clean debug executable
+        run: make debug
+
+      - name: Verify core and game rule boundaries
+        run: make test-architecture
+
+      - name: Verify Alpha candidate tooling contracts
+        run: make test-alpha-candidate
+
+      - name: Build application, verify bundle, and run rule checks
+        run: make all test
+
+      - name: Verify filtered test entry points
+        run: make test-unit test-session test-assets
+
+      - name: Run AddressSanitizer and UndefinedBehaviorSanitizer
+        run: make test-sanitize
+
+      - name: Build and verify self-contained macOS Alpha archive
+        run: make test-dist
+
+      - name: Report production coverage
+        run: make coverage
