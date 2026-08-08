@@ -17,6 +17,8 @@
 #include <rlgl.h>
 
 #include "app/command_side_effect_dispatch.h"
+#include "app/release_performance_log.h"
+#include "app/release_performance_options.h"
 #include "app/release_screenshot_file.h"
 #include "app/release_screenshot_options.h"
 #include "app/shell_cancellation_presentation.h"
@@ -56,6 +58,7 @@
 #include <iostream>
 #include <limits>
 #include <locale>
+#include <memory>
 #include <numeric>
 #include <random>
 #include <sstream>
@@ -64,6 +67,14 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+#ifndef TANKS3D_RELEASE_SOURCE_COMMIT
+#define TANKS3D_RELEASE_SOURCE_COMMIT "0000000000000000000000000000000000000000"
+#endif
+
+#ifndef TANKS3D_RELEASE_SOURCE_TAG
+#define TANKS3D_RELEASE_SOURCE_TAG "development"
+#endif
 
 namespace fs = std::filesystem;
 
@@ -82,6 +93,8 @@ using tanks3d::app::Float3;
 using tanks3d::app::RequestTankAudioAction;
 using tanks3d::app::RequestMapCoreAudioAction;
 using tanks3d::app::Rgba8;
+using tanks3d::app::ReleasePerformanceOptions;
+using tanks3d::app::ReleasePerformanceRecorder;
 using tanks3d::app::ReleaseScreenshotOptions;
 using tanks3d::app::kReleaseScreenshotHeight;
 using tanks3d::app::kReleaseScreenshotWidth;
@@ -104,6 +117,7 @@ using tanks3d::app::makePlayerTankArmorImpactAction;
 using tanks3d::app::makeShellCancellationPresentationCommand;
 using tanks3d::app::makeShellMapCorePresentationCommand;
 using tanks3d::app::makeShellTankPresentationCommand;
+using tanks3d::app::parseReleasePerformanceOptions;
 using tanks3d::app::parseReleaseScreenshotOptions;
 using tanks3d::app::dispatchCommandSideEffect;
 using tanks3d::app::shellMapCorePresentationStep;
@@ -6897,6 +6911,16 @@ int main(int argc, char **argv)
     }
     const ReleaseScreenshotOptions releaseScreenshot =
         releaseScreenshotParse.options;
+    const auto releasePerformanceParse =
+        parseReleasePerformanceOptions(commandLineArguments);
+    if (!releasePerformanceParse.valid())
+    {
+        std::cerr << "Invalid release performance options: "
+                  << releasePerformanceParse.error << '\n';
+        return 2;
+    }
+    const ReleasePerformanceOptions releasePerformance =
+        releasePerformanceParse.options;
     if (releaseScreenshot.requested())
     {
         const fs::path outputPath = releaseScreenshot.outputPath;
@@ -6929,6 +6953,43 @@ int main(int argc, char **argv)
         if (!fs::is_directory(parent, pathError) || pathError)
         {
             std::cerr << "Release screenshot parent directory is not "
+                         "accessible: "
+                      << parent << '\n';
+            return 2;
+        }
+    }
+    if (releasePerformance.requested())
+    {
+        const fs::path outputPath = releasePerformance.outputPath;
+        std::error_code pathError;
+        const bool outputExists = fs::exists(outputPath, pathError);
+        if (pathError)
+        {
+            std::cerr << "Unable to inspect release performance output: "
+                      << pathError.message() << '\n';
+            return 2;
+        }
+        const bool outputIsSymlink = fs::is_symlink(outputPath, pathError);
+        if (pathError == std::errc::no_such_file_or_directory)
+            pathError.clear();
+        if (pathError)
+        {
+            std::cerr << "Unable to inspect release performance output: "
+                      << pathError.message() << '\n';
+            return 2;
+        }
+        if (outputExists || outputIsSymlink)
+        {
+            std::cerr << "Release performance output already exists: "
+                      << outputPath << '\n';
+            return 2;
+        }
+        const fs::path parent = outputPath.has_parent_path()
+                                    ? outputPath.parent_path()
+                                    : fs::path{"."};
+        if (!fs::is_directory(parent, pathError) || pathError)
+        {
+            std::cerr << "Release performance parent directory is not "
                          "accessible: "
                       << parent << '\n';
             return 2;
@@ -6977,7 +7038,8 @@ int main(int argc, char **argv)
     if (gltfTankQaRequested)
         tankAssets.configureGltfProbe(gltfTankQaPath);
     tankAssets.load(resourceRoot, lighting.shader(), lighting.depthShader());
-    const std::uint32_t gameSeed = releaseScreenshot.requested()
+    const std::uint32_t gameSeed =
+        (releaseScreenshot.requested() || releasePerformance.requested())
                                        ? kReleaseScreenshotSeed
                                        : static_cast<std::uint32_t>(
                                              std::random_device{}());
@@ -6993,6 +7055,15 @@ int main(int argc, char **argv)
     bool forestCoverShowcase = false;
     bool exitRequested = false;
     bool releaseScreenshotSaved = false;
+    bool releasePerformanceSaved = false;
+    bool releasePerformanceFramePending = false;
+    int releasePerformancePendingStage = 1;
+    int releasePerformancePendingPlayerCount = 1;
+    std::string releasePerformancePendingState = "gameplay";
+    bool releasePerformancePendingFocus = true;
+    std::uint64_t releasePerformanceCompletedStages = 0U;
+    std::uint64_t releasePerformancePendingCompletedStages = 0U;
+    std::unique_ptr<ReleasePerformanceRecorder> releasePerformanceRecorder;
     int renderedGameFrames = 0;
     int processResult = 0;
     std::string menuError;
@@ -7095,18 +7166,103 @@ int main(int argc, char **argv)
         processResult = 2;
         exitRequested = true;
     }
+    if (releasePerformance.requested())
+    {
+        if (!inGame)
+        {
+            std::cerr << "Release performance telemetry could not start its "
+                         "quick-start game\n";
+            processResult = 2;
+            exitRequested = true;
+        }
+        else
+        {
+            releasePerformanceRecorder =
+                std::make_unique<ReleasePerformanceRecorder>(
+                    releasePerformance, TANKS3D_RELEASE_SOURCE_COMMIT,
+                    TANKS3D_RELEASE_SOURCE_TAG,
+                    std::chrono::system_clock::now());
+            if (!releasePerformanceRecorder->valid())
+            {
+                std::cerr << "Unable to initialize release performance "
+                             "telemetry: "
+                          << releasePerformanceRecorder->error() << '\n';
+                processResult = 2;
+                exitRequested = true;
+            }
+            else
+            {
+                std::cout << "TANKS3D_PERFORMANCE_START "
+                          << releasePerformance.sessionNonce << std::endl;
+            }
+        }
+    }
 
     auto previousFrame = std::chrono::steady_clock::now() - std::chrono::microseconds(16667);
     while (!exitRequested && !WindowShouldClose())
     {
         const auto frameStart = std::chrono::steady_clock::now();
         LaptopFramePacer framePacer(frameStart);
-        const float dt = std::chrono::duration<float>(frameStart - previousFrame).count();
+        const double actualFrameDuration =
+            std::chrono::duration<double>(frameStart - previousFrame).count();
+        const float dt = static_cast<float>(actualFrameDuration);
         previousFrame = frameStart;
-        if (!releaseScreenshot.requested() && IsKeyPressed(KEY_F11))
+        if (releasePerformanceRecorder && releasePerformanceFramePending)
+        {
+            releasePerformanceFramePending = false;
+            if (!releasePerformanceRecorder->recordFrame(
+                    actualFrameDuration, releasePerformancePendingStage,
+                    releasePerformancePendingPlayerCount,
+                    releasePerformancePendingState,
+                    releasePerformancePendingFocus,
+                    releasePerformancePendingCompletedStages))
+            {
+                std::cerr << "Release performance telemetry failed: "
+                          << releasePerformanceRecorder->error() << '\n';
+                processResult = 1;
+                exitRequested = true;
+                break;
+            }
+            if (releasePerformanceRecorder->targetDurationReached())
+            {
+                const auto finalized = releasePerformanceRecorder->finalize(
+                    std::chrono::system_clock::now(), true);
+                const auto saved = finalized.succeeded()
+                                       ? releasePerformanceRecorder
+                                             ->saveNoReplace()
+                                       : finalized;
+                if (!saved.succeeded())
+                {
+                    std::cerr << "Unable to save release performance "
+                                 "telemetry: "
+                              << saved.message << '\n';
+                    processResult = 1;
+                }
+                else
+                {
+                    releasePerformanceSaved = true;
+                    std::cout << "TANKS3D_PERFORMANCE_COMPLETE "
+                              << releasePerformance.sessionNonce
+                              << std::endl;
+                }
+                exitRequested = true;
+                break;
+            }
+        }
+        if (!releaseScreenshot.requested() &&
+            !releasePerformance.requested() && IsKeyPressed(KEY_F11))
             ToggleBorderlessWindowed();
-        if (IsKeyPressed(KEY_F8))
+        if (!releasePerformance.requested() && IsKeyPressed(KEY_F8))
             lighting.toggleQuality();
+
+        if (releasePerformanceRecorder && !inGame)
+        {
+            std::cerr << "Release performance telemetry left the active "
+                         "game before reaching its duration\n";
+            processResult = 1;
+            exitRequested = true;
+            break;
+        }
 
         if (!inGame)
         {
@@ -7174,16 +7330,29 @@ int main(int argc, char **argv)
         if ((game.settling() || game.highScoreDisplay()) &&
             (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)))
             game.confirmSettlement();
-        else if (!game.endingSequence() && IsKeyPressed(KEY_ENTER))
+        else if (!releasePerformance.requested() &&
+                 !game.endingSequence() && IsKeyPressed(KEY_ENTER))
             game.togglePause();
-        if (!game.endingSequence() && IsKeyPressed(KEY_T))
-            game.toggleTargets();
-        if (!game.endingSequence() && IsKeyPressed(KEY_N) && !game.changeStage(1))
-            menuError = game.lastError();
-        if (!game.endingSequence() && IsKeyPressed(KEY_B) && !game.changeStage(-1))
-            menuError = game.lastError();
-        if (!game.endingSequence() && IsKeyPressed(KEY_R) && !game.restart())
-            menuError = game.lastError();
+        if (!releasePerformance.requested())
+        {
+            if (!game.endingSequence() && IsKeyPressed(KEY_T))
+                game.toggleTargets();
+            if (!game.endingSequence() && IsKeyPressed(KEY_N) &&
+                !game.changeStage(1))
+            {
+                menuError = game.lastError();
+            }
+            if (!game.endingSequence() && IsKeyPressed(KEY_B) &&
+                !game.changeStage(-1))
+            {
+                menuError = game.lastError();
+            }
+            if (!game.endingSequence() && IsKeyPressed(KEY_R) &&
+                !game.restart())
+            {
+                menuError = game.lastError();
+            }
+        }
 
         if (game.consumeMenuRequest())
         {
@@ -7199,6 +7368,29 @@ int main(int argc, char **argv)
             const PlayerInputFrame inputFrame =
                 readRaylibPlayerInputFrame();
             game.update(dt, inputFrame);
+            if (releasePerformanceRecorder)
+            {
+                for (const GameEvent &event : game.eventsThisUpdate())
+                {
+                    if (event.type != GameEventType::StageEnded ||
+                        event.stageEndReason != StageEndReason::Cleared)
+                    {
+                        continue;
+                    }
+                    if (releasePerformanceCompletedStages ==
+                        std::numeric_limits<std::uint64_t>::max())
+                    {
+                        std::cerr << "Release performance completed-stage "
+                                     "counter overflowed\n";
+                        processResult = 1;
+                        exitRequested = true;
+                        break;
+                    }
+                    ++releasePerformanceCompletedStages;
+                }
+                if (exitRequested)
+                    break;
+            }
         }
         if (game.consumeMenuRequest())
         {
@@ -7212,6 +7404,19 @@ int main(int argc, char **argv)
         renderGame(game, viewTargets, lighting, tankAssets, environment,
                    bonusAssets, postProcess);
         ++renderedGameFrames;
+        if (releasePerformanceRecorder)
+        {
+            releasePerformancePendingStage = game.stage();
+            releasePerformancePendingPlayerCount = game.playerCount();
+            releasePerformancePendingState =
+                game.highScoreDisplay()
+                    ? "high_score"
+                    : (game.settling() ? "settlement" : "gameplay");
+            releasePerformancePendingFocus = IsWindowFocused();
+            releasePerformancePendingCompletedStages =
+                releasePerformanceCompletedStages;
+            releasePerformanceFramePending = true;
+        }
         if (releaseScreenshot.due(renderedGameFrames))
         {
             Image image = LoadImageFromScreen();
@@ -7276,6 +7481,13 @@ int main(int argc, char **argv)
     {
         std::cerr << "Release screenshot capture ended before its requested "
                      "frame\n";
+        processResult = 1;
+    }
+    if (releasePerformance.requested() && !releasePerformanceSaved &&
+        processResult == 0)
+    {
+        std::cerr << "Release performance capture ended before its requested "
+                     "duration\n";
         processResult = 1;
     }
 

@@ -1081,3 +1081,27 @@ Keep remaining non-command producers in place until a narrow consumer boundary
 is proven. Owned-shell cleanup, spawn-point mapping and entity adaptation,
 events, audio, entities, map, rendering, cameras, and concrete movement/fire
 orchestration and presentation adapters remain in `Game3D`.
+
+The forty-seventh increment closes the last automatable long-session evidence
+gap without changing gameplay, maps, or assets. A default-off recorder samples
+real completed render frames in one-second monotonic windows and reads current
+macOS physical footprint rather than the process high-water mark. Raw integer
+timing, frame, RSS, stage, player, state, per-window gameplay/focus duration,
+and candidate-event cleared-stage count are bound to the candidate SHA,
+embedded source commit/tag, and a fresh nonce; output uses the same atomic
+no-replace writer as release screenshots. A separate runner re-verifies the
+tagged candidate, copies it through no-follow descriptors to a private snapshot,
+rehashes that snapshot, extracts only that immutable input, hashes its exact
+executable, captures stdout/stderr, and publishes a receipt only after an
+ordered START/COMPLETE pair and clean exit. The v2 release verifier recomputes
+weighted average FPS, one-percent-low FPS, MiB values, gameplay/focus coverage,
+player mode, and cleared-stage count; it checks continuous 0.75–1.25 second
+windows, caps physical-footprint growth, and rejects a forged receipt,
+executable, identity, nonce, argv, marker, raw sample, static-screen session, or
+ZIP replacement race. Legacy v1 reports remain valid only while blocked. The
+C++ ledger is now 221 suites and 8,580 checks; 35 release-verifier tests and 12
+runner tests cover the Python gate. ASan/UBSan, the 18-profile coverage merge,
+static distribution verifier, and a real GPU telemetry smoke pass. Overall
+production coverage is 51.52%/65.34%/46.70%/53.32%; the recorder is
+88.33%/95.45%/81.60%/73.50%, and its option parser is
+100%/100%/100%/96.72%.

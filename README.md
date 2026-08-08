@@ -74,9 +74,23 @@ the [Alpha 3 status](docs/releases/v0.1.0-alpha.3-status.json) and
 [release checklist](docs/RELEASE_CHECKLIST.md). Manual PASS records use
 candidate-bound structured session, command, event, and performance logs; the
 fixed 30-minute Alpha budget requires >=50 average FPS, >=30 1% low FPS, and
-<=256 MB memory growth. For the inherited 22-sound set, v1 accepts only the
-release owner's explicit `ACCEPT` risk decision; `CONFIRM` needs a future
-profile with an externally trusted cryptographic rights-holder signature.
+<=256 MiB memory growth. Raw telemetry must also prove at least one cleared
+stage, >=80% active-gameplay time, and >=95% focused-window time. Alpha 3 is a
+frozen, blocked v1 record. Any new
+candidate must use `macos-alpha-v2` and collect candidate-generated telemetry
+and its launch receipt with:
+
+```sh
+make run-alpha-performance-qa DIST_CHANNEL=alpha.N
+```
+
+The runner re-verifies the tagged candidate, copies the verified ZIP to a
+private hash-checked snapshot, extracts only that snapshot, records real
+one-second frame/RSS windows for 1,801 seconds, and refuses to replace an
+existing evidence directory. For the inherited 22-sound set, the profile
+accepts only the release owner's explicit `ACCEPT` risk decision; `CONFIRM`
+needs a future profile with an externally trusted cryptographic rights-holder
+signature.
 
 ## Controls
 

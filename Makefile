@@ -19,8 +19,13 @@ APP_RESOURCES := $(APP)/Contents/Resources
 RELEASE_SCREENSHOT_SMOKE_DIR := build/release-screenshot-smoke
 RELEASE_SCREENSHOT_SMOKE_FILE := \
 	$(RELEASE_SCREENSHOT_SMOKE_DIR)/tank-showcase.png
+RELEASE_PERFORMANCE_SMOKE_DIR := build/release-performance-smoke
+RELEASE_PERFORMANCE_SMOKE_FILE := \
+	$(RELEASE_PERFORMANCE_SMOKE_DIR)/performance-log-v2.json
 COMMAND_SIDE_EFFECT_DISPATCH_SOURCE := \
 	src/app/command_side_effect_dispatch.cpp
+ATOMIC_OUTPUT_FILE_SOURCE := src/app/atomic_output_file.cpp
+RELEASE_PERFORMANCE_LOG_SOURCE := src/app/release_performance_log.cpp
 RELEASE_SCREENSHOT_FILE_SOURCE := src/app/release_screenshot_file.cpp
 SHELL_CANCELLATION_PRESENTATION_SOURCE := \
 	src/app/shell_cancellation_presentation.cpp
@@ -28,6 +33,8 @@ SHELL_MAP_CORE_PRESENTATION_SOURCE := \
 	src/app/shell_map_core_presentation.cpp
 SHELL_TANK_PRESENTATION_SOURCE := src/app/shell_tank_presentation.cpp
 APP_SOURCES := $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
+	$(ATOMIC_OUTPUT_FILE_SOURCE) \
+	$(RELEASE_PERFORMANCE_LOG_SOURCE) \
 	$(RELEASE_SCREENSHOT_FILE_SOURCE) \
 	$(SHELL_CANCELLATION_PRESENTATION_SOURCE) \
 	$(SHELL_MAP_CORE_PRESENTATION_SOURCE) \
@@ -48,6 +55,9 @@ DEPFILES := $(OBJECTS:.o=.d)
 AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
 APP_HEADERS := src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
+	src/app/atomic_output_file.h \
+	src/app/release_performance_log.h \
+	src/app/release_performance_options.h \
 	src/app/release_screenshot_file.h \
 	src/app/release_screenshot_options.h \
 	src/app/shell_cancellation_presentation.h \
@@ -82,8 +92,13 @@ ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT := \
 ALPHA_CANDIDATE_GATE_TEST := tests/test_alpha_candidate_gate.sh
 RELEASE_REQUIREMENTS_PROFILE := \
 	docs/release-requirements/macos-alpha-v1.json
+RELEASE_REQUIREMENTS_PROFILE_V2 := \
+	docs/release-requirements/macos-alpha-v2.json
 RELEASE_STATUS_VERIFY_SCRIPT := scripts/verify_release_status.py
 RELEASE_STATUS_TEST := tests/test_release_status_verifier.py
+RELEASE_PERFORMANCE_QA_RUNNER := scripts/run_release_performance_qa.py
+RELEASE_PERFORMANCE_QA_RUNNER_TEST := \
+	tests/test_release_performance_runner.py
 
 CORE_TEST_SOURCES := tests/core_coordinates_tests.cpp \
 	tests/core_gameplay_rules_tests.cpp
@@ -114,6 +129,12 @@ COMMAND_SIDE_EFFECT_DISPATCH_TEST_SOURCE := \
 	tests/command_side_effect_dispatch_tests.cpp
 COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET := \
 	build/tests/command_side_effect_dispatch_tests
+ATOMIC_OUTPUT_FILE_TEST_SOURCE := tests/atomic_output_file_tests.cpp
+ATOMIC_OUTPUT_FILE_TEST_TARGET := build/tests/atomic_output_file_tests
+RELEASE_PERFORMANCE_LOG_TEST_SOURCE := \
+	tests/release_performance_log_tests.cpp
+RELEASE_PERFORMANCE_LOG_TEST_TARGET := \
+	build/tests/release_performance_log_tests
 RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE := \
 	tests/release_screenshot_options_tests.cpp
 RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET := \
@@ -131,6 +152,8 @@ SHELL_MAP_CORE_PRESENTATION_TEST_SOURCE := \
 SHELL_MAP_CORE_PRESENTATION_TEST_TARGET := \
 	build/tests/shell_map_core_presentation_tests
 APP_TEST_TARGETS := $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET) \
+	$(ATOMIC_OUTPUT_FILE_TEST_TARGET) \
+	$(RELEASE_PERFORMANCE_LOG_TEST_TARGET) \
 	$(RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET) \
 	$(SHELL_CANCELLATION_PRESENTATION_TEST_TARGET) \
 	$(SHELL_MAP_CORE_PRESENTATION_TEST_TARGET) \
@@ -191,12 +214,19 @@ DIST_BASENAME := Tanks3D-$(APP_VERSION)-$(DIST_CHANNEL)-macos-$(DIST_ARCH)-macos
 DIST_ARCHIVE := $(DIST_DIR)/$(DIST_BASENAME).zip
 DIST_CHECKSUM := $(DIST_ARCHIVE).sha256
 ALPHA_CANDIDATE_TAG := v$(APP_VERSION)-$(DIST_CHANNEL)
+DIST_SOURCE_COMMIT ?= $(shell git rev-parse --verify HEAD^{commit} 2>/dev/null)
+DIST_SOURCE_TAG ?= $(ALPHA_CANDIDATE_TAG)
+DIST_IDENTITY_FLAGS := \
+	-DTANKS3D_RELEASE_SOURCE_COMMIT=\"$(DIST_SOURCE_COMMIT)\" \
+	-DTANKS3D_RELEASE_SOURCE_TAG=\"$(DIST_SOURCE_TAG)\"
 ALPHA_CANDIDATE_DIR ?= \
 	$(abspath build/release/$(ALPHA_CANDIDATE_TAG))
 RELEASE_STATUS_FILE ?= \
 	docs/releases/$(ALPHA_CANDIDATE_TAG)-status.json
+RELEASE_PERFORMANCE_QA_OUTPUT_DIR ?= \
+	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/performance)
 DIST_COMPILE_FLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
-	-mmacosx-version-min=$(DIST_MACOS_MIN)
+	-mmacosx-version-min=$(DIST_MACOS_MIN) $(DIST_IDENTITY_FLAGS)
 DIST_LINK_FLAGS := -mmacosx-version-min=$(DIST_MACOS_MIN) \
 	-framework Cocoa -framework IOKit -framework OpenGL
 DIST_COMPILER_ID := $(shell $(CXX) --version 2>/dev/null | sed -n '1p')
@@ -260,6 +290,18 @@ COMPILED_COVERAGE_TEST_DEPFILES := \
 	$(SETTLEMENT_SYSTEM_COVERAGE_TEST_OBJECT:.o=.d)
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/command_side_effect_dispatch_tests
+ATOMIC_OUTPUT_FILE_COVERAGE_TARGET := \
+	$(COVERAGE_DIR)/atomic_output_file_tests
+ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT := \
+	$(COVERAGE_DIR)/app/atomic_output_file.o
+ATOMIC_OUTPUT_FILE_COVERAGE_TEST_OBJECT := \
+	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/atomic_output_file_tests.o
+RELEASE_PERFORMANCE_LOG_COVERAGE_TARGET := \
+	$(COVERAGE_DIR)/release_performance_log_tests
+RELEASE_PERFORMANCE_LOG_COVERAGE_OBJECT := \
+	$(COVERAGE_DIR)/app/release_performance_log.o
+RELEASE_PERFORMANCE_LOG_COVERAGE_TEST_OBJECT := \
+	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/release_performance_log_tests.o
 RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/release_screenshot_options_tests
 RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT := \
@@ -290,12 +332,16 @@ SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT := \
 	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/shell_map_core_presentation_tests.o
 COMPILED_COVERAGE_TEST_DEPFILES += \
 	$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT:.o=.d) \
+	$(ATOMIC_OUTPUT_FILE_COVERAGE_TEST_OBJECT:.o=.d) \
+	$(RELEASE_PERFORMANCE_LOG_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(SHELL_TANK_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(SHELL_CANCELLATION_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d)
 APP_COVERAGE_TARGETS := \
 	$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET) \
+	$(ATOMIC_OUTPUT_FILE_COVERAGE_TARGET) \
+	$(RELEASE_PERFORMANCE_LOG_COVERAGE_TARGET) \
 	$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET) \
 	$(SHELL_CANCELLATION_PRESENTATION_COVERAGE_TARGET) \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TARGET) \
@@ -353,6 +399,7 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	test-app test-core-boundaries test-pure-boundaries \
 	test-app-boundaries test-architecture test-unit test-session \
 	test-assets test-bundle test-release-screenshot test-sanitize coverage \
+	test-release-performance-smoke run-alpha-performance-qa \
 	check-dist-prereqs test-dist dist test-alpha-candidate \
 	verify-alpha-candidate verify-tagged-alpha-candidate alpha-candidate \
 	test-release-status check-alpha-release-evidence \
@@ -394,6 +441,10 @@ $(APP_EXECUTABLE): $(TARGET) macos/Info.plist $(RUNTIME_RESOURCES)
 check-dist-prereqs:
 	test -f "$(RAYLIB_STATIC)"
 	test -n "$(APP_VERSION)"
+	printf '%s\n' "$(DIST_SOURCE_COMMIT)" | \
+		grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$$'
+	printf '%s\n' "$(DIST_SOURCE_TAG)" | \
+		grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$$'
 	test -n "$(DIST_MACOS_MIN)"
 	test "$(RAYLIB_STATIC_MEMBER_COUNT)" -gt 0
 	test "$(RAYLIB_STATIC_MINOS_COUNT)" -eq \
@@ -411,6 +462,8 @@ $(DIST_CONFIG_FILE): force-dist-config | check-dist-prereqs
 	{ \
 		printf '%s\n' 'compiler=$(CXX)' \
 			'compiler-id=$(DIST_COMPILER_ID)' \
+			'source-commit=$(DIST_SOURCE_COMMIT)' \
+			'source-tag=$(DIST_SOURCE_TAG)' \
 			'raylib-prefix=$(abspath $(RAYLIB_PREFIX))' \
 			'raylib-sha256=$(DIST_RAYLIB_SHA256)' \
 			'arch=$(DIST_ARCH)' 'macos-min=$(DIST_MACOS_MIN)' \
@@ -492,8 +545,13 @@ test-dist: $(DIST_CHECKSUM) $(DIST_RESOURCE_MANIFEST) $(DIST_VERIFY_SCRIPT) \
 dist: test test-dist
 
 test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
-		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST)
+		$(RELEASE_REQUIREMENTS_PROFILE_V2) \
+		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST) \
+		$(RELEASE_PERFORMANCE_QA_RUNNER) \
+		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 	python3 -B $(RELEASE_STATUS_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 
 test-alpha-candidate: test-release-status $(ALPHA_CANDIDATE_BUILD_SCRIPT) \
 		$(ALPHA_CANDIDATE_VERIFY_SCRIPT) \
@@ -558,6 +616,28 @@ test-release-screenshot: all
 		--release-screenshot-frame=2; then \
 		echo 'missing screenshot parent was accepted' >&2; exit 1; \
 	fi
+
+# Local macOS GPU smoke for the candidate-generated telemetry path. It stays
+# outside `test` and the immutable candidate gate because it opens a window.
+test-release-performance-smoke: all
+	$(RM) -r $(RELEASE_PERFORMANCE_SMOKE_DIR)
+	mkdir -p $(RELEASE_PERFORMANCE_SMOKE_DIR)
+	./$(TARGET) --quick-start \
+		--release-performance-log=$(abspath $(RELEASE_PERFORMANCE_SMOKE_FILE)) \
+		--release-candidate-sha256=0000000000000000000000000000000000000000000000000000000000000000 \
+		--release-session-nonce=11111111111111111111111111111111 \
+		--release-performance-duration-seconds=2
+	test -s $(RELEASE_PERFORMANCE_SMOKE_FILE)
+	python3 -m json.tool $(RELEASE_PERFORMANCE_SMOKE_FILE) >/dev/null
+
+# Create the output directory once. The runner refuses non-empty destinations,
+# re-verifies the immutable candidate, and writes evidence without replacement.
+run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER)
+	install -d -m 700 $(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)
+	python3 -B $(RELEASE_PERFORMANCE_QA_RUNNER) \
+		--project-root "$(abspath .)" \
+		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
+		--output-dir "$(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)"
 
 test: all test-bundle test-rules test-app
 	./$(TARGET) --self-test
@@ -650,15 +730,36 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET): \
 		-Werror $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_SOURCE) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) -o $@
 
+$(ATOMIC_OUTPUT_FILE_TEST_TARGET): $(ATOMIC_OUTPUT_FILE_TEST_SOURCE) \
+		$(ATOMIC_OUTPUT_FILE_SOURCE) src/app/atomic_output_file.h \
+		tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
+		-Werror $(ATOMIC_OUTPUT_FILE_TEST_SOURCE) \
+		$(ATOMIC_OUTPUT_FILE_SOURCE) -o $@
+
+$(RELEASE_PERFORMANCE_LOG_TEST_TARGET): \
+		$(RELEASE_PERFORMANCE_LOG_TEST_SOURCE) \
+		$(RELEASE_PERFORMANCE_LOG_SOURCE) $(ATOMIC_OUTPUT_FILE_SOURCE) \
+		src/app/release_performance_log.h \
+		src/app/release_performance_options.h \
+		src/app/atomic_output_file.h tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
+		-Werror $(RELEASE_PERFORMANCE_LOG_TEST_SOURCE) \
+		$(RELEASE_PERFORMANCE_LOG_SOURCE) $(ATOMIC_OUTPUT_FILE_SOURCE) \
+		-o $@
+
 $(RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET): \
 		$(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
-		$(RELEASE_SCREENSHOT_FILE_SOURCE) \
+		$(RELEASE_SCREENSHOT_FILE_SOURCE) $(ATOMIC_OUTPUT_FILE_SOURCE) \
+		src/app/atomic_output_file.h \
 		src/app/release_screenshot_file.h \
 		src/app/release_screenshot_options.h tests/test_support.h
 	mkdir -p $(dir $@)
 	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
 		-Werror $(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) \
-		$(RELEASE_SCREENSHOT_FILE_SOURCE) -o $@
+		$(RELEASE_SCREENSHOT_FILE_SOURCE) $(ATOMIC_OUTPUT_FILE_SOURCE) -o $@
 
 $(SHELL_CANCELLATION_PRESENTATION_TEST_TARGET): \
 		$(SHELL_CANCELLATION_PRESENTATION_TEST_SOURCE) \
@@ -783,6 +884,18 @@ $(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT): \
 		-Werror $(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) \
 		-c $(RELEASE_SCREENSHOT_OPTIONS_TEST_SOURCE) -o $@
 
+# This driver instruments the inline performance option parser; the recorder
+# and atomic writer use their canonical production coverage objects.
+$(RELEASE_PERFORMANCE_LOG_COVERAGE_TEST_OBJECT): \
+		$(RELEASE_PERFORMANCE_LOG_TEST_SOURCE) \
+		src/app/release_performance_log.h \
+		src/app/release_performance_options.h \
+		src/app/atomic_output_file.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic \
+		-Werror $(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) \
+		-c $(RELEASE_PERFORMANCE_LOG_TEST_SOURCE) -o $@
+
 $(STAGE_GENERATOR_COVERAGE_TARGET): \
 		$(STAGE_GENERATOR_COVERAGE_TEST_OBJECT) \
 		$(STAGE_GENERATOR_COVERAGE_OBJECT) $(PURE_HEADERS) \
@@ -859,15 +972,40 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET): \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_OBJECT) -o $@
 
+$(ATOMIC_OUTPUT_FILE_COVERAGE_TARGET): \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_TEST_OBJECT) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT) \
+		src/app/atomic_output_file.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_TEST_OBJECT) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT) -o $@
+
+$(RELEASE_PERFORMANCE_LOG_COVERAGE_TARGET): \
+		$(RELEASE_PERFORMANCE_LOG_COVERAGE_TEST_OBJECT) \
+		$(RELEASE_PERFORMANCE_LOG_COVERAGE_OBJECT) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT) \
+		src/app/release_performance_log.h \
+		src/app/release_performance_options.h \
+		src/app/atomic_output_file.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
+		$(RELEASE_PERFORMANCE_LOG_COVERAGE_TEST_OBJECT) \
+		$(RELEASE_PERFORMANCE_LOG_COVERAGE_OBJECT) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT) -o $@
+
 $(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET): \
 		$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT) \
 		$(RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT) \
+		src/app/atomic_output_file.h \
 		src/app/release_screenshot_file.h \
 		src/app/release_screenshot_options.h tests/test_support.h
 	mkdir -p $(dir $@)
 	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
 		$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT) \
-		$(RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT) -o $@
+		$(RELEASE_SCREENSHOT_FILE_COVERAGE_OBJECT) \
+		$(ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT) -o $@
 
 $(SHELL_TANK_PRESENTATION_COVERAGE_TARGET): \
 		$(SHELL_TANK_PRESENTATION_COVERAGE_TEST_OBJECT) \

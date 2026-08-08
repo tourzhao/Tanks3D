@@ -1,0 +1,721 @@
+#!/usr/bin/env python3
+"""Run candidate-generated macOS performance QA and publish an audit receipt.
+
+This runner never fabricates telemetry.  It verifies the tagged candidate,
+launches the executable extracted from that candidate, and publishes a receipt
+only after the candidate exits successfully and its identity-bound v2 telemetry
+and stdout markers validate.  The output directory must be an existing, empty,
+owner-private directory so every output is created with no-replace semantics.
+"""
+
+import argparse
+import datetime
+import errno
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import stat
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+
+
+TELEMETRY_SCHEMA = "tanks3d-performance-log-v2"
+RECEIPT_SCHEMA = "tanks3d-performance-qa-receipt-v1"
+TELEMETRY_FILENAME = "performance-log-v2.json"
+STDOUT_FILENAME = "performance-stdout.log"
+STDERR_FILENAME = "performance-stderr.log"
+RECEIPT_FILENAME = "performance-qa-receipt.json"
+START_MARKER = "TANKS3D_PERFORMANCE_START"
+COMPLETE_MARKER = "TANKS3D_PERFORMANCE_COMPLETE"
+DEFAULT_DURATION_SECONDS = 1801
+MAX_DURATION_SECONDS = 4 * 60 * 60
+MAX_TELEMETRY_BYTES = 128 * 1024 * 1024
+MAX_MARKER_LOG_BYTES = 16 * 1024 * 1024
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+COMMIT_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+RECEIPT_KEYS = {
+    "schema",
+    "candidate_filename",
+    "candidate_sha256",
+    "executable_sha256",
+    "source_commit",
+    "source_tag",
+    "session_nonce",
+    "argv",
+    "pid",
+    "started_at_utc",
+    "completed_at_utc",
+    "exit_code",
+    "telemetry",
+    "stdout",
+    "stderr",
+}
+FILE_REFERENCE_KEYS = {"path", "sha256"}
+REQUIRED_TELEMETRY_KEYS = {
+    "schema",
+    "candidate_sha256",
+    "session_nonce",
+    "source_commit",
+    "source_tag",
+    "clean_shutdown",
+}
+
+
+class RunnerError(Exception):
+    """A performance QA precondition or candidate contract failed."""
+
+
+@dataclass(frozen=True)
+class CandidateIdentity:
+    candidate_dir: Path
+    artifact: Path
+    artifact_sha256: str
+    source_commit: str
+    source_tag: str
+
+
+def utc_now() -> str:
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise RunnerError("cannot hash {}: {}".format(path, exc))
+    return digest.hexdigest()
+
+
+def open_regular_file_no_follow(
+    path: Path, label: str, flags: int, mode: Optional[int] = None
+) -> Tuple[int, os.stat_result]:
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise RunnerError("O_NOFOLLOW is required to secure the candidate snapshot")
+    descriptor = -1
+    try:
+        open_flags = flags | no_follow | getattr(os, "O_CLOEXEC", 0)
+        descriptor = (
+            os.open(path, open_flags)
+            if mode is None
+            else os.open(path, open_flags, mode)
+        )
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise RunnerError("{} must be a regular file".format(label))
+        return descriptor, metadata
+    except RunnerError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise RunnerError("cannot securely open {}: {}".format(label, exc))
+
+
+def sha256_descriptor(descriptor: int, label: str) -> str:
+    digest = hashlib.sha256()
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    except OSError as exc:
+        raise RunnerError("cannot hash {}: {}".format(label, exc))
+    return digest.hexdigest()
+
+
+def snapshot_candidate_archive(
+    identity: "CandidateIdentity", destination: Path
+) -> int:
+    snapshot = destination / "candidate-archive.snapshot.zip"
+    source_descriptor = -1
+    snapshot_descriptor = -1
+    snapshot_unlinked = False
+    descriptor_transferred = False
+    copied_digest = hashlib.sha256()
+    copied_size = 0
+    source_before: Optional[os.stat_result] = None
+    try:
+        source_descriptor, source_before = open_regular_file_no_follow(
+            identity.artifact,
+            "candidate archive snapshot source",
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
+        )
+        snapshot_descriptor, snapshot_metadata = open_regular_file_no_follow(
+            snapshot,
+            "candidate archive snapshot",
+            os.O_RDWR | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        if snapshot_metadata.st_nlink != 1:
+            raise RunnerError("candidate archive snapshot must have one link")
+
+        while True:
+            chunk = os.read(source_descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            copied_digest.update(chunk)
+            copied_size += len(chunk)
+            offset = 0
+            while offset < len(chunk):
+                written = os.write(snapshot_descriptor, chunk[offset:])
+                if written <= 0:
+                    raise RunnerError("candidate archive snapshot write made no progress")
+                offset += written
+
+        source_after = os.fstat(source_descriptor)
+        stable_fields_before = (
+            source_before.st_dev,
+            source_before.st_ino,
+            source_before.st_size,
+            source_before.st_mtime_ns,
+            source_before.st_ctime_ns,
+        )
+        stable_fields_after = (
+            source_after.st_dev,
+            source_after.st_ino,
+            source_after.st_size,
+            source_after.st_mtime_ns,
+            source_after.st_ctime_ns,
+        )
+        if stable_fields_before != stable_fields_after or copied_size != source_before.st_size:
+            raise RunnerError("candidate archive changed while its snapshot was copied")
+        if copied_digest.hexdigest() != identity.artifact_sha256:
+            raise RunnerError(
+                "candidate archive snapshot digest does not match its attestation"
+            )
+        os.fchmod(snapshot_descriptor, 0o400)
+        os.fsync(snapshot_descriptor)
+        os.unlink(snapshot)
+        snapshot_unlinked = True
+        if os.fstat(snapshot_descriptor).st_nlink != 0:
+            raise RunnerError("candidate archive snapshot remained path-addressable")
+        if (
+            sha256_descriptor(snapshot_descriptor, "candidate archive snapshot")
+            != identity.artifact_sha256
+        ):
+            raise RunnerError(
+                "candidate archive snapshot failed its same-descriptor digest check"
+            )
+        os.lseek(snapshot_descriptor, 0, os.SEEK_SET)
+        descriptor_transferred = True
+        return snapshot_descriptor
+    except RunnerError:
+        raise
+    except OSError as exc:
+        raise RunnerError("cannot copy candidate archive snapshot: {}".format(exc))
+    finally:
+        if snapshot_descriptor >= 0 and not descriptor_transferred:
+            os.close(snapshot_descriptor)
+        if source_descriptor >= 0:
+            os.close(source_descriptor)
+        if not snapshot_unlinked:
+            try:
+                snapshot.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
+
+def reject_duplicate_pairs(pairs: Sequence[Tuple[str, Any]]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise RunnerError("duplicate JSON key {!r}".format(key))
+        result[key] = value
+    return result
+
+
+def load_strict_json(path: Path) -> Any:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise RunnerError("cannot stat telemetry {}: {}".format(path, exc))
+    if size <= 0 or size > MAX_TELEMETRY_BYTES:
+        raise RunnerError("telemetry size is empty or exceeds the safety limit")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RunnerError("cannot read telemetry {}: {}".format(path, exc))
+    try:
+        return json.loads(text, object_pairs_hook=reject_duplicate_pairs)
+    except RunnerError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise RunnerError("candidate telemetry is invalid JSON: {}".format(exc))
+
+
+def require_real_directory(path: Path, label: str) -> Path:
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise RunnerError("{} is not accessible: {}".format(label, exc))
+    if stat.S_ISLNK(metadata.st_mode):
+        raise RunnerError("{} must not be a symbolic link".format(label))
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise RunnerError("{} must be a directory".format(label))
+    try:
+        return path.resolve(strict=True)
+    except OSError as exc:
+        raise RunnerError("{} cannot be normalized: {}".format(label, exc))
+
+
+def require_private_empty_output(path: Path) -> Path:
+    output = require_real_directory(path, "output directory")
+    try:
+        metadata = output.stat()
+    except OSError as exc:
+        raise RunnerError("cannot inspect output directory: {}".format(exc))
+    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        raise RunnerError("output directory must be owned by the current user")
+    if stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise RunnerError("output directory must be private (mode 0700 or stricter)")
+    try:
+        with os.scandir(output) as entries:
+            if next(entries, None) is not None:
+                raise RunnerError("output directory must be empty")
+    except OSError as exc:
+        raise RunnerError("cannot inspect output directory contents: {}".format(exc))
+    return output
+
+
+def require_regular_non_symlink(path: Path, label: str) -> Path:
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise RunnerError("{} is missing: {}".format(label, exc))
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise RunnerError("{} must be a regular non-symlink file".format(label))
+    return path
+
+
+def parse_attestation(path: Path) -> Dict[str, str]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise RunnerError("cannot read attestation: {}".format(exc))
+    values: Dict[str, str] = {}
+    for line_number, line in enumerate(lines, 1):
+        if not line or "=" not in line:
+            raise RunnerError("malformed attestation line {}".format(line_number))
+        key, value = line.split("=", 1)
+        if not key or key in values:
+            raise RunnerError("duplicate or empty attestation key on line {}".format(line_number))
+        values[key] = value
+    required = {
+        "source_commit",
+        "source_tag",
+        "artifact_filename",
+        "artifact_sha256",
+        "checksum_filename",
+        "build_config_filename",
+        "build_config_sha256",
+        "gate_log_filename",
+        "gate_log_sha256",
+    }
+    missing = sorted(required - set(values))
+    if missing:
+        raise RunnerError("attestation is missing keys: {}".format(", ".join(missing)))
+    return values
+
+
+def invoke_tagged_verifier(project_root: Path, candidate_dir: Path) -> None:
+    verifier = require_regular_non_symlink(
+        project_root / "scripts" / "verify_tagged_alpha_candidate.sh",
+        "tagged candidate verifier",
+    )
+    try:
+        completed = subprocess.run(
+            ["sh", str(verifier), str(project_root), str(candidate_dir)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise RunnerError("cannot run tagged candidate verifier: {}".format(exc))
+    if completed.returncode != 0:
+        diagnostic = (completed.stderr or completed.stdout).strip()
+        if len(diagnostic) > 800:
+            diagnostic = diagnostic[-800:]
+        raise RunnerError(
+            "tagged candidate verifier failed (exit {}): {}".format(
+                completed.returncode, diagnostic or "no diagnostic"
+            )
+        )
+
+
+def parse_candidate(project_root: Path, candidate_argument: Path) -> CandidateIdentity:
+    candidate_dir = require_real_directory(candidate_argument, "candidate directory")
+    try:
+        candidate_dir.relative_to(project_root)
+    except ValueError:
+        raise RunnerError("candidate directory must be inside the project root")
+    invoke_tagged_verifier(project_root, candidate_dir)
+
+    attestation_path = require_regular_non_symlink(
+        candidate_dir / "attestation.txt", "candidate attestation"
+    )
+    values = parse_attestation(attestation_path)
+    source_commit = values["source_commit"]
+    source_tag = values["source_tag"]
+    artifact_sha256 = values["artifact_sha256"]
+    if COMMIT_RE.fullmatch(source_commit) is None:
+        raise RunnerError("attested source commit is not a full object ID")
+    if TAG_RE.fullmatch(source_tag) is None:
+        raise RunnerError("attested source tag contains unsafe characters")
+    if SHA256_RE.fullmatch(artifact_sha256) is None:
+        raise RunnerError("attested artifact digest is not SHA-256")
+    expected_candidate = project_root / "build" / "release" / source_tag
+    if candidate_dir != expected_candidate:
+        raise RunnerError("candidate directory does not match its source tag")
+
+    filenames = {
+        "attestation.txt",
+        values["artifact_filename"],
+        values["checksum_filename"],
+        values["build_config_filename"],
+        values["gate_log_filename"],
+    }
+    if len(filenames) != 5:
+        raise RunnerError("candidate attestation assigns duplicate filenames")
+    try:
+        actual_entries = list(candidate_dir.iterdir())
+    except OSError as exc:
+        raise RunnerError("cannot enumerate candidate directory: {}".format(exc))
+    if {entry.name for entry in actual_entries} != filenames:
+        raise RunnerError("candidate directory must contain exactly its five attested files")
+    for entry in actual_entries:
+        require_regular_non_symlink(entry, "candidate file {!r}".format(entry.name))
+
+    artifact = candidate_dir / values["artifact_filename"]
+    if sha256_file(artifact) != artifact_sha256:
+        raise RunnerError("candidate archive digest does not match its attestation")
+    build_config = candidate_dir / values["build_config_filename"]
+    gate_log = candidate_dir / values["gate_log_filename"]
+    if sha256_file(build_config) != values["build_config_sha256"]:
+        raise RunnerError("build configuration digest does not match its attestation")
+    if sha256_file(gate_log) != values["gate_log_sha256"]:
+        raise RunnerError("gate log digest does not match its attestation")
+    checksum = candidate_dir / values["checksum_filename"]
+    try:
+        checksum_lines = [
+            line for line in checksum.read_text(encoding="utf-8").splitlines() if line
+        ]
+    except (OSError, UnicodeError) as exc:
+        raise RunnerError("cannot read candidate checksum: {}".format(exc))
+    expected_checksum = "{}  {}".format(artifact_sha256, artifact.name)
+    if checksum_lines != [expected_checksum]:
+        raise RunnerError("candidate checksum does not exactly bind the archive")
+    return CandidateIdentity(
+        candidate_dir=candidate_dir,
+        artifact=artifact,
+        artifact_sha256=artifact_sha256,
+        source_commit=source_commit,
+        source_tag=source_tag,
+    )
+
+
+def extract_candidate(archive_snapshot_descriptor: int, destination: Path) -> Path:
+    try:
+        snapshot_metadata = os.fstat(archive_snapshot_descriptor)
+        if not stat.S_ISREG(snapshot_metadata.st_mode) or snapshot_metadata.st_nlink != 0:
+            raise RunnerError(
+                "candidate archive snapshot descriptor is not an unlinked regular file"
+            )
+        os.lseek(archive_snapshot_descriptor, 0, os.SEEK_SET)
+    except RunnerError:
+        raise
+    except OSError as exc:
+        raise RunnerError("cannot inspect candidate archive snapshot descriptor: {}".format(exc))
+    archive_descriptor_path = "/dev/fd/{}".format(archive_snapshot_descriptor)
+    try:
+        completed = subprocess.run(
+            [
+                "/usr/bin/ditto",
+                "-x",
+                "-k",
+                archive_descriptor_path,
+                str(destination),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            pass_fds=(archive_snapshot_descriptor,),
+        )
+    except OSError as exc:
+        raise RunnerError("cannot execute /usr/bin/ditto: {}".format(exc))
+    if completed.returncode != 0:
+        diagnostic = (completed.stderr or completed.stdout).strip()
+        raise RunnerError(
+            "candidate extraction failed (exit {}): {}".format(
+                completed.returncode, diagnostic or "no diagnostic"
+            )
+        )
+    executable = destination / "Tanks3D.app" / "Contents" / "MacOS" / "Tanks3D"
+    require_regular_non_symlink(executable, "extracted candidate executable")
+    for parent in (executable.parent, executable.parent.parent, executable.parent.parent.parent):
+        if parent.is_symlink():
+            raise RunnerError("extracted app path must not traverse symbolic links")
+    if not os.access(executable, os.X_OK):
+        raise RunnerError("extracted candidate executable is not executable")
+    return executable
+
+
+def create_output_file(path: Path):
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as exc:
+        raise RunnerError("cannot exclusively create {}: {}".format(path.name, exc))
+    return os.fdopen(descriptor, "wb", buffering=0)
+
+
+def read_marker_log(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise RunnerError("cannot inspect candidate stdout: {}".format(exc))
+    if size > MAX_MARKER_LOG_BYTES:
+        raise RunnerError("candidate stdout exceeds the marker-log safety limit")
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RunnerError("candidate stdout is not valid UTF-8: {}".format(exc))
+
+
+def validate_markers(stdout_text: str, nonce: str) -> None:
+    start = "{} {}".format(START_MARKER, nonce)
+    complete = "{} {}".format(COMPLETE_MARKER, nonce)
+    lines = stdout_text.splitlines()
+    if lines.count(start) != 1 or lines.count(complete) != 1:
+        raise RunnerError("candidate stdout lacks exactly one matching START/COMPLETE marker")
+    if lines.index(start) >= lines.index(complete):
+        raise RunnerError("candidate performance markers are out of order")
+
+
+def validate_telemetry(path: Path, identity: CandidateIdentity, nonce: str) -> None:
+    require_regular_non_symlink(path, "candidate performance telemetry")
+    value = load_strict_json(path)
+    if not isinstance(value, dict):
+        raise RunnerError("candidate telemetry must be a JSON object")
+    missing = sorted(REQUIRED_TELEMETRY_KEYS - set(value))
+    if missing:
+        raise RunnerError("candidate telemetry is missing keys: {}".format(", ".join(missing)))
+    expected = {
+        "schema": TELEMETRY_SCHEMA,
+        "candidate_sha256": identity.artifact_sha256,
+        "session_nonce": nonce,
+        "source_commit": identity.source_commit,
+        "source_tag": identity.source_tag,
+    }
+    for key, expected_value in expected.items():
+        if value[key] != expected_value or not isinstance(value[key], str):
+            raise RunnerError("candidate telemetry {} does not match the candidate run".format(key))
+    if value["clean_shutdown"] is not True:
+        raise RunnerError("candidate telemetry must record clean_shutdown=true")
+
+
+def file_reference(path: Path) -> Dict[str, str]:
+    return {"path": path.name, "sha256": sha256_file(path)}
+
+
+def publish_json_no_replace(path: Path, value: Mapping[str, Any]) -> None:
+    if set(value) != RECEIPT_KEYS:
+        raise RunnerError("internal receipt key set is incomplete")
+    for key in ("telemetry", "stdout", "stderr"):
+        reference = value[key]
+        if not isinstance(reference, dict) or set(reference) != FILE_REFERENCE_KEYS:
+            raise RunnerError("internal receipt file reference is malformed")
+    encoded = (json.dumps(value, indent=2, sort_keys=False) + "\n").encode("utf-8")
+    descriptor = -1
+    temporary_path: Optional[Path] = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".performance-qa-receipt.", dir=str(path.parent)
+        )
+        temporary_path = Path(temporary_name)
+        os.fchmod(descriptor, 0o600)
+        offset = 0
+        while offset < len(encoded):
+            written = os.write(descriptor, encoded[offset:])
+            if written <= 0:
+                raise RunnerError("receipt write made no progress")
+            offset += written
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = -1
+        try:
+            os.link(str(temporary_path), str(path))
+        except OSError as exc:
+            if exc.errno == errno.EEXIST:
+                raise RunnerError("receipt already exists; refusing to replace it")
+            raise RunnerError("cannot atomically publish receipt: {}".format(exc))
+        temporary_path.unlink()
+        temporary_path = None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def run_performance_qa(
+    project_root_argument: Path,
+    candidate_dir_argument: Path,
+    output_dir_argument: Path,
+    duration_seconds: int = DEFAULT_DURATION_SECONDS,
+) -> Path:
+    if isinstance(duration_seconds, bool) or not isinstance(duration_seconds, int):
+        raise RunnerError("duration seconds must be an integer")
+    if duration_seconds < 1 or duration_seconds > MAX_DURATION_SECONDS:
+        raise RunnerError("duration seconds must be between 1 and {}".format(MAX_DURATION_SECONDS))
+    project_root = require_real_directory(project_root_argument, "project root")
+    output_dir = require_private_empty_output(output_dir_argument)
+    identity = parse_candidate(project_root, candidate_dir_argument)
+    nonce = secrets.token_hex(16)
+    if re.fullmatch(r"[0-9a-f]{32}", nonce) is None:
+        raise RunnerError("secure nonce generator returned an invalid value")
+
+    telemetry_path = output_dir / TELEMETRY_FILENAME
+    stdout_path = output_dir / STDOUT_FILENAME
+    stderr_path = output_dir / STDERR_FILENAME
+    receipt_path = output_dir / RECEIPT_FILENAME
+    receipt: Dict[str, Any]
+    with tempfile.TemporaryDirectory(prefix="tanks3d-performance-qa-") as temporary_name:
+        temporary_root = Path(temporary_name)
+        os.chmod(temporary_root, 0o700)
+        archive_snapshot_descriptor = snapshot_candidate_archive(
+            identity, temporary_root
+        )
+        extraction_root = temporary_root / "extracted"
+        extraction_root.mkdir(mode=0o700)
+        try:
+            executable = extract_candidate(
+                archive_snapshot_descriptor, extraction_root
+            )
+        finally:
+            os.close(archive_snapshot_descriptor)
+        executable_sha256 = sha256_file(executable)
+        argv = [
+            str(executable),
+            "--quick-start",
+            "--release-performance-log={}".format(telemetry_path),
+            "--release-candidate-sha256={}".format(identity.artifact_sha256),
+            "--release-session-nonce={}".format(nonce),
+            "--release-performance-duration-seconds={}".format(duration_seconds),
+        ]
+        started_at_utc = utc_now()
+        try:
+            with create_output_file(stdout_path) as stdout_stream, create_output_file(
+                stderr_path
+            ) as stderr_stream:
+                try:
+                    process = subprocess.Popen(
+                        argv,
+                        stdout=stdout_stream,
+                        stderr=stderr_stream,
+                        cwd=str(executable.parent),
+                        close_fds=True,
+                    )
+                except OSError as exc:
+                    raise RunnerError("cannot launch extracted candidate: {}".format(exc))
+                pid = process.pid
+                exit_code = process.wait()
+        except RunnerError:
+            raise
+        completed_at_utc = utc_now()
+        if not isinstance(pid, int) or pid <= 0:
+            raise RunnerError("candidate process did not provide a valid PID")
+        if exit_code != 0:
+            raise RunnerError("candidate performance run exited {}".format(exit_code))
+        validate_markers(read_marker_log(stdout_path), nonce)
+        validate_telemetry(telemetry_path, identity, nonce)
+
+        receipt = {
+            "schema": RECEIPT_SCHEMA,
+            "candidate_filename": identity.artifact.name,
+            "candidate_sha256": identity.artifact_sha256,
+            "executable_sha256": executable_sha256,
+            "source_commit": identity.source_commit,
+            "source_tag": identity.source_tag,
+            "session_nonce": nonce,
+            "argv": argv,
+            "pid": pid,
+            "started_at_utc": started_at_utc,
+            "completed_at_utc": completed_at_utc,
+            "exit_code": exit_code,
+            "telemetry": file_reference(telemetry_path),
+            "stdout": file_reference(stdout_path),
+            "stderr": file_reference(stderr_path),
+        }
+    publish_json_no_replace(receipt_path, receipt)
+    return receipt_path
+
+
+def positive_duration(value: str) -> int:
+    try:
+        parsed = int(value, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError("duration must be a base-10 integer")
+    if parsed < 1 or parsed > MAX_DURATION_SECONDS:
+        raise argparse.ArgumentTypeError(
+            "duration must be between 1 and {} seconds".format(MAX_DURATION_SECONDS)
+        )
+    return parsed
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project-root", required=True)
+    parser.add_argument("--candidate-dir", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--duration-seconds",
+        type=positive_duration,
+        default=DEFAULT_DURATION_SECONDS,
+    )
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    arguments = build_argument_parser().parse_args(argv)
+    try:
+        receipt = run_performance_qa(
+            Path(arguments.project_root),
+            Path(arguments.candidate_dir),
+            Path(arguments.output_dir),
+            arguments.duration_seconds,
+        )
+    except RunnerError as exc:
+        print("release performance QA failed: {}".format(exc), file=sys.stderr)
+        return 1
+    print("Release performance QA receipt: {}".format(receipt))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

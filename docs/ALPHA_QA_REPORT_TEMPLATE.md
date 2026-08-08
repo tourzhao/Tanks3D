@@ -163,11 +163,17 @@ effect. `Bandage` must also be checked for its spawn restrictions.
 
 ## Extended-Session Performance
 
-Run continuously for at least 30 minutes on the clean test Mac. The fixed Alpha
-thresholds are average FPS >= 50, 1% low FPS >= 30, sampling every 0.25–5
-seconds with at least 90% time coverage, and memory growth <= 256 MB. Attach a
-candidate-bound `tanks3d-performance-log-v1` JSON file containing the raw
-timestamped FPS and memory samples; summaries without samples do not pass.
+Run continuously for at least 30 minutes on the named performance-QA Mac. This
+may differ from the source-free Clean-Mac/Gatekeeper machine. The fixed Alpha
+thresholds are average FPS >= 50, 1% low FPS >= 30, continuous real one-second
+windows (each 0.75–1.25 seconds), physical-footprint growth <= 256 MiB, active
+gameplay >= 80%, and focused-window time >= 95%. Run
+`make run-alpha-performance-qa DIST_CHANNEL=alpha.N`, play normally, and
+complete at least one stage. Attach the generated v2 telemetry, QA receipt,
+stdout, and stderr files. The verifier derives FPS, memory, gameplay/focus
+coverage, player mode, and cleared-stage count from raw integer counters and
+candidate game events; hand-written summaries or legacy v1 samples do not
+pass.
 
 | Required field | Recorded value |
 | --- | --- |
@@ -176,7 +182,7 @@ timestamped FPS and memory samples; summaries without samples do not pass.
 | Fixed average / 1% low criteria | 50 / 30 FPS |
 | Average / minimum / 1% low FPS | NOT MEASURED — BLOCKED |
 | Thermal state, throttling, and fan observation | NOT MEASURED — BLOCKED |
-| Maximum allowed / observed memory growth | 256 MB / NOT MEASURED — BLOCKED |
+| Maximum allowed / observed memory growth | 256 MiB / NOT MEASURED — BLOCKED |
 | Rendering artifacts or camera/HUD failures | NOT RECORDED — BLOCKED |
 | Audio dropouts, distortion, overlap, or missing cues | NOT RECORDED — BLOCKED |
 | Crash / hang / soft-lock counts (each must be zero) | NOT RECORDED — BLOCKED |

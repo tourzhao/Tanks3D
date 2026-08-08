@@ -1,0 +1,517 @@
+{
+  "schema": "tanks3d-release-requirements-v2",
+  "profile": "macos-alpha-v2",
+  "status_values": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "NOT_RUN"
+  ],
+  "modes": [
+    "one_player",
+    "two_player"
+  ],
+  "report_metadata_keys": [
+    "qa_owner",
+    "completed_at_utc",
+    "release_date"
+  ],
+  "gameplay_ids": [
+    "start_and_control",
+    "movement_and_collision",
+    "fire_hits_and_shell_cancellation",
+    "pause_and_resume",
+    "escape_returns_to_setup",
+    "hp_death_and_respawn",
+    "streak_increment_and_reset",
+    "base_breach_and_core_loss",
+    "classified_ko_rows_and_totals",
+    "grenade_excluded_from_direct_ko",
+    "settlement_transition",
+    "fullscreen_toggle",
+    "resize_hud_camera_and_minimap",
+    "audio_cues_and_volume",
+    "complete_stage_stability"
+  ],
+  "base_ids": [
+    "usa",
+    "ussr",
+    "germany"
+  ],
+  "base_checks": [
+    "wall_damage",
+    "wall_breach",
+    "shovel_steel_material",
+    "shovel_steel_protection",
+    "tank_collision",
+    "core_loss",
+    "visibility",
+    "emblem_orientation"
+  ],
+  "pickup_requirements": [
+    {
+      "id": "grenade",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "helmet",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "clock",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "shovel",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "tank",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "star",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "gun",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "boat",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "bandage_heal",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ]
+    },
+    {
+      "id": "bandage_absent_at_full_hp",
+      "checks": [
+        "pickup_absent",
+        "no_pickup_visual_or_marker",
+        "no_collection_audio",
+        "no_score_delta",
+        "spawn_restriction_matches"
+      ]
+    },
+    {
+      "id": "bandage_disabled_at_max_hp_1",
+      "checks": [
+        "pickup_absent",
+        "no_pickup_visual_or_marker",
+        "no_collection_audio",
+        "no_score_delta",
+        "spawn_restriction_matches"
+      ]
+    },
+    {
+      "id": "pickup_lifetime_12_5_seconds",
+      "checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "no_collection_audio_before_collection",
+        "no_score_delta_before_collection",
+        "lifetime_12_5_seconds"
+      ]
+    }
+  ],
+  "settlement_ids": [
+    "basic_tank_ko",
+    "fast_tank_ko",
+    "power_tank_ko",
+    "armor_tank_ko",
+    "ko_total",
+    "score_points",
+    "grenade_exclusion"
+  ],
+  "published_control_checks": [
+    "menu_arrow_or_wasd_navigation",
+    "menu_enter_or_space_confirm",
+    "player_1_arrow_movement",
+    "player_1_fire_bindings",
+    "player_2_wasd_movement",
+    "player_2_fire_bindings",
+    "enter_pause_resume",
+    "escape_returns_to_setup",
+    "r_restarts_stage",
+    "f8_quality_toggle",
+    "f11_borderless_toggle",
+    "n_b_stage_navigation",
+    "q_or_escape_exits_from_setup"
+  ],
+  "clean_mac_detail_keys": [
+    "mac_model",
+    "chip",
+    "uname_machine",
+    "ram",
+    "macos_version",
+    "macos_build",
+    "clean_machine_method",
+    "download_url",
+    "download_client",
+    "downloaded_artifact_filename",
+    "downloaded_artifact_sha256",
+    "checksum_command",
+    "checksum_exit_code",
+    "prior_app_absent",
+    "prior_approval_absent",
+    "minimum_macos_met",
+    "source_checkout_absent",
+    "homebrew_raylib_unused"
+  ],
+  "gatekeeper_detail_keys": [
+    "zip_quarantine_command",
+    "zip_quarantine_exit_code",
+    "zip_quarantine_output",
+    "app_quarantine_command",
+    "app_quarantine_exit_code",
+    "app_quarantine_output",
+    "codesign_command",
+    "codesign_exit_code",
+    "spctl_command",
+    "spctl_exit_code",
+    "first_finder_launch",
+    "dialog_text",
+    "documented_launch_path",
+    "main_menu_reached",
+    "signature_preserved",
+    "conclusion",
+    "release_note_wording_verified"
+  ],
+  "extended_session_detail_keys": [
+    "duration_minutes",
+    "stages_completed",
+    "mode_mix",
+    "measurement_tools",
+    "sampling_interval_seconds",
+    "fps_acceptance_criterion",
+    "average_fps",
+    "minimum_fps",
+    "minimum_average_fps",
+    "minimum_one_percent_low_fps",
+    "one_percent_low_fps",
+    "thermal_state",
+    "throttling",
+    "fan_observation",
+    "memory_start_mb",
+    "memory_end_mb",
+    "memory_growth_observation",
+    "maximum_memory_growth_mb",
+    "rendering_artifacts",
+    "audio_issues",
+    "crashes_hangs_or_softlocks",
+    "crash_count",
+    "hang_count",
+    "softlock_count",
+    "logs_and_capture_locations"
+  ],
+  "interactive_evidence_keys": [
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "tested_at_utc",
+    "signature",
+    "coverage_refs"
+  ],
+  "evidence_ids": [
+    "main_menu_and_advanced_settings",
+    "one_player_gameplay",
+    "two_player_gameplay",
+    "national_bases",
+    "pickup_and_minimap",
+    "settlement_report",
+    "gatekeeper_launch",
+    "extended_session_metrics"
+  ],
+  "audio_decisions": [
+    "NONE",
+    "ACCEPT",
+    "CONFIRM",
+    "REPLACE"
+  ],
+  "known_issue_conclusions": [
+    "NONE",
+    "NONE_KNOWN",
+    "RECORDED"
+  ],
+  "known_issue_severities": [
+    "LOW",
+    "MEDIUM",
+    "HIGH",
+    "BLOCKER"
+  ],
+  "known_issue_decisions": [
+    "ACCEPT_FOR_ALPHA",
+    "FIX_BEFORE_RELEASE"
+  ],
+  "known_issue_fields": [
+    "id",
+    "severity",
+    "summary",
+    "reproduction",
+    "impact",
+    "workaround",
+    "release_decision",
+    "owner",
+    "evidence_ids"
+  ],
+  "audio_decision_checks": [
+    {
+      "decision": "ACCEPT",
+      "checks": [
+        "asset_licenses_reviewed",
+        "third_party_notices_reviewed",
+        "archive_license_bundle_reviewed",
+        "all_22_candidate_ogg_reviewed",
+        "chain_of_title_limitation_understood"
+      ]
+    },
+    {
+      "decision": "CONFIRM",
+      "checks": [
+        "asset_licenses_reviewed",
+        "third_party_notices_reviewed",
+        "archive_license_bundle_reviewed",
+        "all_22_candidate_ogg_reviewed",
+        "chain_of_title_limitation_understood",
+        "rights_holder_confirmation_reviewed"
+      ]
+    },
+    {
+      "decision": "REPLACE",
+      "checks": [
+        "replacement_sources_reviewed",
+        "replacement_licenses_reviewed",
+        "replacement_candidate_audio_manifest_verified"
+      ]
+    }
+  ],
+  "approvable_audio_decisions": [
+    "ACCEPT"
+  ],
+  "performance_thresholds": {
+    "minimum_duration_minutes": 30,
+    "minimum_stages_completed": 1,
+    "minimum_average_fps": 50,
+    "minimum_one_percent_low_fps": 30,
+    "target_interval_us": 1000000,
+    "minimum_window_duration_us": 750000,
+    "maximum_window_duration_us": 1250000,
+    "maximum_memory_growth_bytes": 268435456,
+    "maximum_memory_growth_mb": 256,
+    "minimum_gameplay_duration_ratio": 0.8,
+    "minimum_focused_duration_ratio": 0.95
+  },
+  "interactive_session_schema": "tanks3d-interactive-session-v1",
+  "interactive_session_keys": [
+    "schema",
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "started_at_utc",
+    "completed_at_utc",
+    "signature",
+    "categories"
+  ],
+  "interactive_category_keys": [
+    "id",
+    "tested_at_utc",
+    "reviewed_at_utc",
+    "result",
+    "coverage_refs",
+    "artifact_sha256s"
+  ],
+  "gameplay_event_log_schema": "tanks3d-gameplay-event-log-v1",
+  "gameplay_event_log_keys": [
+    "schema",
+    "producer",
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "started_at_utc",
+    "completed_at_utc",
+    "events"
+  ],
+  "gameplay_event_keys": [
+    "sequence",
+    "timestamp_utc",
+    "category_id",
+    "coverage_token",
+    "result"
+  ],
+  "command_log_schema": "tanks3d-command-log-v1",
+  "command_log_keys": [
+    "schema",
+    "candidate_sha256",
+    "machine",
+    "commands"
+  ],
+  "command_result_keys": [
+    "id",
+    "argv",
+    "exit_code",
+    "stdout",
+    "stderr",
+    "started_at_utc",
+    "completed_at_utc"
+  ],
+  "performance_log_schema": "tanks3d-performance-log-v2",
+  "performance_log_keys": [
+    "schema",
+    "producer",
+    "source_commit",
+    "source_tag",
+    "candidate_sha256",
+    "session_nonce",
+    "started_at_utc",
+    "completed_at_utc",
+    "monotonic_duration_us",
+    "target_interval_us",
+    "clock",
+    "memory_metric",
+    "memory_unit",
+    "clean_shutdown",
+    "samples"
+  ],
+  "performance_sample_keys": [
+    "sequence",
+    "elapsed_us",
+    "window_duration_us",
+    "rendered_frames",
+    "resident_bytes",
+    "gameplay_duration_us",
+    "focused_duration_us",
+    "stage_clear_events",
+    "completed_stages",
+    "stage_number",
+    "player_count",
+    "app_state",
+    "window_focused"
+  ],
+  "document_gate_rows": [
+    "Gameplay matrix",
+    "National bases",
+    "Pickups",
+    "Settlement",
+    "Published controls",
+    "Clean Mac",
+    "Gatekeeper",
+    "Extended session",
+    "Evidence manifest",
+    "Known issues",
+    "Audio decision",
+    "QA approval",
+    "Release-owner approval"
+  ],
+  "approval_roles": [
+    "qa_lead",
+    "release_owner"
+  ],
+  "performance_qa_receipt_schema": "tanks3d-performance-qa-receipt-v1",
+  "performance_qa_receipt_keys": [
+    "schema",
+    "candidate_filename",
+    "candidate_sha256",
+    "executable_sha256",
+    "source_commit",
+    "source_tag",
+    "session_nonce",
+    "argv",
+    "pid",
+    "started_at_utc",
+    "completed_at_utc",
+    "exit_code",
+    "telemetry",
+    "stdout",
+    "stderr"
+  ],
+  "performance_qa_file_reference_keys": [
+    "path",
+    "sha256"
+  ],
+  "performance_app_states": [
+    "gameplay",
+    "settlement",
+    "high_score"
+  ],
+  "performance_producer": "Tanks3D",
+  "performance_clock": "steady_clock",
+  "performance_memory_metric": "proc_pid_rusage.ri_phys_footprint",
+  "performance_memory_unit": "bytes",
+  "performance_executable_member": "Tanks3D.app/Contents/MacOS/Tanks3D",
+  "performance_filenames": {
+    "receipt": "performance-qa-receipt.json",
+    "telemetry": "performance-log-v2.json",
+    "stdout": "performance-stdout.log",
+    "stderr": "performance-stderr.log"
+  },
+  "performance_stdout_markers": {
+    "start": "TANKS3D_PERFORMANCE_START",
+    "complete": "TANKS3D_PERFORMANCE_COMPLETE"
+  }
+}

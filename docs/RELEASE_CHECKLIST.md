@@ -79,9 +79,11 @@ then prepare the public notes from the
 missing evidence, and an absent source commit or release tag are blockers, not
 passing results.
 
-The machine-readable profile and current status are
-`docs/release-requirements/macos-alpha-v1.json` and
-`docs/releases/v0.1.0-alpha.3-status.json`. Python 3 standard-library tooling
+The frozen Alpha 3 status remains at
+`docs/releases/v0.1.0-alpha.3-status.json` under the legacy v1 profile and may
+be validated only as blocked work in progress. A new candidate must name
+`docs/release-requirements/macos-alpha-v2.json`; v1 can no longer approve a
+release. Python 3 standard-library tooling
 enforces exact keys, candidate/document/evidence hashes, the full manual matrix,
 published controls, candidate-bound interactive evidence, clean-Mac download
 and quarantine facts, numeric session criteria, known issues, the audio
@@ -102,11 +104,43 @@ requires candidate-bound `tanks3d-interactive-session-v1` and
 supporting hashes; a screenshot or free-form report is insufficient. Clean-Mac
 and Gatekeeper commands use `tanks3d-command-log-v1`; the download entry must
 record the canonical `curl --fail --location --output` argv, and all six command
-intervals must follow their canonical non-overlapping order. Performance uses raw
-`tanks3d-performance-log-v1` samples and the fixed Alpha limits: >=50 average
-FPS, >=30 1% low FPS, 0.25–5 second sampling with >=90% coverage, and <=256 MB
-memory growth. A consistently hashed artifact may support multiple categories
-only when its structured record names each one.
+intervals must follow their canonical non-overlapping order. Performance uses
+candidate-generated `tanks3d-performance-log-v2` raw integer windows plus a
+`tanks3d-performance-qa-receipt-v1`. The receipt binds the tagged ZIP, embedded
+source identity, extracted executable hash, random nonce, exact argv,
+START/COMPLETE markers, exit status, and telemetry/stdout/stderr hashes. The
+verifier recomputes weighted average and 1% low FPS from continuous 0.75–1.25
+second windows and checks >=50 average FPS, >=30 1% low FPS, <=256 MiB
+physical-footprint growth, >=80% active-gameplay time, >=95% focused-window
+time, and at least one candidate-reported cleared stage. It also cross-checks
+the recorded stage count and player-mode summary. A consistently hashed
+artifact may support multiple categories only when its structured record names
+each one.
+
+Treat source-free launch QA and performance QA as separate gates. The Clean-Mac
+machine downloads only the published ZIP and must have no source checkout or
+Homebrew raylib. The named performance-QA Mac may have a clean tagged checkout
+and Python, but the runner executes only a private, hash-checked snapshot of the
+static candidate ZIP. These may be different Macs. If one physical Mac is used,
+finish and sign the Clean-Mac/Gatekeeper gate before installing or cloning the
+performance tooling; do not claim `source_checkout_absent` for the later
+performance phase.
+
+After building the immutable candidate, create the performance evidence once:
+
+```sh
+make run-alpha-performance-qa DIST_CHANNEL=alpha.N
+```
+
+The default private output is
+`build/release-evidence/<tag>/performance/`. It must be absent or empty. The
+visible one-player session starts automatically; play normally, keep the game
+focused, and complete at least one stage. The candidate exits after at least
+1,801 seconds and a complete one-second sample window. `Esc` or closing the
+window aborts the run without a valid receipt. The runner snapshots and rehashes
+the candidate ZIP before extraction, so a concurrent replacement cannot alter
+the executed bundle. Add all four generated files to the
+`extended_session_metrics` evidence before final verification.
 
 This gate proves candidate identity, record integrity, chronology, and internal
 consistency; it cannot cryptographically prove that a human performed a test.

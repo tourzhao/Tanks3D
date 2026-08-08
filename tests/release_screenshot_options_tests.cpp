@@ -93,14 +93,14 @@ std::vector<unsigned char> readBytes(const fs::path &path)
             std::istreambuf_iterator<char>()};
 }
 
-bool hasScreenshotTemporaryFile(const fs::path &directory)
+bool hasAtomicTemporaryFile(const fs::path &directory)
 {
     std::error_code error;
     for (fs::directory_iterator iterator(directory, error), end;
          !error && iterator != end; iterator.increment(error))
     {
         const std::string name = iterator->path().filename().string();
-        if (name.rfind(".tanks3d-release-screenshot.", 0) == 0)
+        if (name.rfind(".tanks3d-atomic-output.", 0) == 0)
             return true;
     }
     return static_cast<bool>(error);
@@ -297,7 +297,7 @@ int main()
            "a screenshot with a missing parent directory was accepted");
     expect(!fs::exists(missingOutput),
            "a failed screenshot write left a final output");
-    expect(!hasScreenshotTemporaryFile(temporaryDirectory.path()),
+    expect(!hasAtomicTemporaryFile(temporaryDirectory.path()),
            "a screenshot operation left a temporary file behind");
 
     reporter.finish();

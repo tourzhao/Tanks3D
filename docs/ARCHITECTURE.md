@@ -850,7 +850,7 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   the full headless gates. Instrumented compiled-module
   tests reuse canonical production coverage objects; the CombatSystem test
   driver is also instrumented for inline event value semantics. Ten pure-rule
-  and five app-layer executables now contribute to sixteen profiles, which
+  and seven app-layer executables now contribute to eighteen profiles, which
   merge without duplicate-map warnings.
 - The macOS Alpha distribution path statically links the installed raylib,
   matches its real deployment target, carries all project and third-party
@@ -861,10 +861,15 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   that commit's strict candidate verifier, so later documentation cannot move
   or silently reinterpret the release tag. A separate machine-readable status
   gate binds manual evidence and approvals to that candidate. Interactive,
-  command, gameplay-event, and raw performance records use strict JSON formats;
-  fixed Alpha thresholds and ordered human approvals cannot be redefined after
-  a run. Its `--allow-blocked` mode validates honest work in progress but never
-  grants publication approval.
+  command and gameplay-event records use strict JSON formats. The v2
+  performance path embeds source identity in the distribution binary, records
+  genuine frame/RSS windows plus active-gameplay, focused-window, and cleared-
+  stage evidence, publishes with atomic no-replace output, and binds them to the
+  tagged ZIP through a launch receipt. The runner hashes a no-follow private ZIP
+  snapshot and extracts only that immutable input. Fixed Alpha thresholds and
+  ordered human approvals cannot be redefined after a run. Legacy v1 records
+  remain readable only while blocked; `--allow-blocked` never grants
+  publication approval.
 
 Every migration change must keep `make clean`, `make debug`,
 `make test-architecture`, and `make test` green. Visual

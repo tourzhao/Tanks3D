@@ -169,7 +169,9 @@ run_gate test make -C "$project_root" test
 run_gate test-sanitize make -C "$project_root" test-sanitize
 run_gate coverage make -C "$project_root" coverage
 run_gate test-dist make -C "$project_root" test-dist \
-    "DIST_CHANNEL=$dist_channel"
+    "DIST_CHANNEL=$dist_channel" \
+    "DIST_SOURCE_COMMIT=$source_commit" \
+    "DIST_SOURCE_TAG=$release_tag"
 
 dist_config="$project_root/build/dist/.build-config"
 [ -f "$dist_config" ] && [ ! -L "$dist_config" ] || \

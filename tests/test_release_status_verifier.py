@@ -15,7 +15,12 @@ import zlib
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = REPOSITORY_ROOT / "scripts" / "verify_release_status.py"
-REQUIREMENTS = REPOSITORY_ROOT / "docs" / "release-requirements" / "macos-alpha-v1.json"
+REQUIREMENTS_V1 = (
+    REPOSITORY_ROOT / "docs" / "release-requirements" / "macos-alpha-v1.json"
+)
+REQUIREMENTS_V2 = (
+    REPOSITORY_ROOT / "docs" / "release-requirements" / "macos-alpha-v2.json"
+)
 STATUS_TEMPLATE = REPOSITORY_ROOT / "docs" / "releases" / "v0.1.0-alpha.3-status.json"
 SESSION_START_UTC = "2020-01-01T16:30:00Z"
 UTC = "2020-01-01T17:00:00Z"
@@ -25,6 +30,9 @@ REPORT_UTC = "2020-01-01T19:00:00Z"
 QA_APPROVAL_UTC = "2020-01-01T20:00:00Z"
 RELEASE_APPROVAL_UTC = "2020-01-01T21:00:00Z"
 RELEASE_DATE = "2020-01-01"
+PERFORMANCE_NONCE = "1" * 32
+PERFORMANCE_EXECUTABLE = b"#!/bin/sh\nexit 0\n"
+PERFORMANCE_EXECUTABLE_MEMBER = "Tanks3D.app/Contents/MacOS/Tanks3D"
 
 
 def digest(path):
@@ -57,15 +65,25 @@ class ReleaseFixture:
         self.root = Path(base)
         self.status = json.loads(STATUS_TEMPLATE.read_text(encoding="utf-8"))
         self.status_path = self.root / "docs/releases/v0.1.0-alpha.3-status.json"
-        requirements_path = self.root / "docs/release-requirements/macos-alpha-v1.json"
-        requirements_path.parent.mkdir(parents=True, exist_ok=True)
-        requirements_path.write_bytes(REQUIREMENTS.read_bytes())
+        requirements_directory = self.root / "docs/release-requirements"
+        requirements_directory.mkdir(parents=True, exist_ok=True)
+        (requirements_directory / "macos-alpha-v1.json").write_bytes(
+            REQUIREMENTS_V1.read_bytes()
+        )
+        (requirements_directory / "macos-alpha-v2.json").write_bytes(
+            REQUIREMENTS_V2.read_bytes()
+        )
         self._write_tagged_stub()
         self._write_repository_audio_and_notices()
         self._write_candidate()
         self._write_screenshots()
         self._write_documents()
         self.write_status()
+
+    def requirements(self):
+        return json.loads(
+            (self.root / self.status["requirements"]).read_text(encoding="utf-8")
+        )
 
     def _write_tagged_stub(self):
         verifier = self.root / "scripts/verify_tagged_alpha_candidate.sh"
@@ -108,6 +126,7 @@ class ReleaseFixture:
         gate_log_path = candidate / "alpha-candidate-gates.log"
         build_config_path = candidate / "build-config.txt"
         with zipfile.ZipFile(artifact_path, "w", compression=zipfile.ZIP_STORED) as bundle:
+            bundle.writestr(PERFORMANCE_EXECUTABLE_MEMBER, PERFORMANCE_EXECUTABLE)
             for sound in sorted((self.root / "resources/sounds").glob("*.ogg")):
                 bundle.write(
                     sound,
@@ -180,7 +199,7 @@ class ReleaseFixture:
         page_path = self.root / "docs/releases/{}.md".format(release["tag"])
         qa_path = self.root / "docs/releases/{}-qa.md".format(release["tag"])
         page_path.parent.mkdir(parents=True, exist_ok=True)
-        requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
+        requirements = self.requirements()
         gate_summary = (
             "## Release gate summary\n\n"
             "| Gate | Status |\n"
@@ -305,10 +324,58 @@ class ReleaseFixture:
 
     def refresh_artifact(self, evidence, artifact):
         artifact["sha256"] = digest(self.root / artifact["path"])
+        receipt_artifact = next(
+            (
+                item
+                for item in evidence["artifacts"]
+                if item["path"].endswith("performance-qa-receipt.json")
+            ),
+            None,
+        )
+        if receipt_artifact is not None and receipt_artifact is not artifact:
+            receipt_path = self.root / receipt_artifact["path"]
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            for key in ("telemetry", "stdout", "stderr"):
+                if receipt[key]["path"] == Path(artifact["path"]).name:
+                    receipt[key]["sha256"] = artifact["sha256"]
+            receipt_path.write_text(
+                json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
+            )
+            receipt_artifact["sha256"] = digest(receipt_path)
         self.refresh_evidence_manifest(evidence)
 
-    def make_all_pass(self):
-        requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
+    def performance_artifact(self, filename):
+        evidence = next(
+            item
+            for item in self.status["evidence"]
+            if item["id"] == "extended_session_metrics"
+        )
+        artifact = next(
+            item
+            for item in evidence["artifacts"]
+            if Path(item["path"]).name == filename
+        )
+        return evidence, artifact, self.root / artifact["path"]
+
+    def mutate_performance_json(self, filename, mutation):
+        evidence, artifact, path = self.performance_artifact(filename)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        mutation(payload)
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        self.refresh_artifact(evidence, artifact)
+
+    def make_all_pass(self, profile="v2"):
+        if profile == "v2":
+            self.status["requirements"] = (
+                "docs/release-requirements/macos-alpha-v2.json"
+            )
+        elif profile == "v1":
+            self.status["requirements"] = (
+                "docs/release-requirements/macos-alpha-v1.json"
+            )
+        else:
+            raise ValueError("unsupported fixture profile")
+        requirements = self.requirements()
         artifact = self.status["release"]["artifact"]
         candidate_digest = artifact["sha256"]
         fixture_tester = "Fixture Tester"
@@ -476,9 +543,17 @@ class ReleaseFixture:
         self.status["extended_session"]["details"] = {
             "duration_minutes": "30",
             "stages_completed": "2",
-            "mode_mix": "one-player and two-player",
-            "measurement_tools": "Activity Monitor and frame telemetry",
-            "sampling_interval_seconds": "5",
+            "mode_mix": (
+                "one-player"
+                if profile == "v2"
+                else "one-player and two-player"
+            ),
+            "measurement_tools": (
+                "Candidate telemetry and performance QA runner"
+                if profile == "v2"
+                else "Activity Monitor and frame telemetry"
+            ),
+            "sampling_interval_seconds": "1" if profile == "v2" else "5",
             "fps_acceptance_criterion": "average at least 50 FPS and 1% low at least 30 FPS",
             "average_fps": "60",
             "minimum_fps": "60",
@@ -498,7 +573,12 @@ class ReleaseFixture:
             "crash_count": "0",
             "hang_count": "0",
             "softlock_count": "0",
-            "logs_and_capture_locations": "evidence/performance-log.json",
+            "logs_and_capture_locations": (
+                "evidence/performance-log-v2.json and "
+                "evidence/performance-qa-receipt.json"
+                if profile == "v2"
+                else "evidence/performance-log.json"
+            ),
         }
 
         command_log = self.root / "evidence/command-log.json"
@@ -588,28 +668,168 @@ class ReleaseFixture:
         )
         self.append_evidence_artifact(evidence_by_id["gatekeeper_launch"], command_log, kind="log")
 
-        performance_log = self.root / "evidence/performance-log.json"
-        performance_log.write_text(
-            json.dumps(
-                {
-                    "schema": requirements["performance_log_schema"],
-                    "candidate_sha256": candidate_digest,
-                    "started_at_utc": SESSION_START_UTC,
-                    "completed_at_utc": UTC,
-                    "samples": [
-                        {
-                            "elapsed_seconds": elapsed,
-                            "fps": 60,
-                            "memory_mb": 220 + 5 * elapsed / 1800,
-                        }
-                        for elapsed in range(0, 1801, 5)
-                    ],
-                },
-                separators=(",", ":"),
-            ) + "\n",
-            encoding="utf-8",
-        )
-        self.append_evidence_artifact(evidence_by_id["extended_session_metrics"], performance_log, kind="log")
+        performance_evidence = evidence_by_id["extended_session_metrics"]
+        if profile == "v2":
+            performance_log = self.root / "evidence/performance-log-v2.json"
+            memory_start = 220 * 1048576
+            memory_growth = 5 * 1048576
+            performance_log.write_text(
+                json.dumps(
+                    {
+                        "schema": requirements["performance_log_schema"],
+                        "producer": requirements["performance_producer"],
+                        "source_commit": self.status["release"]["source_commit"],
+                        "source_tag": self.status["release"]["tag"],
+                        "candidate_sha256": candidate_digest,
+                        "session_nonce": PERFORMANCE_NONCE,
+                        "started_at_utc": SESSION_START_UTC,
+                        "completed_at_utc": UTC,
+                        "monotonic_duration_us": 1801 * 1000000,
+                        "target_interval_us": 1000000,
+                        "clock": requirements["performance_clock"],
+                        "memory_metric": requirements[
+                            "performance_memory_metric"
+                        ],
+                        "memory_unit": requirements["performance_memory_unit"],
+                        "clean_shutdown": True,
+                        "samples": [
+                            {
+                                "sequence": sequence,
+                                "elapsed_us": sequence * 1000000,
+                                "window_duration_us": 1000000,
+                                "rendered_frames": 60,
+                                "resident_bytes": memory_start
+                                + memory_growth * (sequence - 1) // 1800,
+                                "gameplay_duration_us": (
+                                    0
+                                    if sequence in {900, 1800}
+                                    else 1000000
+                                ),
+                                "focused_duration_us": 1000000,
+                                "stage_clear_events": (
+                                    1 if sequence in {900, 1800} else 0
+                                ),
+                                "completed_stages": sequence // 900,
+                                "stage_number": min(
+                                    2, 1 + (sequence - 1) // 900
+                                ),
+                                "player_count": 1,
+                                "app_state": (
+                                    "settlement"
+                                    if sequence in {900, 1800}
+                                    else "gameplay"
+                                ),
+                                "window_focused": True,
+                            }
+                            for sequence in range(1, 1802)
+                        ],
+                    },
+                    separators=(",", ":"),
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            stdout_log = self.root / "evidence/performance-stdout.log"
+            stdout_log.write_text(
+                "fixture candidate boot\n"
+                "TANKS3D_PERFORMANCE_START {}\n"
+                "fixture candidate running\n"
+                "TANKS3D_PERFORMANCE_COMPLETE {}\n".format(
+                    PERFORMANCE_NONCE, PERFORMANCE_NONCE
+                ),
+                encoding="utf-8",
+            )
+            stderr_log = self.root / "evidence/performance-stderr.log"
+            stderr_log.write_text("", encoding="utf-8")
+            receipt_path = self.root / "evidence/performance-qa-receipt.json"
+            receipt_path.write_text(
+                json.dumps(
+                    {
+                        "schema": requirements[
+                            "performance_qa_receipt_schema"
+                        ],
+                        "candidate_filename": Path(artifact["path"]).name,
+                        "candidate_sha256": candidate_digest,
+                        "executable_sha256": hashlib.sha256(
+                            PERFORMANCE_EXECUTABLE
+                        ).hexdigest(),
+                        "source_commit": self.status["release"][
+                            "source_commit"
+                        ],
+                        "source_tag": self.status["release"]["tag"],
+                        "session_nonce": PERFORMANCE_NONCE,
+                        "argv": [
+                            "/private/tmp/tanks3d-performance-qa-fixture/"
+                            + PERFORMANCE_EXECUTABLE_MEMBER,
+                            "--quick-start",
+                            "--release-performance-log={}".format(
+                                performance_log.resolve()
+                            ),
+                            "--release-candidate-sha256={}".format(
+                                candidate_digest
+                            ),
+                            "--release-session-nonce={}".format(
+                                PERFORMANCE_NONCE
+                            ),
+                            "--release-performance-duration-seconds=1801",
+                        ],
+                        "pid": 12345,
+                        "started_at_utc": "2020-01-01T16:29:59Z",
+                        "completed_at_utc": "2020-01-01T17:00:01Z",
+                        "exit_code": 0,
+                        "telemetry": {
+                            "path": performance_log.name,
+                            "sha256": digest(performance_log),
+                        },
+                        "stdout": {
+                            "path": stdout_log.name,
+                            "sha256": digest(stdout_log),
+                        },
+                        "stderr": {
+                            "path": stderr_log.name,
+                            "sha256": digest(stderr_log),
+                        },
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            for path, kind in (
+                (performance_log, "log"),
+                (stdout_log, "log"),
+                (stderr_log, "log"),
+                (receipt_path, "report"),
+            ):
+                self.append_evidence_artifact(
+                    performance_evidence, path, kind=kind
+                )
+        else:
+            performance_log = self.root / "evidence/performance-log.json"
+            performance_log.write_text(
+                json.dumps(
+                    {
+                        "schema": requirements["performance_log_schema"],
+                        "candidate_sha256": candidate_digest,
+                        "started_at_utc": SESSION_START_UTC,
+                        "completed_at_utc": UTC,
+                        "samples": [
+                            {
+                                "elapsed_seconds": elapsed,
+                                "fps": 60,
+                                "memory_mb": 220 + 5 * elapsed / 1800,
+                            }
+                            for elapsed in range(0, 1801, 5)
+                        ],
+                    },
+                    separators=(",", ":"),
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.append_evidence_artifact(
+                performance_evidence, performance_log, kind="log"
+            )
 
         gameplay_evidence_ids = {
             "one_player_gameplay",
@@ -1072,7 +1292,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             ("average_fps", "inf", "must be finite"),
             ("crash_count", "1", "must be integer zero"),
             ("throttling", "severe", "records a release failure"),
-            ("memory_end_mb", "400", "contradicts raw samples"),
+            ("memory_end_mb", "400", "contradicts raw v2 samples"),
         ]
         for key, value, expected in mutations:
             fixture = self.new_fixture()
@@ -1289,7 +1509,11 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture = self.new_fixture()
         fixture.make_all_pass()
         evidence = fixture.status["evidence"][7]
-        performance = next(item for item in evidence["artifacts"] if item["path"].endswith("performance-log.json"))
+        performance = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("performance-log-v2.json")
+        )
         path = fixture.root / performance["path"]
         payload = json.loads(path.read_text(encoding="utf-8"))
         payload["samples"] = payload["samples"][:5]
@@ -1304,7 +1528,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         performance = next(
             item
             for item in evidence["artifacts"]
-            if item["path"].endswith("performance-log.json")
+            if item["path"].endswith("performance-log-v2.json")
         )
         path = fixture.root / performance["path"]
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1316,6 +1540,296 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         self.assert_failed(
             fixture.run(), "interval does not match its interactive session"
         )
+
+    def test_ready_v1_profile_is_explicitly_superseded(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass(profile="v1")
+        self.assert_failed(fixture.run(), "macos-alpha-v1 is superseded")
+
+    def test_v2_samples_reject_raw_metric_interval_and_continuity_tampering(self):
+        mutations = [
+            (
+                lambda payload: payload["samples"][0].__setitem__(
+                    "resident_bytes", 220.5
+                ),
+                "must be a raw JSON integer",
+            ),
+            (
+                lambda payload: payload["samples"][0].__setitem__(
+                    "window_duration_us", 500000
+                ),
+                "outside 0.75-1.25 seconds",
+            ),
+            (
+                lambda payload: payload["samples"].pop(100),
+                "sample sequence must be contiguous",
+            ),
+            (
+                lambda payload: [
+                    sample.__setitem__("rendered_frames", 40)
+                    for sample in payload["samples"][:901]
+                ],
+                "average_fps contradicts raw v2 samples",
+            ),
+            (
+                lambda payload: payload["samples"][100].__setitem__(
+                    "resident_bytes", 500 * 1048576
+                ),
+                "memory-growth limit",
+            ),
+            (
+                lambda payload: payload["samples"][0].__setitem__(
+                    "app_state", "paused"
+                ),
+                "sample app_state is not canonical",
+            ),
+        ]
+        for mutation, expected in mutations:
+            with self.subTest(expected=expected):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                fixture.mutate_performance_json(
+                    "performance-log-v2.json", mutation
+                )
+                fixture.write_status()
+                self.assert_failed(fixture.run(), expected)
+
+    def test_v2_samples_prove_gameplay_focus_stage_completion_and_mode_mix(self):
+        mutations = [
+            (
+                lambda payload: [
+                    sample.update(
+                        {"gameplay_duration_us": 0, "app_state": "settlement"}
+                    )
+                    for sample in payload["samples"]
+                ],
+                "enough active gameplay",
+            ),
+            (
+                lambda payload: [
+                    sample.update(
+                        {"focused_duration_us": 0, "window_focused": False}
+                    )
+                    for sample in payload["samples"][:100]
+                ],
+                "enough focused-window time",
+            ),
+            (
+                lambda payload: [
+                    (
+                        sample.__setitem__("completed_stages", 0),
+                        sample.__setitem__("stage_clear_events", 0),
+                    )
+                    for sample in payload["samples"]
+                ],
+                "do not prove a completed stage",
+            ),
+            (
+                lambda payload: payload["samples"][1000].__setitem__(
+                    "completed_stages", 0
+                ),
+                "completed_stages contradicts its clear events",
+            ),
+            (
+                lambda payload: payload["samples"][0].__setitem__(
+                    "gameplay_duration_us", 1000001
+                ),
+                "beyond its sample window",
+            ),
+            (
+                lambda payload: [
+                    (
+                        sample.__setitem__("app_state", "settlement"),
+                        sample.__setitem__(
+                            "gameplay_duration_us",
+                            sample["window_duration_us"],
+                        ),
+                    )
+                    for sample in payload["samples"]
+                ],
+                "non-gameplay state contradicts a full gameplay window",
+            ),
+            (
+                lambda payload: payload["samples"][-1].__setitem__(
+                    "completed_stages", 3
+                ),
+                "completed_stages contradicts its clear events",
+            ),
+            (
+                lambda payload: payload["samples"][899].__setitem__(
+                    "stage_clear_events", 2
+                ),
+                "more than one cleared stage",
+            ),
+            (
+                lambda payload: [
+                    sample.__setitem__("player_count", 2)
+                    for sample in payload["samples"]
+                ],
+                "requires one-player samples",
+            ),
+            (
+                lambda payload: payload["samples"][0].update(
+                    {"window_focused": False, "focused_duration_us": 1000000}
+                ),
+                "unfocused endpoint contradicts a fully focused window",
+            ),
+        ]
+        for mutation, expected in mutations:
+            with self.subTest(expected=expected):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                fixture.mutate_performance_json(
+                    "performance-log-v2.json", mutation
+                )
+                fixture.write_status()
+                self.assert_failed(fixture.run(), expected)
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status["extended_session"]["details"]["stages_completed"] = "1"
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "stages_completed contradicts raw v2 samples"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status["extended_session"]["details"]["mode_mix"] = "two-player"
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "mode_mix contradicts raw v2 samples")
+
+    def test_v2_telemetry_identity_and_shutdown_are_candidate_bound(self):
+        mutations = [
+            (
+                lambda payload: payload.__setitem__("source_commit", "b" * 40),
+                "source_commit does not match its candidate receipt",
+            ),
+            (
+                lambda payload: payload.__setitem__("source_tag", "v9.9.9"),
+                "source_tag does not match its candidate receipt",
+            ),
+            (
+                lambda payload: payload.__setitem__("session_nonce", "2" * 32),
+                "session_nonce does not match its candidate receipt",
+            ),
+            (
+                lambda payload: payload.__setitem__("clean_shutdown", False),
+                "requires clean_shutdown=true",
+            ),
+        ]
+        for mutation, expected in mutations:
+            with self.subTest(expected=expected):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                fixture.mutate_performance_json(
+                    "performance-log-v2.json", mutation
+                )
+                fixture.write_status()
+                self.assert_failed(fixture.run(), expected)
+
+    def test_v2_receipt_references_and_executable_hash_are_enforced(self):
+        mutations = [
+            (
+                lambda payload: payload["telemetry"].__setitem__(
+                    "sha256", "0" * 64
+                ),
+                "hash contradicts its evidence artifact",
+            ),
+            (
+                lambda payload: payload["telemetry"].__setitem__(
+                    "path", "../performance-log-v2.json"
+                ),
+                "canonical filename",
+            ),
+            (
+                lambda payload: payload.__setitem__("executable_sha256", "0" * 64),
+                "executable hash does not match the candidate ZIP",
+            ),
+            (
+                lambda payload: payload.__setitem__(
+                    "started_at_utc", "2020-01-01T16:30:01Z"
+                ),
+                "timestamps are not nested chronologically",
+            ),
+        ]
+        for mutation, expected in mutations:
+            with self.subTest(expected=expected):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                fixture.mutate_performance_json(
+                    "performance-qa-receipt.json", mutation
+                )
+                fixture.write_status()
+                self.assert_failed(fixture.run(), expected)
+
+    def test_v2_runner_argv_and_stdout_markers_are_exact(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_performance_json(
+            "performance-qa-receipt.json",
+            lambda payload: payload["argv"].append("--release-screenshot"),
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "runner's six exact arguments")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_performance_json(
+            "performance-qa-receipt.json",
+            lambda payload: payload["argv"].__setitem__(1, "--showcase"),
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "start the candidate with --quick-start")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_performance_json(
+            "performance-qa-receipt.json",
+            lambda payload: payload["argv"].__setitem__(
+                2,
+                "--release-performance-log=/private/tmp/evidence/../"
+                "performance-log-v2.json",
+            ),
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "telemetry path flag is not canonical")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_performance_json(
+            "performance-qa-receipt.json",
+            lambda payload: payload["argv"].__setitem__(
+                3, "--release-candidate-sha256={}".format("0" * 64)
+            ),
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "candidate or nonce flag is not exact")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_performance_json(
+            "performance-qa-receipt.json",
+            lambda payload: payload["argv"].__setitem__(
+                5, "--release-performance-duration-seconds=14401"
+            ),
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "duration flag is outside the release range")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence, artifact, path = fixture.performance_artifact(
+            "performance-stdout.log"
+        )
+        path.write_text(
+            path.read_text(encoding="utf-8")
+            + "TANKS3D_PERFORMANCE_START {}\n".format(PERFORMANCE_NONCE),
+            encoding="utf-8",
+        )
+        fixture.refresh_artifact(evidence, artifact)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "exactly one ordered matching START/COMPLETE")
 
     def test_both_ready_documents_reject_contradictory_gate_status(self):
         contradictions = [
@@ -1350,7 +1864,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
     def test_audio_confirm_requires_an_externally_trusted_signature_profile(self):
         fixture = self.new_fixture()
         fixture.make_all_pass()
-        requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
+        requirements = fixture.requirements()
         audio = fixture.status["audio"]
         independent = audio["evidence"][-1]
         confirmation_path = fixture.root / "evidence/rights-confirmation.json"

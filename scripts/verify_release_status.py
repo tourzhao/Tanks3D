@@ -318,6 +318,103 @@ PERFORMANCE_LOG_KEYS = [
     "samples",
 ]
 PERFORMANCE_SAMPLE_KEYS = ["elapsed_seconds", "fps", "memory_mb"]
+PERFORMANCE_LOG_V2_SCHEMA = "tanks3d-performance-log-v2"
+PERFORMANCE_LOG_V2_KEYS = [
+    "schema",
+    "producer",
+    "source_commit",
+    "source_tag",
+    "candidate_sha256",
+    "session_nonce",
+    "started_at_utc",
+    "completed_at_utc",
+    "monotonic_duration_us",
+    "target_interval_us",
+    "clock",
+    "memory_metric",
+    "memory_unit",
+    "clean_shutdown",
+    "samples",
+]
+PERFORMANCE_SAMPLE_V2_KEYS = [
+    "sequence",
+    "elapsed_us",
+    "window_duration_us",
+    "rendered_frames",
+    "resident_bytes",
+    "gameplay_duration_us",
+    "focused_duration_us",
+    "stage_clear_events",
+    "completed_stages",
+    "stage_number",
+    "player_count",
+    "app_state",
+    "window_focused",
+]
+PERFORMANCE_QA_RECEIPT_SCHEMA = "tanks3d-performance-qa-receipt-v1"
+PERFORMANCE_QA_RECEIPT_KEYS = [
+    "schema",
+    "candidate_filename",
+    "candidate_sha256",
+    "executable_sha256",
+    "source_commit",
+    "source_tag",
+    "session_nonce",
+    "argv",
+    "pid",
+    "started_at_utc",
+    "completed_at_utc",
+    "exit_code",
+    "telemetry",
+    "stdout",
+    "stderr",
+]
+PERFORMANCE_QA_FILE_REFERENCE_KEYS = ["path", "sha256"]
+PERFORMANCE_V2_APP_STATES = [
+    "gameplay",
+    "settlement",
+    "high_score",
+]
+PERFORMANCE_V2_PRODUCER = "Tanks3D"
+PERFORMANCE_V2_CLOCK = "steady_clock"
+PERFORMANCE_V2_MEMORY_METRIC = "proc_pid_rusage.ri_phys_footprint"
+PERFORMANCE_V2_MEMORY_UNIT = "bytes"
+PERFORMANCE_V2_TARGET_INTERVAL_US = 1_000_000
+PERFORMANCE_V2_MINIMUM_WINDOW_US = 750_000
+PERFORMANCE_V2_MAXIMUM_WINDOW_US = 1_250_000
+PERFORMANCE_V2_MINIMUM_DURATION_US = 1_800_000_000
+PERFORMANCE_V2_MAXIMUM_DURATION_SECONDS = 4 * 60 * 60
+PERFORMANCE_V2_MAXIMUM_MEMORY_GROWTH_BYTES = 256 * 1024 * 1024
+PERFORMANCE_V2_MINIMUM_GAMEPLAY_DURATION_RATIO = 0.80
+PERFORMANCE_V2_MINIMUM_FOCUSED_DURATION_RATIO = 0.95
+PERFORMANCE_V2_EXECUTABLE_MEMBER = (
+    "Tanks3D.app/Contents/MacOS/Tanks3D"
+)
+PERFORMANCE_V2_FILENAMES = {
+    "receipt": "performance-qa-receipt.json",
+    "telemetry": "performance-log-v2.json",
+    "stdout": "performance-stdout.log",
+    "stderr": "performance-stderr.log",
+}
+PERFORMANCE_V2_START_MARKER = "TANKS3D_PERFORMANCE_START"
+PERFORMANCE_V2_COMPLETE_MARKER = "TANKS3D_PERFORMANCE_COMPLETE"
+PERFORMANCE_THRESHOLDS_V2 = {
+    "minimum_duration_minutes": 30,
+    "minimum_stages_completed": 1,
+    "minimum_average_fps": 50,
+    "minimum_one_percent_low_fps": 30,
+    "target_interval_us": PERFORMANCE_V2_TARGET_INTERVAL_US,
+    "minimum_window_duration_us": PERFORMANCE_V2_MINIMUM_WINDOW_US,
+    "maximum_window_duration_us": PERFORMANCE_V2_MAXIMUM_WINDOW_US,
+    "maximum_memory_growth_bytes": PERFORMANCE_V2_MAXIMUM_MEMORY_GROWTH_BYTES,
+    "maximum_memory_growth_mb": 256,
+    "minimum_gameplay_duration_ratio": (
+        PERFORMANCE_V2_MINIMUM_GAMEPLAY_DURATION_RATIO
+    ),
+    "minimum_focused_duration_ratio": (
+        PERFORMANCE_V2_MINIMUM_FOCUSED_DURATION_RATIO
+    ),
+}
 DOCUMENT_GATE_ROWS = [
     "Gameplay matrix",
     "National bases",
@@ -334,7 +431,7 @@ DOCUMENT_GATE_ROWS = [
     "Release-owner approval",
 ]
 
-CANONICAL_REQUIREMENTS: Dict[str, Any] = {
+CANONICAL_REQUIREMENTS_V1: Dict[str, Any] = {
     "schema": "tanks3d-release-requirements-v1",
     "profile": "macos-alpha-v1",
     "status_values": STATUS_VALUES,
@@ -374,6 +471,33 @@ CANONICAL_REQUIREMENTS: Dict[str, Any] = {
     "performance_sample_keys": PERFORMANCE_SAMPLE_KEYS,
     "document_gate_rows": DOCUMENT_GATE_ROWS,
 }
+
+CANONICAL_REQUIREMENTS_V2: Dict[str, Any] = dict(CANONICAL_REQUIREMENTS_V1)
+CANONICAL_REQUIREMENTS_V2.update(
+    {
+        "schema": "tanks3d-release-requirements-v2",
+        "profile": "macos-alpha-v2",
+        "performance_thresholds": PERFORMANCE_THRESHOLDS_V2,
+        "performance_log_schema": PERFORMANCE_LOG_V2_SCHEMA,
+        "performance_log_keys": PERFORMANCE_LOG_V2_KEYS,
+        "performance_sample_keys": PERFORMANCE_SAMPLE_V2_KEYS,
+        "performance_qa_receipt_schema": PERFORMANCE_QA_RECEIPT_SCHEMA,
+        "performance_qa_receipt_keys": PERFORMANCE_QA_RECEIPT_KEYS,
+        "performance_qa_file_reference_keys":
+            PERFORMANCE_QA_FILE_REFERENCE_KEYS,
+        "performance_app_states": PERFORMANCE_V2_APP_STATES,
+        "performance_producer": PERFORMANCE_V2_PRODUCER,
+        "performance_clock": PERFORMANCE_V2_CLOCK,
+        "performance_memory_metric": PERFORMANCE_V2_MEMORY_METRIC,
+        "performance_memory_unit": PERFORMANCE_V2_MEMORY_UNIT,
+        "performance_executable_member": PERFORMANCE_V2_EXECUTABLE_MEMBER,
+        "performance_filenames": PERFORMANCE_V2_FILENAMES,
+        "performance_stdout_markers": {
+            "start": PERFORMANCE_V2_START_MARKER,
+            "complete": PERFORMANCE_V2_COMPLETE_MARKER,
+        },
+    }
+)
 
 ROOT_KEYS = {
     "schema",
@@ -558,8 +682,14 @@ def compare_canonical(actual: Any, expected: Any, context: str) -> None:
         raise VerificationError("{} does not match the canonical profile".format(context))
 
 
-def validate_requirements(requirements: Any) -> None:
-    compare_canonical(requirements, CANONICAL_REQUIREMENTS, "requirements")
+def validate_requirements(requirements: Any, profile: str) -> None:
+    canonical = {
+        "macos-alpha-v1": CANONICAL_REQUIREMENTS_V1,
+        "macos-alpha-v2": CANONICAL_REQUIREMENTS_V2,
+    }.get(profile)
+    if canonical is None:
+        raise VerificationError("unsupported release requirements profile")
+    compare_canonical(requirements, canonical, "requirements")
 
 
 def require_sha256(value: Any, context: str) -> str:
@@ -785,6 +915,14 @@ def require_json_number(value: Any, context: str) -> float:
     if not math.isfinite(number):
         raise VerificationError("{} must be finite".format(context))
     return number
+
+
+def require_json_integer(value: Any, minimum: int, context: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise VerificationError("{} must be a raw JSON integer".format(context))
+    if value < minimum:
+        raise VerificationError("{} must be at least {}".format(context, minimum))
+    return value
 
 
 def validate_status_value(value: Any, context: str) -> str:
@@ -1470,7 +1608,7 @@ def validate_clean_mac_command_log(
         raise VerificationError("spctl command log does not record its assessment outcome")
 
 
-def validate_performance_log(
+def validate_performance_log_v1(
     status: Mapping[str, Any],
     evidence_map: Mapping[str, Mapping[str, Any]],
     artifact_map: Mapping[str, Tuple[str, str, str, Path]],
@@ -1559,6 +1697,627 @@ def validate_performance_log(
         raise VerificationError("raw performance samples miss the fixed Alpha FPS threshold")
     if max(memory_values) - memory_values[0] > PERFORMANCE_THRESHOLDS["maximum_memory_growth_mb"]:
         raise VerificationError("raw performance samples exceed the fixed Alpha memory-growth limit")
+
+
+def candidate_executable_sha256(archive: Path) -> str:
+    try:
+        with zipfile.ZipFile(archive, "r") as bundle:
+            matches = [
+                info
+                for info in bundle.infolist()
+                if info.filename == PERFORMANCE_V2_EXECUTABLE_MEMBER
+            ]
+            if len(matches) != 1:
+                raise VerificationError(
+                    "candidate archive must contain exactly one canonical Tanks3D executable"
+                )
+            member = matches[0]
+            if member.is_dir() or member.file_size <= 0 or member.file_size > 512 * 1024 * 1024:
+                raise VerificationError(
+                    "candidate executable member is empty or unexpectedly large"
+                )
+            digest = hashlib.sha256()
+            with bundle.open(member, "r") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+    except VerificationError:
+        raise
+    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+        raise VerificationError(
+            "cannot inspect candidate executable: {}".format(exc)
+        )
+
+
+def validate_performance_receipt_reference(
+    receipt: Mapping[str, Any],
+    key: str,
+    expected_filename: str,
+    expected_kind: str,
+    artifacts_by_name: Mapping[str, Tuple[str, str, str, Path]],
+) -> Tuple[str, str, str, Path]:
+    context = "performance QA receipt.{}".format(key)
+    reference = require_object(receipt[key], context)
+    require_exact_keys(
+        reference, set(PERFORMANCE_QA_FILE_REFERENCE_KEYS), context
+    )
+    filename = require_string(reference["path"], context + ".path")
+    if filename != expected_filename:
+        raise VerificationError(
+            "{} must reference the runner's canonical filename".format(context)
+        )
+    digest = require_sha256(reference["sha256"], context + ".sha256")
+    artifact = artifacts_by_name.get(filename)
+    if artifact is None:
+        raise VerificationError(
+            "{} is not an extended_session_metrics evidence artifact".format(context)
+        )
+    if artifact[1] != digest:
+        raise VerificationError("{} hash contradicts its evidence artifact".format(context))
+    if artifact[2] != expected_kind:
+        raise VerificationError(
+            "{} evidence artifact must use kind {}".format(context, expected_kind)
+        )
+    return artifact
+
+
+def validate_performance_log_v2(
+    status: Mapping[str, Any],
+    evidence_map: Mapping[str, Mapping[str, Any]],
+    artifact_map: Mapping[str, Tuple[str, str, str, Path]],
+    release: Mapping[str, Any],
+    candidate_archive: Path,
+    candidate_sha256: str,
+) -> None:
+    if status["extended_session"]["status"] != "PASS":
+        return
+
+    evidence = evidence_map["extended_session_metrics"]
+    artifacts_by_name: Dict[str, Tuple[str, str, str, Path]] = {}
+    structured: List[Tuple[Tuple[str, str, str, Path], Mapping[str, Any]]] = []
+    for raw_artifact in evidence["artifacts"]:
+        normalized = artifact_map[raw_artifact["path"]]
+        filename = normalized[3].name
+        if filename in artifacts_by_name:
+            raise VerificationError(
+                "extended-session evidence has duplicate artifact filename {!r}".format(
+                    filename
+                )
+            )
+        artifacts_by_name[filename] = normalized
+        parsed = load_structured_artifact(
+            normalized[3], "evidence artifact " + normalized[0]
+        )
+        if parsed is not None:
+            structured.append((normalized, parsed))
+
+    receipt_entries = [
+        item
+        for item in structured
+        if item[1].get("schema") == PERFORMANCE_QA_RECEIPT_SCHEMA
+    ]
+    if len(receipt_entries) != 1:
+        raise VerificationError(
+            "extended-session PASS under v2 requires exactly one performance QA receipt"
+        )
+    receipt_artifact, receipt = receipt_entries[0]
+    if (
+        receipt_artifact[3].name != PERFORMANCE_V2_FILENAMES["receipt"]
+        or receipt_artifact[2] != "report"
+    ):
+        raise VerificationError(
+            "performance QA receipt must be the canonical report artifact"
+        )
+    require_exact_keys(
+        receipt, set(PERFORMANCE_QA_RECEIPT_KEYS), "performance QA receipt"
+    )
+
+    telemetry_artifact = validate_performance_receipt_reference(
+        receipt,
+        "telemetry",
+        PERFORMANCE_V2_FILENAMES["telemetry"],
+        "log",
+        artifacts_by_name,
+    )
+    stdout_artifact = validate_performance_receipt_reference(
+        receipt,
+        "stdout",
+        PERFORMANCE_V2_FILENAMES["stdout"],
+        "log",
+        artifacts_by_name,
+    )
+    validate_performance_receipt_reference(
+        receipt,
+        "stderr",
+        PERFORMANCE_V2_FILENAMES["stderr"],
+        "log",
+        artifacts_by_name,
+    )
+
+    log = load_structured_artifact(
+        telemetry_artifact[3], "candidate performance telemetry"
+    )
+    if log is None or log.get("schema") != PERFORMANCE_LOG_V2_SCHEMA:
+        raise VerificationError(
+            "performance QA receipt does not reference one v2 telemetry log"
+        )
+    matching_logs = [
+        item
+        for item in structured
+        if item[1].get("schema") == PERFORMANCE_LOG_V2_SCHEMA
+    ]
+    if len(matching_logs) != 1 or matching_logs[0][0][3] != telemetry_artifact[3]:
+        raise VerificationError(
+            "extended-session PASS requires exactly one receipt-bound v2 telemetry log"
+        )
+
+    if receipt["schema"] != PERFORMANCE_QA_RECEIPT_SCHEMA:
+        raise VerificationError("performance QA receipt schema is not canonical")
+    artifact_name = candidate_archive.name
+    if receipt["candidate_filename"] != artifact_name:
+        raise VerificationError(
+            "performance QA receipt candidate filename does not match the release"
+        )
+    if require_sha256(
+        receipt["candidate_sha256"],
+        "performance QA receipt.candidate_sha256",
+    ) != candidate_sha256:
+        raise VerificationError("performance QA receipt is not bound to the candidate")
+    executable_digest = require_sha256(
+        receipt["executable_sha256"],
+        "performance QA receipt.executable_sha256",
+    )
+    if executable_digest != candidate_executable_sha256(candidate_archive):
+        raise VerificationError(
+            "performance QA receipt executable hash does not match the candidate ZIP"
+        )
+    for key, expected in (
+        ("source_commit", release["source_commit"]),
+        ("source_tag", release["tag"]),
+    ):
+        if require_string(receipt[key], "performance QA receipt." + key) != expected:
+            raise VerificationError(
+                "performance QA receipt {} does not match the release".format(key)
+            )
+    nonce = require_string(
+        receipt["session_nonce"], "performance QA receipt.session_nonce"
+    )
+    if re.fullmatch(r"[0-9a-f]{32}", nonce) is None:
+        raise VerificationError(
+            "performance QA receipt session nonce must be 32 lowercase hex characters"
+        )
+    require_json_integer(receipt["pid"], 1, "performance QA receipt.pid")
+    exit_code = require_json_integer(
+        receipt["exit_code"], 0, "performance QA receipt.exit_code"
+    )
+    if exit_code != 0:
+        raise VerificationError("performance QA receipt exit_code must be zero")
+    receipt_started_text = require_timestamp(
+        receipt["started_at_utc"], "performance QA receipt.started_at_utc"
+    )
+    receipt_completed_text = require_timestamp(
+        receipt["completed_at_utc"], "performance QA receipt.completed_at_utc"
+    )
+    receipt_started = timestamp_value(receipt_started_text)
+    receipt_completed = timestamp_value(receipt_completed_text)
+    if receipt_completed < receipt_started:
+        raise VerificationError("performance QA receipt ends before it starts")
+
+    argv = parse_command_argv(receipt["argv"], "performance QA receipt.argv")
+    if len(argv) != 6:
+        raise VerificationError(
+            "performance QA receipt argv must contain the runner's six exact arguments"
+        )
+    executable_argument = argv[0]
+    executable_path = Path(executable_argument)
+    if (
+        "\\" in executable_argument
+        or "\r" in executable_argument
+        or "\n" in executable_argument
+        or not executable_path.is_absolute()
+        or executable_path.as_posix() != executable_argument
+        or not executable_argument.endswith("/" + PERFORMANCE_V2_EXECUTABLE_MEMBER)
+        or not any(
+            part.startswith("tanks3d-performance-qa-")
+            for part in executable_path.parts
+        )
+        or any(part in {".", ".."} for part in executable_path.parts)
+    ):
+        raise VerificationError(
+            "performance QA receipt argv[0] is not the runner-extracted candidate executable"
+        )
+    if argv[1] != "--quick-start":
+        raise VerificationError(
+            "performance QA receipt argv must start the candidate with --quick-start"
+        )
+    telemetry_prefix = "--release-performance-log="
+    if not argv[2].startswith(telemetry_prefix):
+        raise VerificationError("performance QA receipt argv lacks the telemetry path flag")
+    telemetry_argument = argv[2][len(telemetry_prefix) :]
+    telemetry_path = Path(telemetry_argument)
+    if (
+        not telemetry_path.is_absolute()
+        or telemetry_path.as_posix() != telemetry_argument
+        or telemetry_path.name != PERFORMANCE_V2_FILENAMES["telemetry"]
+        or "\\" in telemetry_argument
+        or "\r" in telemetry_argument
+        or "\n" in telemetry_argument
+        or any(part in {".", ".."} for part in telemetry_path.parts)
+    ):
+        raise VerificationError(
+            "performance QA receipt telemetry path flag is not canonical"
+        )
+    expected_candidate_flag = "--release-candidate-sha256={}".format(
+        candidate_sha256
+    )
+    expected_nonce_flag = "--release-session-nonce={}".format(nonce)
+    if argv[3] != expected_candidate_flag or argv[4] != expected_nonce_flag:
+        raise VerificationError(
+            "performance QA receipt argv candidate or nonce flag is not exact"
+        )
+    duration_prefix = "--release-performance-duration-seconds="
+    if not argv[5].startswith(duration_prefix):
+        raise VerificationError("performance QA receipt argv lacks the duration flag")
+    duration_text = argv[5][len(duration_prefix) :]
+    try:
+        requested_duration_seconds = int(duration_text, 10)
+    except ValueError:
+        raise VerificationError(
+            "performance QA receipt duration flag must be a base-10 integer"
+        )
+    if (
+        str(requested_duration_seconds) != duration_text
+        or requested_duration_seconds < 1800
+        or requested_duration_seconds > PERFORMANCE_V2_MAXIMUM_DURATION_SECONDS
+    ):
+        raise VerificationError(
+            "performance QA receipt duration flag is outside the release range"
+        )
+
+    try:
+        if stdout_artifact[3].stat().st_size > 16 * 1024 * 1024:
+            raise VerificationError("performance stdout exceeds the safety limit")
+        stdout_text = stdout_artifact[3].read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise VerificationError("cannot read performance stdout: {}".format(exc))
+    start_marker = "{} {}".format(PERFORMANCE_V2_START_MARKER, nonce)
+    complete_marker = "{} {}".format(PERFORMANCE_V2_COMPLETE_MARKER, nonce)
+    marker_lines = [
+        line
+        for line in stdout_text.splitlines()
+        if line.startswith(PERFORMANCE_V2_START_MARKER + " ")
+        or line.startswith(PERFORMANCE_V2_COMPLETE_MARKER + " ")
+    ]
+    if marker_lines != [start_marker, complete_marker]:
+        raise VerificationError(
+            "performance stdout must contain exactly one ordered matching START/COMPLETE marker"
+        )
+
+    require_exact_keys(log, set(PERFORMANCE_LOG_V2_KEYS), "performance log v2")
+    expected_strings = {
+        "schema": PERFORMANCE_LOG_V2_SCHEMA,
+        "producer": PERFORMANCE_V2_PRODUCER,
+        "source_commit": release["source_commit"],
+        "source_tag": release["tag"],
+        "candidate_sha256": candidate_sha256,
+        "session_nonce": nonce,
+        "clock": PERFORMANCE_V2_CLOCK,
+        "memory_metric": PERFORMANCE_V2_MEMORY_METRIC,
+        "memory_unit": PERFORMANCE_V2_MEMORY_UNIT,
+    }
+    for key, expected in expected_strings.items():
+        if require_string(log[key], "performance log v2." + key) != expected:
+            raise VerificationError(
+                "performance log v2 {} does not match its candidate receipt".format(key)
+            )
+    if log["clean_shutdown"] is not True:
+        raise VerificationError("performance log v2 requires clean_shutdown=true")
+    started_text = require_timestamp(
+        log["started_at_utc"], "performance log v2.started_at_utc"
+    )
+    completed_text = require_timestamp(
+        log["completed_at_utc"], "performance log v2.completed_at_utc"
+    )
+    started = timestamp_value(started_text)
+    completed = timestamp_value(completed_text)
+    sessions = [
+        value
+        for _, value in structured
+        if value.get("schema") == INTERACTIVE_SESSION_SCHEMA
+    ]
+    if len(sessions) != 1:
+        raise VerificationError(
+            "extended-session PASS requires exactly one matching interactive session"
+        )
+    if (
+        started_text != sessions[0]["started_at_utc"]
+        or completed_text != sessions[0]["completed_at_utc"]
+    ):
+        raise VerificationError(
+            "performance log interval does not match its interactive session"
+        )
+    if not (receipt_started <= started <= completed <= receipt_completed):
+        raise VerificationError(
+            "performance receipt and telemetry timestamps are not nested chronologically"
+        )
+
+    monotonic_duration = require_json_integer(
+        log["monotonic_duration_us"],
+        PERFORMANCE_V2_MINIMUM_DURATION_US,
+        "performance log v2.monotonic_duration_us",
+    )
+    target_interval = require_json_integer(
+        log["target_interval_us"], 1, "performance log v2.target_interval_us"
+    )
+    if target_interval != PERFORMANCE_V2_TARGET_INTERVAL_US:
+        raise VerificationError("performance log v2 target interval is not canonical")
+    requested_duration_us = requested_duration_seconds * 1_000_000
+    if not (
+        requested_duration_us
+        <= monotonic_duration
+        <= requested_duration_us + PERFORMANCE_V2_MAXIMUM_WINDOW_US
+    ):
+        raise VerificationError(
+            "performance log v2 duration does not match the runner request"
+        )
+    wall_duration_us = int((completed - started).total_seconds() * 1_000_000)
+    if wall_duration_us < PERFORMANCE_V2_MINIMUM_DURATION_US:
+        raise VerificationError("performance log v2 wall duration is shorter than 30 minutes")
+    if abs(wall_duration_us - monotonic_duration) > 2 * target_interval:
+        raise VerificationError(
+            "performance log v2 wall and monotonic durations disagree"
+        )
+
+    samples = require_array(log["samples"], "performance log v2.samples")
+    if not samples:
+        raise VerificationError("performance log v2 has no raw samples")
+    previous_elapsed = 0
+    total_frames = 0
+    total_window_duration = 0
+    total_gameplay_duration = 0
+    total_focused_duration = 0
+    total_stage_clear_events = 0
+    previous_completed_stages = 0
+    fps_values: List[float] = []
+    memory_values: List[int] = []
+    for index, raw_sample in enumerate(samples):
+        context = "performance log v2.samples[{}]".format(index)
+        sample = require_object(raw_sample, context)
+        require_exact_keys(sample, set(PERFORMANCE_SAMPLE_V2_KEYS), context)
+        sequence = require_json_integer(sample["sequence"], 1, context + ".sequence")
+        if sequence != index + 1:
+            raise VerificationError(
+                "performance log v2 sample sequence must be contiguous from 1"
+            )
+        elapsed = require_json_integer(sample["elapsed_us"], 1, context + ".elapsed_us")
+        window = require_json_integer(
+            sample["window_duration_us"], 1, context + ".window_duration_us"
+        )
+        if not (
+            PERFORMANCE_V2_MINIMUM_WINDOW_US
+            <= window
+            <= PERFORMANCE_V2_MAXIMUM_WINDOW_US
+        ):
+            raise VerificationError(
+                "performance log v2 sample window is outside 0.75-1.25 seconds"
+            )
+        if elapsed != previous_elapsed + window:
+            raise VerificationError(
+                "performance log v2 samples are missing or contain fabricated catch-up"
+            )
+        frames = require_json_integer(
+            sample["rendered_frames"], 1, context + ".rendered_frames"
+        )
+        resident = require_json_integer(
+            sample["resident_bytes"], 1, context + ".resident_bytes"
+        )
+        gameplay_duration = require_json_integer(
+            sample["gameplay_duration_us"],
+            0,
+            context + ".gameplay_duration_us",
+        )
+        focused_duration = require_json_integer(
+            sample["focused_duration_us"],
+            0,
+            context + ".focused_duration_us",
+        )
+        if gameplay_duration > window or focused_duration > window:
+            raise VerificationError(
+                context + " records gameplay/focus duration beyond its sample window"
+            )
+        stage_clear_events = require_json_integer(
+            sample["stage_clear_events"], 0, context + ".stage_clear_events"
+        )
+        if stage_clear_events > 1:
+            raise VerificationError(
+                context + " records more than one cleared stage in one sample window"
+            )
+        completed_stages = require_json_integer(
+            sample["completed_stages"], 0, context + ".completed_stages"
+        )
+        if completed_stages != previous_completed_stages + stage_clear_events:
+            raise VerificationError(
+                "performance log v2 completed_stages contradicts its clear events"
+            )
+        require_json_integer(sample["stage_number"], 1, context + ".stage_number")
+        player_count = require_json_integer(
+            sample["player_count"], 1, context + ".player_count"
+        )
+        if player_count != 1:
+            raise VerificationError(
+                "performance log v2 --quick-start receipt requires one-player samples"
+            )
+        app_state = require_string(sample["app_state"], context + ".app_state")
+        if app_state not in PERFORMANCE_V2_APP_STATES:
+            raise VerificationError(
+                "performance log v2 sample app_state is not canonical"
+            )
+        if not isinstance(sample["window_focused"], bool):
+            raise VerificationError(
+                "{}.window_focused must be a JSON boolean".format(context)
+            )
+        if app_state == "gameplay" and gameplay_duration == 0:
+            raise VerificationError(
+                context + " gameplay duration contradicts its app_state"
+            )
+        if app_state != "gameplay" and gameplay_duration == window:
+            raise VerificationError(
+                context + " non-gameplay state contradicts a full gameplay window"
+            )
+        if stage_clear_events > 0 and gameplay_duration == window:
+            raise VerificationError(
+                context + " clear event lacks a rendered settlement frame"
+            )
+        if sample["window_focused"] and focused_duration == 0:
+            raise VerificationError(
+                context + " focused endpoint contradicts zero focused duration"
+            )
+        if not sample["window_focused"] and focused_duration == window:
+            raise VerificationError(
+                context + " unfocused endpoint contradicts a fully focused window"
+            )
+        fps = frames * 1_000_000.0 / window
+        if not (0 < fps <= 1000):
+            raise VerificationError(context + " records an implausible FPS value")
+        previous_elapsed = elapsed
+        previous_completed_stages = completed_stages
+        total_frames += frames
+        total_window_duration += window
+        total_gameplay_duration += gameplay_duration
+        total_focused_duration += focused_duration
+        total_stage_clear_events += stage_clear_events
+        fps_values.append(fps)
+        memory_values.append(resident)
+    if previous_elapsed != monotonic_duration or total_window_duration != monotonic_duration:
+        raise VerificationError(
+            "performance log v2 has insufficient raw sampling coverage or an "
+            "inconsistent monotonic duration"
+        )
+
+    weighted_average = total_frames * 1_000_000.0 / total_window_duration
+    gameplay_duration_ratio = total_gameplay_duration / total_window_duration
+    focused_duration_ratio = total_focused_duration / total_window_duration
+    if (
+        gameplay_duration_ratio
+        < PERFORMANCE_V2_MINIMUM_GAMEPLAY_DURATION_RATIO
+    ):
+        raise VerificationError(
+            "raw performance samples do not contain enough active gameplay"
+        )
+    if focused_duration_ratio < PERFORMANCE_V2_MINIMUM_FOCUSED_DURATION_RATIO:
+        raise VerificationError(
+            "raw performance samples do not contain enough focused-window time"
+        )
+    minimum_stages = PERFORMANCE_THRESHOLDS_V2["minimum_stages_completed"]
+    if (
+        previous_completed_stages < minimum_stages
+        or total_stage_clear_events != previous_completed_stages
+    ):
+        raise VerificationError(
+            "raw performance samples do not prove a completed stage"
+        )
+    recorded_stages = require_number_at_least(
+        status["extended_session"]["details"]["stages_completed"],
+        0,
+        "extended-session stages_completed",
+    )
+    if not recorded_stages.is_integer() or int(recorded_stages) != previous_completed_stages:
+        raise VerificationError(
+            "extended-session stages_completed contradicts raw v2 samples"
+        )
+    recorded_mode_mix = require_string(
+        status["extended_session"]["details"]["mode_mix"],
+        "extended-session mode_mix",
+    ).strip().lower()
+    if recorded_mode_mix != "one-player":
+        raise VerificationError(
+            "extended-session mode_mix contradicts raw v2 samples"
+        )
+    low_count = max(1, math.ceil(len(fps_values) * 0.01))
+    one_percent_low = sum(sorted(fps_values)[:low_count]) / low_count
+    memory_start_mb = memory_values[0] / 1048576.0
+    memory_end_mb = memory_values[-1] / 1048576.0
+    memory_growth_bytes = max(memory_values) - memory_values[0]
+    if memory_growth_bytes > PERFORMANCE_V2_MAXIMUM_MEMORY_GROWTH_BYTES:
+        raise VerificationError(
+            "raw performance samples exceed the fixed Alpha memory-growth limit"
+        )
+    details = status["extended_session"]["details"]
+    actual_metrics = {
+        "duration_minutes": monotonic_duration / 60_000_000.0,
+        "average_fps": weighted_average,
+        "minimum_fps": min(fps_values),
+        "one_percent_low_fps": one_percent_low,
+        "memory_start_mb": memory_start_mb,
+        "memory_end_mb": memory_end_mb,
+    }
+    for key, actual in actual_metrics.items():
+        recorded = require_number_at_least(
+            details[key], 0, "extended-session " + key
+        )
+        if abs(recorded - actual) > 0.11:
+            raise VerificationError(
+                "extended-session {} contradicts raw v2 samples".format(key)
+            )
+    if require_number_at_least(
+        details["sampling_interval_seconds"],
+        0,
+        "extended-session sampling_interval_seconds",
+    ) != 1:
+        raise VerificationError(
+            "extended-session sampling interval must be the fixed v2 one second"
+        )
+    fixed_values = {
+        "minimum_average_fps": PERFORMANCE_THRESHOLDS_V2["minimum_average_fps"],
+        "minimum_one_percent_low_fps": PERFORMANCE_THRESHOLDS_V2[
+            "minimum_one_percent_low_fps"
+        ],
+        "maximum_memory_growth_mb": PERFORMANCE_THRESHOLDS_V2[
+            "maximum_memory_growth_mb"
+        ],
+    }
+    for key, expected in fixed_values.items():
+        if require_number_at_least(
+            details[key], 0, "extended-session " + key
+        ) != expected:
+            raise VerificationError(
+                "extended-session {} must use the fixed Alpha threshold under v2".format(
+                    key
+                )
+            )
+    if (
+        weighted_average < PERFORMANCE_THRESHOLDS_V2["minimum_average_fps"]
+        or one_percent_low
+        < PERFORMANCE_THRESHOLDS_V2["minimum_one_percent_low_fps"]
+    ):
+        raise VerificationError("raw performance samples miss the fixed Alpha FPS threshold")
+
+
+def validate_performance_log(
+    status: Mapping[str, Any],
+    evidence_map: Mapping[str, Mapping[str, Any]],
+    artifact_map: Mapping[str, Tuple[str, str, str, Path]],
+    release: Mapping[str, Any],
+    candidate_archive: Path,
+    candidate_sha256: str,
+    requirements_profile: str,
+) -> None:
+    if requirements_profile == "macos-alpha-v1":
+        validate_performance_log_v1(
+            status, evidence_map, artifact_map, candidate_sha256
+        )
+        return
+    if requirements_profile == "macos-alpha-v2":
+        validate_performance_log_v2(
+            status,
+            evidence_map,
+            artifact_map,
+            release,
+            candidate_archive,
+            candidate_sha256,
+        )
+        return
+    raise VerificationError("unsupported performance evidence profile")
 
 
 def validate_pass_gate_semantics(
@@ -2505,11 +3264,15 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
     require_exact_keys(status, ROOT_KEYS, "status")
     if status["schema"] != "tanks3d-release-status-v1":
         raise VerificationError("unsupported release status schema")
-    expected_requirements_path = "docs/release-requirements/macos-alpha-v1.json"
-    if status["requirements"] != expected_requirements_path:
-        raise VerificationError("status.requirements must name the canonical profile")
+    requirements_profiles = {
+        "docs/release-requirements/macos-alpha-v1.json": "macos-alpha-v1",
+        "docs/release-requirements/macos-alpha-v2.json": "macos-alpha-v2",
+    }
+    requirements_profile = requirements_profiles.get(status["requirements"])
+    if requirements_profile is None:
+        raise VerificationError("status.requirements must name a canonical Alpha profile")
     requirements_path = resolve_repository_file(root, status["requirements"], "status.requirements")
-    validate_requirements(load_json_strict(requirements_path))
+    validate_requirements(load_json_strict(requirements_path), requirements_profile)
 
     blockers: List[str] = []
     release, file_refs, candidate_dir = validate_release(root, status["release"])
@@ -2620,7 +3383,13 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         file_refs["artifact"][1],
     )
     validate_performance_log(
-        status, evidence_map, artifact_map, file_refs["artifact"][1]
+        status,
+        evidence_map,
+        artifact_map,
+        release,
+        file_refs["artifact"][0],
+        file_refs["artifact"][1],
+        requirements_profile,
     )
     known_issues = validate_known_issues(
         status["known_issues"], evidence_map, blockers
@@ -2643,6 +3412,11 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
     )
     invoke_tagged_candidate_verifier(root, candidate_dir)
 
+    if not blockers and requirements_profile == "macos-alpha-v1":
+        raise VerificationError(
+            "macos-alpha-v1 is superseded and cannot approve a release; "
+            "use macos-alpha-v2 candidate-bound performance evidence"
+        )
     if blockers and not allow_blocked:
         raise VerificationError(
             "release is not approved; {} blocker(s): {}".format(
