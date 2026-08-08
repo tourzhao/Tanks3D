@@ -52,8 +52,9 @@ ad-hoc signature proves bundle integrity but is not Developer ID signing or
 Apple notarization, so this remains an Alpha package. See
 `docs/RELEASE_CHECKLIST.md` before publishing it.
 
-The source repository keeps the player-facing description for the preserved
-Alpha 1 candidate at `docs/releases/v0.1.0-alpha.1.md`.
+The source repository keeps the current candidate release page at
+`docs/releases/v0.1.0-alpha.3.md` and the preserved Alpha 1 page at
+`docs/releases/v0.1.0-alpha.1.md`.
 
 ## Controls
 
@@ -266,7 +267,8 @@ concrete `AudioBank`'s internal voice-priority behavior.
 Project-owned source and assets are provided under the
 [PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use is not granted.
 This is source-available software and is not advertised as OSI open source.
-The required attribution line is in [NOTICE](NOTICE).
+The recorded author identity is **tourzhao**; the required notice line is
+`Copyright (c) 2026 tourzhao.` and is preserved in [NOTICE](NOTICE).
 
 Third-party portions keep their own licenses, which take precedence over the
 project license: upstream MIT material, raylib/zlib example material, and the
