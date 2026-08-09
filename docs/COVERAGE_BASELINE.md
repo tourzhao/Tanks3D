@@ -1,8 +1,8 @@
 # Coverage Baseline
 
 This report records the pre-modularization self-test baseline begun on
-2026-08-04 and refreshed on 2026-08-09 after the release-performance capability
-coverage increment.
+2026-08-04 and refreshed on 2026-08-09 after the transactional view-target
+hardening increment.
 It is a measurement, not a whole-project merge threshold. The larger self-test
 is still textually included from `tests/self_tests.inl` in `src/main.cpp`; the
 new core/game rule suites and app-layer suites are independent executables that
@@ -26,8 +26,8 @@ profiles, the pure-rule and app-layer executables ran their table suites, and
 
 | Scope | Region | Function | Line | Branch |
 | --- | ---: | ---: | ---: | ---: |
-| All forty-nine production source/header files | 51.82% | 65.53% | 47.10% | 53.39% |
-| `src/main.cpp` | 23.09% | 59.14% | 28.55% | 20.31% |
+| All forty-nine production source/header files | 52.23% | 65.28% | 47.22% | 53.76% |
+| `src/main.cpp` | 24.65% | 58.74% | 29.19% | 22.00% |
 | `src/app/command_side_effect_dispatch.cpp` | 100.00% | 100.00% | 99.55% | 100.00% |
 | `src/app/atomic_output_file.cpp` | 60.40% | 100.00% | 69.92% | 53.45% |
 | `src/app/release_performance_capabilities.cpp` | 85.00% | 100.00% | 86.36% | 52.94% |
@@ -57,9 +57,9 @@ profiles, the pure-rule and app-layer executables ran their table suites, and
 | `src/game/stage_map.cpp` | 97.97% | 100.00% | 98.18% | 93.40% |
 | `StageMap::impactShell` | 100.00% | 100.00% | 100.00% | 97.37% |
 
-The overall percentages now include all forty-nine production files and 21,109
-production lines: `src/main.cpp` is 7,552 lines and the textually included
-`tests/self_tests.inl` is 10,826 lines. Thirteen pure headers and seven pure
+The overall percentages now include all forty-nine production files and 21,236
+production lines: `src/main.cpp` is 7,679 lines and the textually included
+`tests/self_tests.inl` is 11,042 lines. Thirteen pure headers and seven pure
 implementation sources are compiled independently; eight app implementation
 modules remain raylib-free. `player_system.h` is 277 lines,
 `player_system.cpp` is 289 lines, and its 1,793-line direct test remains outside
@@ -68,6 +68,11 @@ the production denominator. Moving tile generation from `StageMap` into
 generator goldens, the mutable-map bridge and routes, dumped signatures,
 gameplay expectations, and the versioned same-build deterministic replay gate
 pass.
+
+The integrated view-target suite covers the raylib 6.0 depth-metadata sentinel,
+valid HDR reuse, RGBA8 fallback, double-failure retry, failed-resize rollback,
+successful-resize ownership transfer, partial two-view cleanup, duplicate-unload
+detection, and invalid-count rejection without opening a window.
 
 The first PR 3.3 increment mechanically moved shell spawn, impact state,
 cancellation eligibility/overlap, swept cancellation, and the `StageMap`
@@ -561,21 +566,21 @@ That table is a historical pre-extraction snapshot. `Game3D::damagePlayer` was
 removed by the sixth increment; its state transition now lives behind the
 validated `CombatSystem` player commit.
 
-The integrated game run executes seventeen suites and 7,181 checks. The ten
-raylib-free core/game executables add 154 suites and 1,107 checks; the five
-raylib-free app-layer executables add thirty suites and 154 checks, for 201
-suites and 8,442 checks across the aggregate gate. The release-screenshot
-parser and atomic writer contribute eight suites and 39 checks. The standalone
-`StageGenerator` executable contributes two suites and 43 checks; the
-`StageMap` executable retains four suites and 136 checks. The new
-`CombatSystem` executable contributes twenty suites and 132 checks, while the
-`SettlementSystem` executable contributes fourteen suites and 89 checks. The
-`BonusSystem` executable contributes thirty-three suites and 163 checks. The
-`EnemySystem` executable contributes forty-three suites and 120 checks. Test
-source is not in the denominator. The `PlayerSystem` executable contributes
-thirty-one suites and 64 checks while exercising 2,560 control combinations
-through two literal tables plus the frame-entry, inactive-death, scalar
-movement, firing, and spawn/reset transaction matrices.
+At the forty-fifth increment, the integrated game run executed seventeen suites
+and 7,181 checks. The ten raylib-free core/game executables added 154 suites and
+1,107 checks; the five raylib-free app-layer executables added thirty suites and
+154 checks, for 201 suites and 8,442 checks across the aggregate gate. The
+release-screenshot parser and atomic writer contributed eight suites and 39
+checks. The standalone `StageGenerator` executable contributed two suites and
+43 checks; the `StageMap` executable retained four suites and 136 checks. The
+new `CombatSystem` executable contributed twenty suites and 132 checks, while
+the `SettlementSystem` executable contributed fourteen suites and 89 checks.
+The `BonusSystem` executable contributed thirty-three suites and 163 checks.
+The `EnemySystem` executable contributed forty-three suites and 120 checks.
+Test source was not in the denominator. The `PlayerSystem` executable
+contributed thirty-one suites and 64 checks while exercising 2,560 control
+combinations through two literal tables plus the frame-entry, inactive-death,
+scalar movement, firing, and spawn/reset transaction matrices.
 
 The nineteenth pre-extraction characterization snapshot reported:
 

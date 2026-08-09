@@ -10608,6 +10608,217 @@ int runSessionTimingAndPersistenceSelfTests(const fs::path &resourceRoot)
     return 0;
 }
 
+struct FakeViewTargetAllocator
+{
+    std::vector<bool> hdrResults{};
+    std::vector<bool> fallbackResults{};
+    std::size_t hdrIndex = 0U;
+    std::size_t fallbackIndex = 0U;
+    unsigned int nextId = 1U;
+    int fallbackWarnings = 0;
+    std::vector<unsigned int> configured{};
+    std::vector<unsigned int> unloaded{};
+    std::vector<unsigned int> live{};
+    bool doubleUnload = false;
+
+    RenderTexture2D load(std::vector<bool> &results, std::size_t &index,
+                         int width, int height)
+    {
+        const bool valid = index < results.size() && results[index];
+        ++index;
+        RenderTexture2D target{};
+        target.id = nextId++;
+        live.push_back(target.id);
+        target.texture.id = valid ? nextId++ : 0U;
+        target.texture.width = width;
+        target.texture.height = height;
+        target.texture.mipmaps = 1;
+        target.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+        target.depth.id = nextId++;
+        target.depth.width = width;
+        target.depth.height = height;
+        target.depth.mipmaps = 1;
+        target.depth.format = ViewTargets::kRaylibDepthAttachmentFormat;
+        return target;
+    }
+
+    ViewTargets::Operations operations()
+    {
+        ViewTargets::Operations result;
+        result.loadHdr = [this](int width, int height) {
+            return load(hdrResults, hdrIndex, width, height);
+        };
+        result.loadFallback = [this](int width, int height) {
+            return load(fallbackResults, fallbackIndex, width, height);
+        };
+        result.valid = [](const RenderTexture2D &target) {
+            return IsRenderTextureValid(target);
+        };
+        result.configure = [this](const RenderTexture2D &target) {
+            configured.push_back(target.id);
+        };
+        result.unload = [this](RenderTexture2D target) {
+            unloaded.push_back(target.id);
+            const auto found = std::find(live.begin(), live.end(), target.id);
+            if (found == live.end())
+                doubleUnload = true;
+            else
+                live.erase(found);
+        };
+        result.reportFallback = [this]() { ++fallbackWarnings; };
+        return result;
+    }
+};
+
+int runViewTargetAllocationSelfTests()
+{
+    {
+        RenderTexture2D metadata{};
+        metadata.id = 1U;
+        metadata.texture = {2U, 640, 480, 1,
+                            PIXELFORMAT_UNCOMPRESSED_R16G16B16A16};
+        metadata.depth = {3U, 640, 480, 1, 0};
+        const bool zeroDepthFormatRejected =
+            !IsRenderTextureValid(metadata);
+        metadata.depth.format = ViewTargets::kRaylibDepthAttachmentFormat;
+        if (!checkTest(zeroDepthFormatRejected &&
+                           IsRenderTextureValid(metadata),
+                       "raylib depth metadata sentinel contract drifted"))
+            return 1;
+    }
+
+    {
+        FakeViewTargetAllocator allocator;
+        allocator.hdrResults = {true};
+        ViewTargets targets(allocator.operations());
+        const bool first = targets.ensure(1, 1280, 720);
+        const unsigned int committedId = targets.targets[0].id;
+        const bool cached = targets.ensure(1, 1280, 720);
+        if (!checkTest(first && cached && targets.count == 1 &&
+                           targets.widths == std::array<int, 2>{{1280, 0}} &&
+                           targets.height == 720 && allocator.hdrIndex == 1U &&
+                           allocator.fallbackIndex == 0U &&
+                           allocator.configured ==
+                               std::vector<unsigned int>{committedId} &&
+                           allocator.unloaded.empty(),
+                       "valid HDR view target was not committed and cached"))
+            return 1;
+        targets.release();
+        if (!checkTest(targets.count == 0 && targets.widths[0] == 0 &&
+                           targets.height == 0 &&
+                           allocator.unloaded ==
+                               std::vector<unsigned int>{committedId} &&
+                           allocator.live.empty() && !allocator.doubleUnload,
+                       "view target release did not clear and unload state"))
+            return 1;
+    }
+
+    {
+        FakeViewTargetAllocator allocator;
+        allocator.hdrResults = {false};
+        allocator.fallbackResults = {true};
+        ViewTargets targets(allocator.operations());
+        const bool ready = targets.ensure(1, 960, 540);
+        if (!checkTest(ready && targets.count == 1 &&
+                           allocator.hdrIndex == 1U &&
+                           allocator.fallbackIndex == 1U &&
+                           allocator.fallbackWarnings == 1 &&
+                           allocator.unloaded.size() == 1U &&
+                           allocator.configured ==
+                               std::vector<unsigned int>{targets.targets[0].id},
+                       "RGBA8 fallback did not replace and release invalid HDR state"))
+            return 1;
+        targets.release();
+    }
+
+    {
+        FakeViewTargetAllocator allocator;
+        allocator.hdrResults = {true, true};
+        ViewTargets targets(allocator.operations());
+        if (!checkTest(targets.ensure(1, 640, 480),
+                       "successful resize transaction setup failed"))
+            return 1;
+        const unsigned int originalId = targets.targets[0].id;
+        const bool resized = targets.ensure(1, 1024, 768);
+        const unsigned int replacementId = targets.targets[0].id;
+        const bool replacementCommitted =
+            resized && replacementId != originalId && targets.count == 1 &&
+            targets.widths[0] == 1024 && targets.height == 768 &&
+            allocator.configured ==
+                std::vector<unsigned int>{originalId, replacementId} &&
+            allocator.unloaded == std::vector<unsigned int>{originalId} &&
+            allocator.live == std::vector<unsigned int>{replacementId} &&
+            !allocator.doubleUnload;
+        targets.release();
+        if (!checkTest(replacementCommitted && allocator.live.empty() &&
+                           allocator.unloaded ==
+                               std::vector<unsigned int>{originalId,
+                                                         replacementId} &&
+                           !allocator.doubleUnload,
+                       "successful resize did not transfer unique target ownership"))
+            return 1;
+    }
+
+    {
+        FakeViewTargetAllocator allocator;
+        allocator.hdrResults = {false, true};
+        allocator.fallbackResults = {false};
+        ViewTargets targets(allocator.operations());
+        const bool failed = targets.ensure(1, 800, 600);
+        const bool retried = targets.ensure(1, 800, 600);
+        if (!checkTest(!failed && retried && targets.count == 1 &&
+                           allocator.hdrIndex == 2U &&
+                           allocator.fallbackIndex == 1U &&
+                           allocator.configured.size() == 1U &&
+                           allocator.unloaded.size() == 2U,
+                       "double allocation failure was cached instead of retried"))
+            return 1;
+        targets.release();
+    }
+
+    {
+        FakeViewTargetAllocator allocator;
+        allocator.hdrResults = {true, false};
+        allocator.fallbackResults = {false};
+        ViewTargets targets(allocator.operations());
+        if (!checkTest(targets.ensure(1, 640, 480),
+                       "initial transaction setup failed"))
+            return 1;
+        const unsigned int committedId = targets.targets[0].id;
+        const bool resized = targets.ensure(1, 1024, 768);
+        if (!checkTest(!resized && targets.count == 1 &&
+                           targets.widths[0] == 640 && targets.height == 480 &&
+                           targets.targets[0].id == committedId &&
+                           std::find(allocator.unloaded.begin(),
+                                     allocator.unloaded.end(), committedId) ==
+                               allocator.unloaded.end(),
+                       "failed resize discarded the last committed target"))
+            return 1;
+        targets.release();
+    }
+
+    {
+        FakeViewTargetAllocator allocator;
+        allocator.hdrResults = {true, false};
+        allocator.fallbackResults = {false};
+        ViewTargets targets(allocator.operations());
+        const bool twoReady = targets.ensure(2, 1280, 720);
+        const std::size_t callsBeforeInvalid = allocator.hdrIndex;
+        const bool invalidCount = targets.ensure(3, 1280, 720);
+        if (!checkTest(!twoReady && !invalidCount && targets.count == 0 &&
+                           targets.targets[0].id == 0U &&
+                           targets.targets[1].id == 0U &&
+                           allocator.configured.empty() &&
+                           allocator.unloaded.size() == 3U &&
+                           allocator.hdrIndex == callsBeforeInvalid &&
+                           allocator.live.empty() && !allocator.doubleUnload,
+                       "partial two-view allocation or invalid count committed state"))
+            return 1;
+    }
+
+    return 0;
+}
+
 int runVehicleMetadataSelfTests()
 {
     if (!checkTest(std::string(wwii_tank_model::vehicleName(true, 0)) == "PANZER II AUSF. F" &&
@@ -10802,6 +11013,11 @@ int runSelfTests(const fs::path &resourceRoot,
     if (runSelectedSelfTestSuite(selection, SelfTestSelection::Session,
                                  "session-timing-and-persistence", [&]() {
             return runSessionTimingAndPersistenceSelfTests(resourceRoot);
+        }) != 0)
+        return 1;
+    if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,
+                                 "view-target-allocation", []() {
+            return runViewTargetAllocationSelfTests();
         }) != 0)
         return 1;
     if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,

@@ -14,8 +14,8 @@ expanding the existing `Game3D` class.
 
 ## Current Shape and Risks
 
-The forty-nine production source/header files contain 21,109 lines.
-`src/main.cpp` remains one 7,552-line production translation unit; 10,826 lines
+The forty-nine production source/header files contain 21,236 lines.
+`src/main.cpp` remains one 7,679-line production translation unit; 11,042 lines
 of transitional self-tests still live in `tests/self_tests.inl` and are
 textually compiled into that unit. Thirteen pure headers and seven pure
 implementation sources under
@@ -32,6 +32,13 @@ fire/spawn configuration, random and occupancy adapters, projectile
 presentation, carrier-pickup random/base-query adapters and concrete consumers,
 direct-fire scoring, settlement side effects, audio delegation, concrete
 effect/camera sinks, camera state, and rendering.
+Renderer-local `ViewTargets` remains in `main.cpp`, but its injected operations
+now isolate allocation policy from ownership. It validates the raylib 6.0
+depth-metadata contract, attempts a complete RGBA16F target before RGBA8, and
+commits a resize only after every replacement is valid and configured. Invalid
+or partial candidates are released through their FBO ownership roots. Window
+creation and render-target failure both fail closed before an invalid target can
+reach a draw call.
 `StageGenerator` now produces deterministic tile grids independently of the
 mutable `StageMap`, which retains route validation, collision, brick masks,
 base-wall state, and destruction. The first `CombatSystem` increment owns shell
@@ -836,8 +843,8 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   `id != slot` respawn cleanup and final-shell delay, ordered two-player
   movement, Boat/water traversal, blocked-fire sequencing, and concrete
   presentation. The observable-event suite has 76 checks, including post-commit
-  respawn cue ordering. Targeted regressions and ASan/UBSan pass all 17 integrated suites and
-  7,181 checks.
+  respawn cue ordering. Targeted regressions and ASan/UBSan pass all 18
+  integrated suites and 7,191 checks.
 - `audio/audio_output.h` owns the three-operation, raylib-free runtime output
   interface. `Game3D` stores only a nullable, non-owning pointer; `main` retains
   stack ownership of `AudioBank` and its device/resource lifecycle. A recording

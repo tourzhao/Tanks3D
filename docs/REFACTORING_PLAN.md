@@ -56,12 +56,12 @@ changed production lines or fewer.
   threshold yet.
 
 Status: implemented. The current ledger is
-[`GAMEPLAY_INVARIANTS.md`](GAMEPLAY_INVARIANTS.md); seventeen named suites execute
-7,181 runtime checks, including 35 versioned stage-layout hashes, seeded and
+[`GAMEPLAY_INVARIANTS.md`](GAMEPLAY_INVARIANTS.md); eighteen named suites execute
+7,191 runtime checks, including 35 versioned stage-layout hashes, seeded and
 scripted randomness, production-path player input, and observable event
 scenarios. Ten independent core/game executables add 154 suites and
-1,107 focused checks; five raylib-free app-layer executables add thirty
-suites and 154 checks, for 201 suites and 8,442 checks across the aggregate
+1,107 focused checks; seven raylib-free app-layer executables add fifty
+suites and 292 checks, for 222 suites and 8,590 checks across the aggregate
 gate. The current
 instrumented result is recorded in
 [`COVERAGE_BASELINE.md`](COVERAGE_BASELINE.md).
@@ -1258,3 +1258,28 @@ remains final-verifier-only, preserving honest short or below-threshold
 diagnostics. The unchanged 60-test final-verifier suite and expanded 30-test
 runner suite pass, including a table of 37 malformed or contradictory raw-log
 mutations. No candidate, tag, push, or publication was created.
+
+The fifty-sixth increment closes the render-target fail-close gap without
+changing gameplay, maps, assets, or input rules. The custom HDR loader now uses
+raylib 6.0's required positive native-depth metadata sentinel instead of making
+every complete RGBA16F target fail `IsRenderTextureValid()` and fall back to
+RGBA8. HDR and fallback allocations share one complete-FBO loader and release
+partial attachments through their FBO ownership root. `ViewTargets` injects its
+allocation operations for headless testing, validates same-size cached targets,
+and commits a resize only after every replacement is valid and configured. A
+failed or partial replacement cleans every candidate while retaining the prior
+committed set; successful replacement transfers unique ownership before the old
+set is released. Window/context failure exits before the application initializes
+audio or loads its GPU assets. A gameplay-target failure returns ordinary play to
+setup, while release screenshot and performance modes fail nonzero rather than
+rendering an invalid target. The new integrated suite contributes ten checks for
+the raylib metadata contract, HDR cache/release, RGBA8 fallback, failure retry,
+successful and failed resize, two-view rollback, duplicate-unload detection,
+and invalid-count rejection. The current ledger is 18 integrated suites / 7,191
+checks and 222 aggregate suites / 8,590 checks across 19 profiles. Coverage is
+52.23%/65.28%/47.22%/53.76% over 49 production files / 21,236 lines, with
+`main.cpp` at 24.65%/58.74%/29.19%/22.00%. Clean warning-as-error debug,
+full/unit/session/asset, ASan/UBSan, coverage, Alpha-4 distribution, and Alpha
+candidate-tooling gates pass. A real Apple M3 Pro GPU smoke captured a 1280x720
+PNG and logged `RGBA16F HDR view target ready` without the fallback warning.
+No real candidate, tag, push, or publication was created.

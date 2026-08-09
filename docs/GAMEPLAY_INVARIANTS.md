@@ -640,10 +640,10 @@ make coverage
 ./build/Tanks3D --dump-stage-signatures
 ```
 
-The integrated self-test reports seventeen named suites and 7,181 runtime checks.
+The integrated self-test reports eighteen named suites and 7,191 runtime checks.
 Ten independent, raylib-free core/game executables add 154 suites and
 1,107 checks; seven app-layer executables add fifty suites and 292 checks, so
-the aggregate gate runs 221 suites and 8,580 checks across nineteen profiles.
+the aggregate gate runs 222 suites and 8,590 checks across nineteen profiles.
 The nineteenth profile executes the exclusive, no-window
 release-performance-capability handshake through the instrumented game and
 byte-compares its JSON contract without changing the suite/check ledger.
@@ -758,7 +758,7 @@ silence, `id != slot` respawn cleanup and final-shell delay, ordered two-player
 movement, Boat/water collision, blocked movement with same-frame fire, and
 concrete presentation. The observable-event suite has 76 checks and locks the
 post-commit respawn cue order. Direct and
-production regressions plus ASan/UBSan pass all 17 integrated suites and 7,181
+production regressions plus ASan/UBSan pass all 18 integrated suites and 7,191
 checks. Owned-shell cleanup, spawn-point mapping and entity adaptation, events,
 audio, entities, map, rendering, cameras, and concrete movement/fire
 orchestration and presentation adapters remain in `Game3D`.
@@ -768,6 +768,18 @@ and initial brick mask;
 they do not use `std::hash` or raw object memory. Do not replace expected hashes
 merely to make a failing refactor pass. First explain and review the intended
 layout change.
+
+Render-target lifetime and failure are fixed as well. A same-size valid target
+is reused. Each requested view attempts RGBA16F first and only tries RGBA8 after
+releasing an invalid HDR allocation. No replacement set is committed until all
+requested views are valid and configured; failed or partial sets are unloaded,
+a failed target-set replacement leaves the prior committed set intact and
+remains retryable, and an invalid view count allocates nothing. The raylib 6.0
+native-depth metadata sentinel is covered by a headless contract test. At the
+application boundary, window/context failure exits before the application
+initializes audio or loads its GPU assets. Ordinary gameplay allocation failure
+releases committed targets and returns to setup, while release screenshot and
+performance modes exit nonzero.
 
 Visual proportions, shader colors, and particle counts are outside this gameplay
 ledger. Preserve them with the showcase and manual visual QA process described in

@@ -5906,7 +5906,35 @@ void drawGltfProbeHud(const TankAssets &tankAssets, int screenWidth,
 
 struct ViewTargets
 {
-    ViewTargets() = default;
+    // raylib 6.0 uses this positive metadata sentinel for a native depth
+    // renderbuffer in LoadRenderTexture(). IsRenderTextureValid() requires the
+    // field even though rlgl selects the actual GPU depth format internally.
+    static constexpr int kRaylibDepthAttachmentFormat = 19;
+
+    struct Operations
+    {
+        std::function<RenderTexture2D(int, int)> loadHdr{};
+        std::function<RenderTexture2D(int, int)> loadFallback{};
+        std::function<bool(const RenderTexture2D &)> valid{};
+        std::function<void(const RenderTexture2D &)> configure{};
+        std::function<void(RenderTexture2D)> unload{};
+        std::function<void()> reportFallback{};
+
+        bool complete() const
+        {
+            return static_cast<bool>(loadHdr) &&
+                   static_cast<bool>(loadFallback) &&
+                   static_cast<bool>(valid) &&
+                   static_cast<bool>(configure) &&
+                   static_cast<bool>(unload);
+        }
+    };
+
+    ViewTargets() : ViewTargets(productionOperations()) {}
+    explicit ViewTargets(Operations operations)
+        : operations_(std::move(operations))
+    {
+    }
     ViewTargets(const ViewTargets &) = delete;
     ViewTargets &operator=(const ViewTargets &) = delete;
 
@@ -5915,45 +5943,126 @@ struct ViewTargets
     int height = 0;
     int count = 0;
 
-    void ensure(int requestedCount, int screenWidth, int screenHeight)
+    bool ensure(int requestedCount, int screenWidth, int screenHeight)
     {
+        if ((requestedCount != 1 && requestedCount != 2) ||
+            !operations_.complete())
+            return false;
         const int leftWidth = requestedCount == 2 ? screenWidth / 2 : screenWidth;
         const int rightWidth = requestedCount == 2 ? screenWidth - leftWidth : 0;
-        if (count == requestedCount && widths[0] == leftWidth && widths[1] == rightWidth && height == screenHeight)
-            return;
-        release();
-        count = requestedCount;
-        widths[0] = std::max(1, leftWidth);
-        widths[1] = std::max(0, rightWidth);
-        height = std::max(1, screenHeight);
-        for (int index = 0; index < count; ++index)
+        const std::array<int, 2> requestedWidths{{
+            std::max(1, leftWidth), std::max(0, rightWidth)}};
+        const int requestedHeight = std::max(1, screenHeight);
+        bool cachedTargetsValid = count == requestedCount &&
+                                  widths == requestedWidths &&
+                                  height == requestedHeight;
+        for (int index = 0; cachedTargetsValid && index < count; ++index)
+            cachedTargetsValid = operations_.valid(targets[index]);
+        if (cachedTargetsValid)
+            return true;
+
+        std::array<RenderTexture2D, 2> replacements{};
+        for (int index = 0; index < requestedCount; ++index)
         {
-            targets[index] = loadHdrRenderTexture(widths[index], height);
-            if (!IsRenderTextureValid(targets[index]))
+            replacements[index] = operations_.loadHdr(
+                requestedWidths[index], requestedHeight);
+            if (!operations_.valid(replacements[index]))
             {
-                TraceLog(LOG_WARNING,
-                         "TANKS3D: RGBA16F view target unavailable; using RGBA8 fallback");
-                targets[index] = LoadRenderTexture(widths[index], height);
+                discard(replacements[index]);
+                if (operations_.reportFallback)
+                    operations_.reportFallback();
+                replacements[index] = operations_.loadFallback(
+                    requestedWidths[index], requestedHeight);
             }
-            SetTextureFilter(targets[index].texture, TEXTURE_FILTER_BILINEAR);
+            if (!operations_.valid(replacements[index]))
+            {
+                discard(replacements[index]);
+                for (RenderTexture2D &replacement : replacements)
+                    discard(replacement);
+                return false;
+            }
         }
+        for (int index = 0; index < requestedCount; ++index)
+            operations_.configure(replacements[index]);
+
+        release();
+        targets = replacements;
+        widths = requestedWidths;
+        height = requestedHeight;
+        count = requestedCount;
+        return true;
     }
 
     void release()
     {
         for (RenderTexture2D &target : targets)
-        {
-            if (IsRenderTextureValid(target))
-                UnloadRenderTexture(target);
-            target = {};
-        }
+            discard(target);
         widths = {};
         height = 0;
         count = 0;
     }
 
 private:
+    Operations operations_{};
+
+    static bool ownsResources(const RenderTexture2D &target)
+    {
+        // The loaders own attachments through their FBO. A zero FBO must
+        // therefore be a fully cleaned zero value; UnloadRenderTexture cannot
+        // safely infer whether an orphaned depth id is a texture or renderbuffer.
+        assert(target.id != 0 ||
+               (target.texture.id == 0 && target.depth.id == 0));
+        return target.id != 0;
+    }
+
+    void discard(RenderTexture2D &target)
+    {
+        if (ownsResources(target) && operations_.unload)
+            operations_.unload(target);
+        target = {};
+    }
+
+    static Operations productionOperations()
+    {
+        Operations operations;
+        operations.loadHdr = [](int width, int height) {
+            return loadHdrRenderTexture(width, height);
+        };
+        operations.loadFallback = [](int width, int height) {
+            return loadViewRenderTexture(
+                width, height, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        };
+        operations.valid = [](const RenderTexture2D &target) {
+            return IsRenderTextureValid(target);
+        };
+        operations.configure = [](const RenderTexture2D &target) {
+            SetTextureFilter(target.texture, TEXTURE_FILTER_BILINEAR);
+        };
+        operations.unload = [](RenderTexture2D target) {
+            UnloadRenderTexture(target);
+        };
+        operations.reportFallback = []() {
+            TraceLog(LOG_WARNING,
+                     "TANKS3D: RGBA16F view target unavailable; using RGBA8 fallback");
+        };
+        return operations;
+    }
+
     static RenderTexture2D loadHdrRenderTexture(int width, int height)
+    {
+        RenderTexture2D target = loadViewRenderTexture(
+            width, height, PIXELFORMAT_UNCOMPRESSED_R16G16B16A16);
+        if (IsRenderTextureValid(target))
+        {
+            TraceLog(LOG_INFO,
+                     "TANKS3D: RGBA16F HDR view target ready (%ix%i)",
+                     width, height);
+        }
+        return target;
+    }
+
+    static RenderTexture2D loadViewRenderTexture(int width, int height,
+                                                  int colorFormat)
     {
         RenderTexture2D target{};
         target.id = rlLoadFramebuffer();
@@ -5962,18 +6071,17 @@ private:
 
         rlEnableFramebuffer(target.id);
         target.texture.id = rlLoadTexture(nullptr, width, height,
-                                          RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16, 1);
+                                          colorFormat, 1);
         target.texture.width = width;
         target.texture.height = height;
         target.texture.mipmaps = 1;
-        target.texture.format = PIXELFORMAT_UNCOMPRESSED_R16G16B16A16;
+        target.texture.format = colorFormat;
 
         target.depth.id = rlLoadTextureDepth(width, height, true);
         target.depth.width = width;
         target.depth.height = height;
         target.depth.mipmaps = 1;
-        // rlgl selects the native depth format for the renderbuffer.
-        target.depth.format = 0;
+        target.depth.format = kRaylibDepthAttachmentFormat;
 
         rlFramebufferAttach(target.id, target.texture.id,
                             RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
@@ -5982,18 +6090,14 @@ private:
 
         if (!rlFramebufferComplete(target.id))
         {
-            // rlUnloadFramebuffer owns the attached depth renderbuffer but not
-            // the color texture, so release the color attachment explicitly.
-            if (target.texture.id != 0)
-                rlUnloadTexture(target.texture.id);
             rlDisableFramebuffer();
-            rlUnloadFramebuffer(target.id);
+            // UnloadRenderTexture releases the color texture explicitly and
+            // the attached depth renderbuffer through the FBO ownership root.
+            UnloadRenderTexture(target);
             return {};
         }
 
         rlDisableFramebuffer();
-        TraceLog(LOG_INFO, "TANKS3D: RGBA16F HDR view target ready (%ix%i)",
-                 width, height);
         return target;
     }
 };
@@ -6346,25 +6450,26 @@ void renderHighScore(const Game3D &game)
     EndDrawing();
 }
 
-void renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
+bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                 TankAssets &tankAssets, const EnvironmentAssets &environment,
                 bonus_assets::Assets &bonusAssets, PostProcess &postProcess)
 {
     if (game.highScoreDisplay())
     {
         renderHighScore(game);
-        return;
+        return true;
     }
     if (game.settling())
     {
         renderSettlement(game, lighting, tankAssets);
-        return;
+        return true;
     }
     const int screenWidth = std::max(1, GetScreenWidth());
     const int screenHeight = std::max(1, GetScreenHeight());
     // Fixed classic framing means local co-op shares one full-screen camera
     // instead of duplicating the same battlefield into two narrow views.
-    viewTargets.ensure(1, screenWidth, screenHeight);
+    if (!viewTargets.ensure(1, screenWidth, screenHeight))
+        return false;
     const Camera3D sharedCamera = game.cameraForPlayer(0);
 
     // The fixed sun and arena share one stable orthographic shadow map across
@@ -6436,6 +6541,7 @@ void renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
             drawCenteredText("ENTER: RESUME    ESC: SETUP", screenWidth / 2, screenHeight / 2 + 24, 21, LIGHTGRAY);
     }
     EndDrawing();
+    return true;
 }
 
 struct MenuSettings
@@ -7058,6 +7164,11 @@ int main(int argc, char **argv)
     SetConfigFlags(windowFlags);
     InitWindow(kReleaseScreenshotWidth, kReleaseScreenshotHeight,
                "TANKS 3D - ISOMETRIC ARMORED COMBAT");
+    if (!IsWindowReady())
+    {
+        std::cerr << "Unable to create the game window or graphics context\n";
+        return 1;
+    }
     SetExitKey(KEY_NULL);
     InitAudioDevice();
 
@@ -7439,8 +7550,24 @@ int main(int argc, char **argv)
             continue;
         }
         tankAssets.setAnimationClock(GetTime());
-        renderGame(game, viewTargets, lighting, tankAssets, environment,
-                   bonusAssets, postProcess);
+        if (!renderGame(game, viewTargets, lighting, tankAssets, environment,
+                        bonusAssets, postProcess))
+        {
+            menuError = "Unable to allocate the gameplay render target";
+            std::cerr << menuError << '\n';
+            viewTargets.release();
+            audio.updateEngine(false, false);
+            if (releaseScreenshot.requested() ||
+                releasePerformance.requested())
+            {
+                processResult = 1;
+                exitRequested = true;
+                break;
+            }
+            inGame = false;
+            drawMenu(settings, menuError);
+            continue;
+        }
         ++renderedGameFrames;
         if (releasePerformanceRecorder)
         {

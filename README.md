@@ -377,9 +377,9 @@ versioned session digest plus full event sequence across two fixed-seed,
 boundaries. The digest is a replay aid, not a cross-version compatibility
 guarantee. Normal play continues to choose a fresh seed at process startup.
 
-The complete automated gate currently runs 17 integrated suites with 7,181
+The complete automated gate currently runs 18 integrated suites with 7,191
 checks, 154 core/game suites with 1,107 checks, and 50 app-layer suites with
-292 checks: 221 suites and 8,580 checks across nineteen profiles. The exclusive
+292 checks: 222 suites and 8,590 checks across nineteen profiles. The exclusive
 release-performance capability handshake supplies the second instrumented game
 profile and is byte-compared with its golden JSON contract. The direct
 PlayerSystem executable contributes 31 suites and 64 checks. Its direct and
@@ -389,8 +389,14 @@ signed-zero and maximum-finite inputs, legacy malformed-HP behavior, five-clock
 frame entry, movement/fire ordering, inactive death/respawn, post-commit respawn
 cue ordering, mismatched entity ID versus slot ownership, and final-shell Game
 Over delay. Targeted production regressions and the
-AddressSanitizer/UndefinedBehaviorSanitizer run pass all 17 integrated suites and
-7,181 checks. A recording `AudioOutput` verifies post-commit `StageStart`,
+AddressSanitizer/UndefinedBehaviorSanitizer run pass all 18 integrated suites and
+7,191 checks. The integrated `view-target-allocation` suite locks the raylib 6.0
+depth-metadata contract, HDR-first/RGBA8 fallback, cache reuse, invalid and
+partial cleanup, transactional replacement, unique ownership, retry, and
+invalid-count rejection. A window/context failure exits before the application
+initializes audio or loads its GPU assets. A gameplay-target failure returns
+ordinary play to setup, while release screenshot and performance modes exit
+nonzero. A recording `AudioOutput` verifies post-commit `StageStart`,
 creating-versus-ready engine state, pause `stopAll` then `Pause` ordering with
 silent resume, and settlement
 stop requests only after `StageEnded` is appended. These headless checks verify
