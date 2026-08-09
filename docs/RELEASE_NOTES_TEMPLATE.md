@@ -7,6 +7,8 @@
 The final versioned page must use the exact marker
 `**Release status: APPROVED.**`; retain `BLOCKED` while any status gate remains.
 
+> **Release status: BLOCKED.**
+
 ## Release Identity and Downloads
 
 - Version/channel: NOT RECORDED — BLOCKED
@@ -123,7 +125,7 @@ retain their own terms. Link the notices shipped inside the exact artifact.
 - Decision evidence: NOT LINKED — BLOCKED
 
 The audio decision must exactly match the signed section of the QA report.
-Under the v1 profile, the final page must state `Audio decision: **ACCEPT**`
+Under the current v2 profile, the final page must state `Audio decision: **ACCEPT**`
 exactly. `CONFIRM` is unavailable until a new profile verifies an externally
 trusted cryptographic rights-holder signature; `REPLACE` requires a newly
 attested candidate and replacement-manifest validation.

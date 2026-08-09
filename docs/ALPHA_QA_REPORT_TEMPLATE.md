@@ -5,6 +5,8 @@
 > unexplained `N/A` never mean PASS. Publish only after every required gate has
 > an explicit result and the final approval is signed.
 
+> **Overall Alpha gate: BLOCKED.**
+
 ## Report and Artifact Identity
 
 | Required field | Recorded value |
@@ -234,13 +236,13 @@ missing authority, or missing evidence blocks release.
 - [ ] **ACCEPT** — The release owner acknowledges the documented chain-of-title
   limitation and explicitly accepts it for this Alpha.
 - [ ] **CONFIRM** — Permission/provenance has been confirmed with the relevant
-  rights holder. The v1 gate deliberately cannot trust a self-authored record;
-  add an externally trusted cryptographic signer in a new requirements profile
-  before using this option.
+  rights holder. The current gate deliberately cannot trust a self-authored
+  record; add an externally trusted cryptographic signer in a new requirements
+  profile before using this option.
 - [ ] **REPLACE** — The inherited set has been replaced; attach sources, licenses,
   hashes, and proof that the archive manifest contains only the approved set.
 
-The v1 status gate approves only an explicit owner `ACCEPT` decision. It cannot
+The v2 status gate approves only an explicit owner `ACCEPT` decision. It cannot
 approve `CONFIRM` without a trusted signature profile or `REPLACE` against an
 already attested candidate. Add the relevant verification and attest a new
 candidate before selecting either option.
@@ -293,4 +295,4 @@ The QA lead and release owner must be different people. These signatures attest
 that the named humans performed/reviewed the work; the consistency gate does not
 cryptographically prove a physical test occurred.
 
-**Overall Alpha gate:** BLOCKED
+Final review remains **BLOCKED** until every required row and approval passes.

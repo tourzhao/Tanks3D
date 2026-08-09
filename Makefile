@@ -96,6 +96,8 @@ RELEASE_REQUIREMENTS_PROFILE_V2 := \
 	docs/release-requirements/macos-alpha-v2.json
 RELEASE_STATUS_VERIFY_SCRIPT := scripts/verify_release_status.py
 RELEASE_STATUS_TEST := tests/test_release_status_verifier.py
+ALPHA_V2_STATUS_INIT_SCRIPT := scripts/init_alpha_v2_status.py
+ALPHA_V2_STATUS_INIT_TEST := tests/test_alpha_v2_status_initializer.py
 RELEASE_PERFORMANCE_QA_RUNNER := scripts/run_release_performance_qa.py
 RELEASE_PERFORMANCE_QA_RUNNER_TEST := \
 	tests/test_release_performance_runner.py
@@ -225,6 +227,8 @@ RELEASE_STATUS_FILE ?= \
 	docs/releases/$(ALPHA_CANDIDATE_TAG)-status.json
 RELEASE_PERFORMANCE_QA_OUTPUT_DIR ?= \
 	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/performance)
+ALPHA_RELEASE_SCREENSHOT_INPUT_DIR ?= \
+	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/screenshots)
 DIST_COMPILE_FLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
 	-mmacosx-version-min=$(DIST_MACOS_MIN) $(DIST_IDENTITY_FLAGS)
 DIST_LINK_FLAGS := -mmacosx-version-min=$(DIST_MACOS_MIN) \
@@ -403,7 +407,7 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	check-dist-prereqs test-dist dist test-alpha-candidate \
 	verify-alpha-candidate verify-tagged-alpha-candidate alpha-candidate \
 	test-release-status check-alpha-release-evidence \
-	verify-alpha-release-ready
+	init-alpha-v2-status verify-alpha-release-ready
 
 all: $(TARGET) $(APP_EXECUTABLE)
 
@@ -547,9 +551,12 @@ dist: test test-dist
 test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(RELEASE_REQUIREMENTS_PROFILE_V2) \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST) \
+		$(ALPHA_V2_STATUS_INIT_SCRIPT) $(ALPHA_V2_STATUS_INIT_TEST) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
-	python3 -B $(RELEASE_STATUS_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error $(RELEASE_STATUS_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(ALPHA_V2_STATUS_INIT_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 
@@ -566,6 +573,16 @@ verify-alpha-candidate: $(ALPHA_CANDIDATE_VERIFY_SCRIPT)
 verify-tagged-alpha-candidate: $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT)
 	sh $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) "$(abspath .)" \
 		"$(ALPHA_CANDIDATE_DIR)"
+
+# One-shot helper for an honest BLOCKED v2 baseline. It is deliberately not a
+# prerequisite of candidate construction or either release-approval gate.
+init-alpha-v2-status: test-release-status $(ALPHA_V2_STATUS_INIT_SCRIPT) \
+		$(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) \
+		$(RELEASE_REQUIREMENTS_PROFILE_V2)
+	python3 -B $(ALPHA_V2_STATUS_INIT_SCRIPT) \
+		--project-root "$(abspath .)" \
+		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
+		--screenshot-input-dir "$(ALPHA_RELEASE_SCREENSHOT_INPUT_DIR)"
 
 check-alpha-release-evidence: test-release-status \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_FILE)

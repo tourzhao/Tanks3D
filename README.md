@@ -53,11 +53,12 @@ ad-hoc signature proves bundle integrity but is not Developer ID signing or
 Apple notarization, so this remains an Alpha package. See
 `docs/RELEASE_CHECKLIST.md` before publishing it.
 
-The source repository keeps the current candidate release page at
-`docs/releases/v0.1.0-alpha.3.md` and the preserved Alpha 1 page at
-`docs/releases/v0.1.0-alpha.1.md`.
+The source repository preserves the blocked Alpha 3 release page at
+`docs/releases/v0.1.0-alpha.3.md` and the earlier Alpha 1 page at
+`docs/releases/v0.1.0-alpha.1.md`. Alpha 3 is a frozen legacy-v1 record, not a
+publishable candidate for the current source.
 
-For the current candidate, run:
+To audit that frozen record, run:
 
 ```sh
 make test-release-status
@@ -75,10 +76,21 @@ the [Alpha 3 status](docs/releases/v0.1.0-alpha.3-status.json) and
 candidate-bound structured session, command, event, and performance logs; the
 fixed 30-minute Alpha budget requires >=50 average FPS, >=30 1% low FPS, and
 <=256 MiB memory growth. Raw telemetry must also prove at least one cleared
-stage, >=80% active-gameplay time, and >=95% focused-window time. Alpha 3 is a
-frozen, blocked v1 record. Any new
-candidate must use `macos-alpha-v2` and collect candidate-generated telemetry
-and its launch receipt with:
+stage, >=80% active-gameplay time, and >=95% focused-window time. Any new
+candidate must use `macos-alpha-v2`. After capturing the seven required PNGs
+under `build/release-evidence/<tag>/screenshots/`, a one-shot helper can create
+the versioned release page, QA report, status JSON, and copied images as an
+honest BLOCKED baseline:
+
+```sh
+make init-alpha-v2-status DIST_CHANNEL=alpha.N
+```
+
+The helper refuses existing outputs and never records manual PASS results. It
+rolls back ordinary failures on a best-effort basis; after a forced process
+termination, inspect and remove any partial versioned outputs manually before
+retrying. Commit and review its output before running the evidence checker.
+Collect candidate-generated performance telemetry and its launch receipt with:
 
 ```sh
 make run-alpha-performance-qa DIST_CHANNEL=alpha.N
@@ -281,8 +293,8 @@ boundaries. The digest is a replay aid, not a cross-version compatibility
 guarantee. Normal play continues to choose a fresh seed at process startup.
 
 The complete automated gate currently runs 17 integrated suites with 7,181
-checks, 154 core/game suites with 1,107 checks, and 30 app-layer suites with
-154 checks: 201 suites and 8,442 checks across sixteen profiles. The direct
+checks, 154 core/game suites with 1,107 checks, and 50 app-layer suites with
+292 checks: 221 suites and 8,580 checks across eighteen profiles. The direct
 PlayerSystem executable contributes 31 suites and 64 checks. Its direct and
 production-path coverage includes spawn-position adapter mapping, both
 progression modes, complete 19-field write masks, invalid-input atomicity,

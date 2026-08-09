@@ -87,11 +87,35 @@ release. Python 3 standard-library tooling
 enforces exact keys, candidate/document/evidence hashes, the full manual matrix,
 published controls, candidate-bound interactive evidence, clean-Mac download
 and quarantine facts, numeric session criteria, known issues, the audio
-decision, chronology, and both approvals. Run:
+decision, chronology, and both approvals.
+
+For a new v2 candidate, first place these seven fresh 1280x720 PNGs in
+`build/release-evidence/<tag>/screenshots/`: `one-player.png`,
+`two-player.png`, `base-usa.png`, `base-ussr.png`, `base-germany.png`,
+`bonuses.png`, and `settlement.png`. Then create the versioned, honestly
+blocked baseline once:
+
+```sh
+make init-alpha-v2-status DIST_CHANNEL=alpha.N
+```
+
+The helper re-verifies the tagged candidate and rejects symlinks, malformed
+images, partial destinations, and every overwrite. It copies the images and
+creates the release page, QA report, and v2 status, but records every human gate
+as `NOT_RUN` or `BLOCKED`. Pixel or byte differences cannot prove when an image
+was captured; exact-candidate provenance remains an accountable human review.
+The helper's success is not evidence or approval. Ordinary failures receive
+best-effort rollback. If the process is forcibly terminated, inspect the ten
+versioned destinations and remove partial outputs manually; the helper will not
+guess ownership or delete them automatically.
+Commit and inspect all generated files before the clean-worktree evidence check;
+the tagged verifier intentionally rejects a dirty tree.
+
+Run the contract and evidence checks with:
 
 ```sh
 make test-release-status
-make check-alpha-release-evidence DIST_CHANNEL=alpha.3
+make check-alpha-release-evidence DIST_CHANNEL=alpha.N
 ```
 
 The second command uses `--allow-blocked`: success means the incomplete record

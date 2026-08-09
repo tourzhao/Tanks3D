@@ -48,13 +48,10 @@ def png_chunk(kind, payload):
 def write_png(path, width=1280, height=720):
     path.parent.mkdir(parents=True, exist_ok=True)
     seed = sum(path.name.encode("utf-8")) % 256
-    palette = bytes(range(256)) * (width // 256 + 3)
-    rows = b"".join(
-        b"\x00" + palette[seed + row % 31 : seed + row % 31 + width]
-        for row in range(height)
-    )
+    pixel = bytes((seed, (seed * 3) & 0xFF, (seed * 7) & 0xFF, 255))
+    rows = (b"\x00" + pixel * width) * height
     data = b"\x89PNG\r\n\x1a\n"
-    data += png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+    data += png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
     data += png_chunk(b"IDAT", zlib.compress(rows, 9))
     data += png_chunk(b"IEND", b"")
     path.write_bytes(data)
@@ -94,6 +91,11 @@ class ReleaseFixture:
             "  echo forced tagged verifier failure >&2\n"
             "  exit 9\n"
             "fi\n"
+            "for candidate_file in \"$2\"/*; do\n"
+            "  name=${candidate_file##*/}\n"
+            "  value=$(shasum -a 256 \"$candidate_file\" | awk '{print $1}')\n"
+            "  printf 'VERIFIED CANDIDATE FILE SHA256 %s %s\\n' \"$value\" \"$name\"\n"
+            "done\n"
             "exit 0\n",
             encoding="utf-8",
         )
@@ -1040,6 +1042,73 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.write_status()
         self.assert_failed(fixture.run(allow_blocked=True), "must be 1280x720")
 
+    def test_png_image_stream_is_decoded_even_when_crc_and_hash_match(self):
+        fixture = self.new_fixture()
+        artifact = fixture.status["evidence"][1]["artifacts"][0]
+        path = fixture.root / artifact["path"]
+        data = b"\x89PNG\r\n\x1a\n"
+        data += png_chunk(
+            b"IHDR", struct.pack(">IIBBBBB", 1280, 720, 8, 6, 0, 0, 0)
+        )
+        data += png_chunk(b"IDAT", b"not-a-zlib-stream")
+        data += png_chunk(b"IEND", b"")
+        path.write_bytes(data)
+        artifact["sha256"] = digest(path)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(allow_blocked=True), "invalid PNG image stream"
+        )
+
+    def test_png_decode_is_bounded_before_size_validation(self):
+        fixture = self.new_fixture()
+        artifact = fixture.status["evidence"][1]["artifacts"][0]
+        path = fixture.root / artifact["path"]
+        expected_size = 720 * (1280 * 4 + 1)
+        data = b"\x89PNG\r\n\x1a\n"
+        data += png_chunk(
+            b"IHDR", struct.pack(">IIBBBBB", 1280, 720, 8, 6, 0, 0, 0)
+        )
+        data += png_chunk(b"IDAT", zlib.compress(b"\x00" * (expected_size + 1), 9))
+        data += png_chunk(b"IEND", b"")
+        path.write_bytes(data)
+        artifact["sha256"] = digest(path)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(allow_blocked=True), "exceeds the maximum decoded PNG size"
+        )
+
+    def test_png_rejects_non_contiguous_data_and_unknown_critical_chunks(self):
+        for mutation, fragment in (
+            ("split_idat", "non-contiguous IDAT chunks"),
+            ("critical", "unknown critical PNG chunk"),
+        ):
+            with self.subTest(mutation=mutation):
+                fixture = self.new_fixture()
+                artifact = fixture.status["evidence"][1]["artifacts"][0]
+                path = fixture.root / artifact["path"]
+                if mutation == "split_idat":
+                    pixel = bytes((7, 21, 49, 255))
+                    compressed = zlib.compress(
+                        (b"\x00" + pixel * 1280) * 720, 9
+                    )
+                    midpoint = len(compressed) // 2
+                    data = b"\x89PNG\r\n\x1a\n"
+                    data += png_chunk(
+                        b"IHDR",
+                        struct.pack(">IIBBBBB", 1280, 720, 8, 6, 0, 0, 0),
+                    )
+                    data += png_chunk(b"IDAT", compressed[:midpoint])
+                    data += png_chunk(b"tEXt", b"separator")
+                    data += png_chunk(b"IDAT", compressed[midpoint:])
+                    data += png_chunk(b"IEND", b"")
+                else:
+                    original = path.read_bytes()
+                    data = original[:33] + png_chunk(b"ABCD", b"") + original[33:]
+                path.write_bytes(data)
+                artifact["sha256"] = digest(path)
+                fixture.write_status()
+                self.assert_failed(fixture.run(allow_blocked=True), fragment)
+
     def test_pass_record_requires_tester_time_evidence_and_exact_checks(self):
         fixture = self.new_fixture()
         record = fixture.status["gameplay"][0]
@@ -1373,6 +1442,38 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture = self.new_fixture()
         (fixture.root / "tagged-verifier-must-fail").write_text("fail\n", encoding="utf-8")
         self.assert_failed(fixture.run(allow_blocked=True), "tagged candidate verifier failed")
+
+    def test_tagged_candidate_receipt_must_match_all_five_files(self):
+        fixture = self.new_fixture()
+        verifier = fixture.root / "scripts/verify_tagged_alpha_candidate.sh"
+        verifier.write_text(
+            "#!/bin/sh\n"
+            "wrong="
+            + "0" * 64
+            + "\n"
+            "first=yes\n"
+            "for candidate_file in \"$2\"/*; do\n"
+            "  name=${candidate_file##*/}\n"
+            "  value=$(shasum -a 256 \"$candidate_file\" | awk '{print $1}')\n"
+            "  if [ \"$first\" = yes ]; then value=$wrong; first=no; fi\n"
+            "  printf 'VERIFIED CANDIDATE FILE SHA256 %s %s\\n' \"$value\" \"$name\"\n"
+            "done\n",
+            encoding="utf-8",
+        )
+        self.assert_failed(
+            fixture.run(allow_blocked=True),
+            "receipt does not match the five release candidate files",
+        )
+
+    def test_tagged_verifier_rejects_a_symlinked_scripts_ancestor(self):
+        fixture = self.new_fixture()
+        scripts = fixture.root / "scripts"
+        moved = fixture.root / "scripts-real"
+        scripts.rename(moved)
+        scripts.symlink_to(moved, target_is_directory=True)
+        self.assert_failed(
+            fixture.run(allow_blocked=True), "must not traverse a symbolic link"
+        )
 
     def test_structured_session_and_candidate_event_log_are_mandatory(self):
         fixture = self.new_fixture()

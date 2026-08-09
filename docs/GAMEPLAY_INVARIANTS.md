@@ -642,8 +642,8 @@ make coverage
 
 The integrated self-test reports seventeen named suites and 7,181 runtime checks.
 Ten independent, raylib-free core/game executables add 154 suites and
-1,107 checks; five app-layer executables add thirty suites and 154 checks, so
-the aggregate gate runs 201 suites and 8,442 checks across sixteen profiles.
+1,107 checks; seven app-layer executables add fifty suites and 292 checks, so
+the aggregate gate runs 221 suites and 8,580 checks across eighteen profiles.
 They lock vector arithmetic, all cardinal values, targeting ties, strict 5/16 lane
 snapping, edge-only AABB contact, 0.380-second ice transitions, HP 1–6, every
 tuning step, nation cycling, four player levels, bonus enum/weighting,

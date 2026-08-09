@@ -102,7 +102,11 @@ def sha256_file(path: Path) -> str:
 
 
 def open_regular_file_no_follow(
-    path: Path, label: str, flags: int, mode: Optional[int] = None
+    path: Path,
+    label: str,
+    flags: int,
+    mode: Optional[int] = None,
+    directory_fd: Optional[int] = None,
 ) -> Tuple[int, os.stat_result]:
     no_follow = getattr(os, "O_NOFOLLOW", None)
     if no_follow is None:
@@ -110,11 +114,20 @@ def open_regular_file_no_follow(
     descriptor = -1
     try:
         open_flags = flags | no_follow | getattr(os, "O_CLOEXEC", 0)
-        descriptor = (
-            os.open(path, open_flags)
-            if mode is None
-            else os.open(path, open_flags, mode)
-        )
+        if mode is None:
+            descriptor = (
+                os.open(path, open_flags)
+                if directory_fd is None
+                else os.open(str(path), open_flags, dir_fd=directory_fd)
+            )
+        else:
+            descriptor = (
+                os.open(path, open_flags, mode)
+                if directory_fd is None
+                else os.open(
+                    str(path), open_flags, mode, dir_fd=directory_fd
+                )
+            )
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             raise RunnerError("{} must be a regular file".format(label))
@@ -141,6 +154,51 @@ def sha256_descriptor(descriptor: int, label: str) -> str:
     except OSError as exc:
         raise RunnerError("cannot hash {}: {}".format(label, exc))
     return digest.hexdigest()
+
+
+def read_regular_file_no_follow(
+    path: Path, label: str, directory_fd: Optional[int] = None
+) -> bytes:
+    descriptor = -1
+    try:
+        descriptor, before = open_regular_file_no_follow(
+            path,
+            label,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
+            directory_fd=directory_fd,
+        )
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        data = b"".join(chunks)
+        if identity_before != identity_after or len(data) != after.st_size:
+            raise RunnerError("{} changed while it was read".format(label))
+        return data
+    except RunnerError:
+        raise
+    except OSError as exc:
+        raise RunnerError("cannot read {}: {}".format(label, exc))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def snapshot_candidate_archive(
@@ -280,6 +338,51 @@ def require_real_directory(path: Path, label: str) -> Path:
         raise RunnerError("{} cannot be normalized: {}".format(label, exc))
 
 
+def require_no_symlink_components(root: Path, path: Path, label: str) -> None:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        raise RunnerError("{} is outside the project root".format(label))
+    current = root
+    for part in relative.parts:
+        current = current / part
+        try:
+            metadata = current.lstat()
+        except OSError as exc:
+            raise RunnerError("{} is not accessible: {}".format(label, exc))
+        if stat.S_ISLNK(metadata.st_mode):
+            raise RunnerError("{} has a symlinked path component".format(label))
+
+
+def open_repository_directory_no_follow(root: Path, path: Path, label: str) -> int:
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        raise RunnerError("{} is outside the project root".format(label))
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise RunnerError("O_NOFOLLOW is required to open {}".format(label))
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | no_follow
+    descriptor = -1
+    try:
+        descriptor = os.open(root, flags)
+        for part in parts:
+            next_descriptor = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise RunnerError("{} must be a directory".format(label))
+        return descriptor
+    except RunnerError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise RunnerError("cannot open {} safely: {}".format(label, exc))
+
+
 def require_private_empty_output(path: Path) -> Path:
     output = require_real_directory(path, "output directory")
     try:
@@ -309,10 +412,10 @@ def require_regular_non_symlink(path: Path, label: str) -> Path:
     return path
 
 
-def parse_attestation(path: Path) -> Dict[str, str]:
+def parse_attestation(data: bytes) -> Dict[str, str]:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError) as exc:
+        lines = data.decode("utf-8").splitlines()
+    except UnicodeError as exc:
         raise RunnerError("cannot read attestation: {}".format(exc))
     values: Dict[str, str] = {}
     for line_number, line in enumerate(lines, 1):
@@ -339,23 +442,40 @@ def parse_attestation(path: Path) -> Dict[str, str]:
     return values
 
 
-def invoke_tagged_verifier(project_root: Path, candidate_dir: Path) -> None:
+def invoke_tagged_verifier(project_root: Path, candidate_dir: Path) -> Dict[str, str]:
+    verifier_path = project_root / "scripts" / "verify_tagged_alpha_candidate.sh"
+    require_no_symlink_components(
+        project_root, verifier_path, "tagged candidate verifier"
+    )
     verifier = require_regular_non_symlink(
-        project_root / "scripts" / "verify_tagged_alpha_candidate.sh",
+        verifier_path,
         "tagged candidate verifier",
     )
+    verifier_parent_fd = open_repository_directory_no_follow(
+        project_root, verifier.parent, "tagged verifier directory"
+    )
+    try:
+        verifier_data = read_regular_file_no_follow(
+            Path(verifier.name),
+            "tagged candidate verifier",
+            directory_fd=verifier_parent_fd,
+        )
+    finally:
+        os.close(verifier_parent_fd)
     try:
         completed = subprocess.run(
-            ["sh", str(verifier), str(project_root), str(candidate_dir)],
+            ["sh", "-s", "--", str(project_root), str(candidate_dir)],
+            input=verifier_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
             check=False,
         )
     except OSError as exc:
         raise RunnerError("cannot run tagged candidate verifier: {}".format(exc))
     if completed.returncode != 0:
-        diagnostic = (completed.stderr or completed.stdout).strip()
+        diagnostic = (completed.stderr or completed.stdout).decode(
+            "utf-8", errors="replace"
+        ).strip()
         if len(diagnostic) > 800:
             diagnostic = diagnostic[-800:]
         raise RunnerError(
@@ -363,6 +483,27 @@ def invoke_tagged_verifier(project_root: Path, candidate_dir: Path) -> None:
                 completed.returncode, diagnostic or "no diagnostic"
             )
         )
+    try:
+        verifier_stdout = completed.stdout.decode("utf-8")
+    except UnicodeError as exc:
+        raise RunnerError("tagged verifier output is not UTF-8: {}".format(exc))
+    prefix = "VERIFIED CANDIDATE FILE SHA256 "
+    receipt: Dict[str, str] = {}
+    for line in verifier_stdout.splitlines():
+        if not line.startswith(prefix):
+            continue
+        fields = line[len(prefix) :].split(" ", 1)
+        if len(fields) != 2:
+            raise RunnerError("tagged verifier emitted a malformed candidate receipt")
+        digest, name = fields
+        if SHA256_RE.fullmatch(digest) is None or TAG_RE.fullmatch(name) is None:
+            raise RunnerError("tagged verifier emitted an invalid candidate receipt")
+        if name in receipt:
+            raise RunnerError("tagged verifier emitted a duplicate candidate receipt")
+        receipt[name] = digest
+    if len(receipt) != 5:
+        raise RunnerError("tagged verifier did not emit an exact five-file receipt")
+    return receipt
 
 
 def parse_candidate(project_root: Path, candidate_argument: Path) -> CandidateIdentity:
@@ -371,12 +512,30 @@ def parse_candidate(project_root: Path, candidate_argument: Path) -> CandidateId
         candidate_dir.relative_to(project_root)
     except ValueError:
         raise RunnerError("candidate directory must be inside the project root")
-    invoke_tagged_verifier(project_root, candidate_dir)
-
-    attestation_path = require_regular_non_symlink(
-        candidate_dir / "attestation.txt", "candidate attestation"
+    verified_receipt = invoke_tagged_verifier(project_root, candidate_dir)
+    candidate_fd = open_repository_directory_no_follow(
+        project_root, candidate_dir, "candidate directory"
     )
-    values = parse_attestation(attestation_path)
+    try:
+        try:
+            actual_names = os.listdir(candidate_fd)
+        except OSError as exc:
+            raise RunnerError("cannot enumerate candidate directory: {}".format(exc))
+        if len(actual_names) != 5 or len(set(actual_names)) != 5:
+            raise RunnerError("candidate directory must contain exactly five files")
+        captured = {
+            name: read_regular_file_no_follow(
+                Path(name),
+                "candidate file {!r}".format(name),
+                directory_fd=candidate_fd,
+            )
+            for name in actual_names
+        }
+    finally:
+        os.close(candidate_fd)
+    if "attestation.txt" not in captured:
+        raise RunnerError("candidate attestation is missing")
+    values = parse_attestation(captured["attestation.txt"])
     source_commit = values["source_commit"]
     source_tag = values["source_tag"]
     artifact_sha256 = values["artifact_sha256"]
@@ -399,33 +558,33 @@ def parse_candidate(project_root: Path, candidate_argument: Path) -> CandidateId
     }
     if len(filenames) != 5:
         raise RunnerError("candidate attestation assigns duplicate filenames")
-    try:
-        actual_entries = list(candidate_dir.iterdir())
-    except OSError as exc:
-        raise RunnerError("cannot enumerate candidate directory: {}".format(exc))
-    if {entry.name for entry in actual_entries} != filenames:
+    if set(captured) != filenames:
         raise RunnerError("candidate directory must contain exactly its five attested files")
-    for entry in actual_entries:
-        require_regular_non_symlink(entry, "candidate file {!r}".format(entry.name))
+    captured_receipt = {
+        name: hashlib.sha256(data).hexdigest() for name, data in captured.items()
+    }
+    if verified_receipt != captured_receipt:
+        raise RunnerError(
+            "candidate does not match the tagged verifier's private snapshot"
+        )
 
     artifact = candidate_dir / values["artifact_filename"]
-    if sha256_file(artifact) != artifact_sha256:
+    if hashlib.sha256(captured[artifact.name]).hexdigest() != artifact_sha256:
         raise RunnerError("candidate archive digest does not match its attestation")
-    build_config = candidate_dir / values["build_config_filename"]
-    gate_log = candidate_dir / values["gate_log_filename"]
-    if sha256_file(build_config) != values["build_config_sha256"]:
+    build_config_name = values["build_config_filename"]
+    gate_log_name = values["gate_log_filename"]
+    if hashlib.sha256(captured[build_config_name]).hexdigest() != values[
+        "build_config_sha256"
+    ]:
         raise RunnerError("build configuration digest does not match its attestation")
-    if sha256_file(gate_log) != values["gate_log_sha256"]:
+    if hashlib.sha256(captured[gate_log_name]).hexdigest() != values["gate_log_sha256"]:
         raise RunnerError("gate log digest does not match its attestation")
-    checksum = candidate_dir / values["checksum_filename"]
     try:
-        checksum_lines = [
-            line for line in checksum.read_text(encoding="utf-8").splitlines() if line
-        ]
-    except (OSError, UnicodeError) as exc:
+        checksum_text = captured[values["checksum_filename"]].decode("utf-8")
+    except UnicodeError as exc:
         raise RunnerError("cannot read candidate checksum: {}".format(exc))
-    expected_checksum = "{}  {}".format(artifact_sha256, artifact.name)
-    if checksum_lines != [expected_checksum]:
+    expected_checksum = "{}  {}\n".format(artifact_sha256, artifact.name)
+    if checksum_text != expected_checksum:
         raise RunnerError("candidate checksum does not exactly bind the archive")
     return CandidateIdentity(
         candidate_dir=candidate_dir,

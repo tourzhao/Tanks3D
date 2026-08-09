@@ -31,6 +31,7 @@ fail()
 command -v git >/dev/null 2>&1 || fail "git is required"
 command -v zip >/dev/null 2>&1 || fail "zip is required"
 command -v shasum >/dev/null 2>&1 || fail "shasum is required"
+real_shasum=$(command -v shasum)
 
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/tanks3d-alpha-gate-test.XXXXXX") || \
     fail "temporary test directory cannot be created"
@@ -419,8 +420,53 @@ env TMPDIR="$tagged_temporary_root" \
 grep -F "Attested source snapshot: $attested_commit ($attested_tag)" \
     "$tagged_success_log" >/dev/null || \
     fail "tagged verifier success did not identify its attested source"
+receipt_count=$(grep -c '^VERIFIED CANDIDATE FILE SHA256 ' \
+    "$tagged_success_log")
+[ "$receipt_count" -eq 5 ] || \
+    fail "tagged verifier did not emit exactly five candidate receipt lines"
+for candidate_file in "$valid_candidate"/*; do
+    receipt_name=${candidate_file##*/}
+    receipt_sha256=$(shasum -a 256 "$candidate_file" | awk '{print $1}')
+    grep -F "VERIFIED CANDIDATE FILE SHA256 $receipt_sha256 $receipt_name" \
+        "$tagged_success_log" >/dev/null || \
+        fail "tagged verifier receipt did not bind '$receipt_name'"
+done
 assert_no_tagged_temporary_snapshot
 printf 'PASS tagged verification after HEAD advanced\n'
+
+receipt_fail_bin="$test_root/receipt-fail-bin"
+receipt_fail_counter="$test_root/receipt-fail-count"
+receipt_fail_log="$test_root/tagged-verifier-receipt-hash-failure.log"
+mkdir -p "$receipt_fail_bin"
+cat > "$receipt_fail_bin/shasum" <<'EOF'
+#!/bin/sh
+set -eu
+count=0
+if [ -f "$FAKE_SHASUM_COUNTER" ]; then
+    count=$(cat "$FAKE_SHASUM_COUNTER")
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$FAKE_SHASUM_COUNTER"
+if [ "$count" -ge 5 ]; then
+    echo "controlled receipt hash failure" >&2
+    exit 91
+fi
+exec "$REAL_SHASUM" "$@"
+EOF
+chmod +x "$receipt_fail_bin/shasum"
+if env PATH="$receipt_fail_bin:$PATH" REAL_SHASUM="$real_shasum" \
+        FAKE_SHASUM_COUNTER="$receipt_fail_counter" \
+        TMPDIR="$tagged_temporary_root" \
+        sh "$valid_fixture/scripts/verify_tagged_alpha_candidate.sh" \
+        "$valid_fixture" "$valid_candidate" > "$receipt_fail_log" 2>&1; then
+    fail "tagged verifier accepted a failed receipt hash command"
+fi
+grep -F "cannot hash verified snapshot file" "$receipt_fail_log" >/dev/null || {
+    sed -n '1,220p' "$receipt_fail_log" >&2
+    fail "tagged verifier rejected failed receipt hashing for the wrong reason"
+}
+assert_no_tagged_temporary_snapshot
+printf 'PASS tagged verifier rejection: receipt-hash-failure\n'
 
 printf '%s\n' 'tagged verifier tamper' >> "$artifact"
 expect_tagged_verifier_rejection artifact-tamper \
@@ -458,4 +504,4 @@ env TMPDIR="$tagged_temporary_root" \
     fail "restored post-tag candidate did not verify"
 assert_no_tagged_temporary_snapshot
 
-echo "Alpha candidate gate tests passed: 11 build rejections, 7 strict verifier rejections, 4 tagged verifier rejections, 2 successes."
+echo "Alpha candidate gate tests passed: 11 build rejections, 7 strict verifier rejections, 5 tagged verifier rejections, 2 successes."

@@ -56,6 +56,7 @@ class RunnerFixture:
         self.candidate.mkdir(parents=True)
         self.calls = []
         self.verify_returncode = 0
+        self.verifier_receipt_mode = "valid"
         self.extract_returncode = 0
         self.process_returncode = 0
         self.marker_mode = "valid"
@@ -69,6 +70,7 @@ class RunnerFixture:
         self.snapshot_descriptor_link_count = None
         self.snapshot_path_existed_at_extract = None
         self.snapshot_pass_fds = None
+        self.verifier_input = None
         self.last_executable = None
         self._write_verifier()
         self._write_candidate()
@@ -111,11 +113,28 @@ class RunnerFixture:
     def fake_run(self, argv, **kwargs):
         self.calls.append(list(argv))
         if argv[0] == "sh":
+            self.verifier_input = kwargs.get("input")
+            receipt_lines = []
+            candidate_files = sorted(self.candidate.iterdir())
+            for index, candidate_file in enumerate(candidate_files):
+                if self.verifier_receipt_mode == "missing" and index == len(candidate_files) - 1:
+                    continue
+                value = digest(candidate_file)
+                if self.verifier_receipt_mode == "wrong" and index == 0:
+                    value = "0" * 64
+                receipt_lines.append(
+                    "VERIFIED CANDIDATE FILE SHA256 {} {}\n".format(
+                        value, candidate_file.name
+                    )
+                )
+            if self.verifier_receipt_mode == "duplicate":
+                receipt_lines.append(receipt_lines[0])
+            receipt = "".join(receipt_lines).encode("utf-8")
             return subprocess.CompletedProcess(
                 argv,
                 self.verify_returncode,
-                stdout="verified\n" if self.verify_returncode == 0 else "",
-                stderr="forced verifier failure\n" if self.verify_returncode else "",
+                stdout=receipt if self.verify_returncode == 0 else b"",
+                stderr=b"forced verifier failure\n" if self.verify_returncode else b"",
             )
         if argv[0] == "/usr/bin/ditto":
             archive_argument = argv[-2]
@@ -274,6 +293,10 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             ),
         )
         self.assertEqual(fixture.calls[0][0], "sh")
+        self.assertEqual(
+            fixture.verifier_input,
+            (fixture.root / "scripts/verify_tagged_alpha_candidate.sh").read_bytes(),
+        )
         self.assertEqual(fixture.calls[1][0], "/usr/bin/ditto")
         self.assertEqual(
             fixture.extracted_archive_argument,
@@ -357,13 +380,13 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         fixture = self.new_fixture()
         replacement = fixture.root / "replacement.zip"
         replacement.write_bytes(fixture.artifact.read_bytes())
-        real_sha256_file = RUNNER.sha256_file
+        real_parse_candidate = RUNNER.parse_candidate
         swapped = False
 
-        def hash_then_swap(path):
+        def parse_then_swap(project_root, candidate_dir):
             nonlocal swapped
-            result = real_sha256_file(path)
-            if Path(path) == fixture.artifact and not swapped:
+            result = real_parse_candidate(project_root, candidate_dir)
+            if not swapped:
                 fixture.artifact.unlink()
                 fixture.artifact.symlink_to(replacement)
                 swapped = True
@@ -371,7 +394,7 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
 
         patches = fixture.patches()
         with patches[0], patches[1], patches[2], patches[3], mock.patch.object(
-            RUNNER, "sha256_file", side_effect=hash_then_swap
+            RUNNER, "parse_candidate", side_effect=parse_then_swap
         ):
             with self.assertRaisesRegex(RUNNER.RunnerError, "securely open.*snapshot source"):
                 RUNNER.run_performance_qa(
@@ -382,20 +405,20 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
 
     def test_archive_regular_replacement_before_snapshot_fails_digest_binding(self):
         fixture = self.new_fixture()
-        real_sha256_file = RUNNER.sha256_file
+        real_parse_candidate = RUNNER.parse_candidate
         replaced = False
 
-        def hash_then_replace(path):
+        def parse_then_replace(project_root, candidate_dir):
             nonlocal replaced
-            result = real_sha256_file(path)
-            if Path(path) == fixture.artifact and not replaced:
+            result = real_parse_candidate(project_root, candidate_dir)
+            if not replaced:
                 fixture.artifact.write_bytes(b"different regular archive after validation\n")
                 replaced = True
             return result
 
         patches = fixture.patches()
         with patches[0], patches[1], patches[2], patches[3], mock.patch.object(
-            RUNNER, "sha256_file", side_effect=hash_then_replace
+            RUNNER, "parse_candidate", side_effect=parse_then_replace
         ), mock.patch.object(RUNNER.subprocess, "Popen") as popen:
             with self.assertRaisesRegex(
                 RUNNER.RunnerError, "snapshot digest does not match"
@@ -426,6 +449,51 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         with self.assertRaises(OSError):
             os.fstat(fixture.snapshot_descriptor)
         self.assertEqual(list(fixture.output.iterdir()), [])
+
+    def test_verifier_receipt_must_be_exact_and_match_the_captured_candidate(self):
+        cases = (
+            ("wrong", "does not match the tagged verifier's private snapshot"),
+            ("missing", "exact five-file receipt"),
+            ("duplicate", "duplicate candidate receipt"),
+        )
+        for mode, fragment in cases:
+            with self.subTest(mode=mode):
+                fixture = self.new_fixture()
+                fixture.verifier_receipt_mode = mode
+                with mock.patch.object(RUNNER.subprocess, "Popen") as popen:
+                    self.assert_runner_error(fixture, fragment)
+                    popen.assert_not_called()
+
+    def test_verifier_executes_the_bytes_that_were_securely_read(self):
+        fixture = self.new_fixture()
+        verifier = fixture.root / "scripts/verify_tagged_alpha_candidate.sh"
+        verifier.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
+        original_read = RUNNER.read_regular_file_no_follow
+
+        def swap_after_read(path, label, directory_fd=None):
+            data = original_read(path, label, directory_fd=directory_fd)
+            if Path(path).name == verifier.name and label == "tagged candidate verifier":
+                verifier.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            return data
+
+        with mock.patch.object(
+            RUNNER, "read_regular_file_no_follow", side_effect=swap_after_read
+        ):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError, r"tagged candidate verifier failed \(exit 91\)"
+            ):
+                RUNNER.invoke_tagged_verifier(fixture.root, fixture.candidate)
+
+    def test_verifier_rejects_a_symlinked_scripts_ancestor(self):
+        fixture = self.new_fixture()
+        scripts = fixture.root / "scripts"
+        moved = fixture.root / "scripts-real"
+        scripts.rename(moved)
+        scripts.symlink_to(moved, target_is_directory=True)
+        with self.assertRaisesRegex(
+            RUNNER.RunnerError, "symlinked path component"
+        ):
+            RUNNER.invoke_tagged_verifier(fixture.root, fixture.candidate)
 
     def test_process_marker_and_telemetry_failures_do_not_forge_receipt(self):
         cases = [

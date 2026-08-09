@@ -45,6 +45,17 @@ require_commit_id()
     esac
 }
 
+require_sha256()
+{
+    sha_label=$1
+    sha_value=$2
+    [ "${#sha_value}" -eq 64 ] || \
+        fail "$sha_label is not a SHA-256 digest"
+    case "$sha_value" in
+        *[!0-9a-f]*) fail "$sha_label is not a lowercase SHA-256 digest" ;;
+    esac
+}
+
 attestation_value()
 {
     attestation_key=$1
@@ -65,6 +76,7 @@ command -v git >/dev/null 2>&1 || fail "git is required"
 command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
 command -v cp >/dev/null 2>&1 || fail "cp is required"
 command -v cmp >/dev/null 2>&1 || fail "cmp is required"
+command -v shasum >/dev/null 2>&1 || fail "shasum is required"
 
 [ ! -L "$project_root_argument" ] || fail "project root must not be a symlink"
 project_root=$(CDPATH= cd "$project_root_argument" 2>/dev/null && pwd -P) || \
@@ -271,5 +283,20 @@ finish_status=$(git -C "$project_root" status --porcelain=v1 \
 [ -z "$finish_status" ] || \
     fail "current Git worktree became dirty during tagged verification"
 
+for verified_name in attestation.txt "$artifact_filename" \
+        "$checksum_filename" "$build_config_filename" "$gate_log_filename"; do
+    verified_hash_line=$(shasum -a 256 \
+        "$snapshot_candidate/$verified_name") || \
+        fail "cannot hash verified snapshot file '$verified_name'"
+    verified_sha256=${verified_hash_line%% *}
+    require_sha256 "verified snapshot hash for '$verified_name'" \
+        "$verified_sha256"
+    case "$verified_hash_line" in
+        "$verified_sha256 "*) ;;
+        *) fail "malformed hash output for verified snapshot file '$verified_name'" ;;
+    esac
+    printf 'VERIFIED CANDIDATE FILE SHA256 %s %s\n' \
+        "$verified_sha256" "$verified_name"
+done
 printf 'Verified tagged Alpha candidate: %s\n' "$candidate_dir"
 printf 'Attested source snapshot: %s (%s)\n' "$source_commit" "$source_tag"

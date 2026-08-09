@@ -13,9 +13,11 @@ import datetime as _datetime
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shlex
+import stat
 import struct
 import subprocess
 import sys
@@ -760,6 +762,88 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def open_repository_directory_no_follow(root: Path, path: Path, context: str) -> int:
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        raise VerificationError("{} is outside the project root".format(context))
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise VerificationError("O_NOFOLLOW is required to open {}".format(context))
+    descriptor = -1
+    try:
+        descriptor = os.open(root, flags | no_follow)
+        for part in parts:
+            next_descriptor = os.open(
+                part, flags | no_follow, dir_fd=descriptor
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise VerificationError("{} must be a directory".format(context))
+        return descriptor
+    except VerificationError:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+    except OSError as exc:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise VerificationError("cannot open {} safely: {}".format(context, exc))
+
+
+def read_regular_file_no_follow(
+    path: Path, context: str, directory_fd: Optional[int] = None
+) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise VerificationError("O_NOFOLLOW is required to read {}".format(context))
+    descriptor = -1
+    try:
+        descriptor = (
+            os.open(path, flags | no_follow)
+            if directory_fd is None
+            else os.open(str(path), flags | no_follow, dir_fd=directory_fd)
+        )
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise VerificationError("{} must be a regular file".format(context))
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        data = b"".join(chunks)
+        if identity_before != identity_after or len(data) != after.st_size:
+            raise VerificationError("{} changed while it was read".format(context))
+        return data
+    except VerificationError:
+        raise
+    except OSError as exc:
+        raise VerificationError("cannot read {}: {}".format(context, exc))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def resolve_repository_file(root: Path, relative: Any, context: str) -> Path:
     location = require_string(relative, context)
     if not location or "\\" in location:
@@ -823,6 +907,24 @@ def verify_file_reference(root: Path, value: Any, context: str) -> Tuple[Path, s
     return path, expected
 
 
+def decode_png_stream(compressed: bytes, context: str, maximum_size: int) -> bytes:
+    try:
+        decoder = zlib.decompressobj()
+        decoded = decoder.decompress(compressed, maximum_size + 1)
+        if len(decoded) > maximum_size or decoder.unconsumed_tail:
+            raise VerificationError(
+                "{} exceeds the maximum decoded PNG size".format(context)
+            )
+        decoded += decoder.flush(maximum_size + 1 - len(decoded))
+    except zlib.error as exc:
+        raise VerificationError("{} has an invalid PNG image stream: {}".format(context, exc))
+    if len(decoded) > maximum_size:
+        raise VerificationError("{} exceeds the maximum decoded PNG size".format(context))
+    if not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+        raise VerificationError("{} has a non-canonical PNG image stream".format(context))
+    return decoded
+
+
 def verify_png(path: Path, context: str, require_release_size: bool = False) -> None:
     try:
         data = path.read_bytes()
@@ -833,7 +935,11 @@ def verify_png(path: Path, context: str, require_release_size: bool = False) -> 
     offset = 8
     chunks: List[bytes] = []
     width = height = None
-    saw_idat = False
+    image_format = None
+    image_data = []
+    idat_started = False
+    idat_finished = False
+    known_critical = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
     while offset < len(data):
         if len(data) - offset < 12:
             raise VerificationError("{} has a truncated PNG chunk".format(context))
@@ -848,25 +954,56 @@ def verify_png(path: Path, context: str, require_release_size: bool = False) -> 
         actual_crc = zlib.crc32(payload, actual_crc) & 0xFFFFFFFF
         if recorded_crc != actual_crc:
             raise VerificationError("{} has an invalid PNG chunk CRC".format(context))
+        if chunk_type not in known_critical and not (chunk_type[0] & 0x20):
+            raise VerificationError("{} has an unknown critical PNG chunk".format(context))
         chunks.append(chunk_type)
         if len(chunks) == 1:
             if chunk_type != b"IHDR" or length != 13:
                 raise VerificationError("{} has no canonical IHDR".format(context))
             width, height = struct.unpack(">II", payload[:8])
+            image_format = struct.unpack(">BBBBB", payload[8:13])
+        elif chunk_type == b"IHDR":
+            raise VerificationError("{} has more than one IHDR".format(context))
         if chunk_type == b"IDAT":
-            saw_idat = True
+            if idat_finished:
+                raise VerificationError("{} has non-contiguous IDAT chunks".format(context))
+            idat_started = True
+            image_data.append(payload)
+        elif idat_started and chunk_type != b"IEND":
+            idat_finished = True
         if chunk_type == b"IEND":
             if length != 0 or end != len(data):
                 raise VerificationError("{} has an invalid IEND".format(context))
             offset = end
             break
         offset = end
-    if not chunks or chunks[-1] != b"IEND" or not saw_idat:
+    if not chunks or chunks[-1] != b"IEND" or not image_data:
         raise VerificationError("{} is an incomplete PNG".format(context))
     if require_release_size and (width, height) != (1280, 720):
         raise VerificationError(
             "{} must be 1280x720, got {}x{}".format(context, width, height)
         )
+    if require_release_size:
+        if image_format != (8, 6, 0, 0, 0):
+            raise VerificationError(
+                "{} must be 8-bit RGBA and non-interlaced".format(context)
+            )
+        row_bytes = width * 4
+        expected_size = height * (row_bytes + 1)
+        decoded = decode_png_stream(b"".join(image_data), context, expected_size)
+        if len(decoded) != expected_size:
+            raise VerificationError(
+                "{} has an invalid decoded PNG size: expected {}, got {}".format(
+                    context, expected_size, len(decoded)
+                )
+            )
+        for row in range(height):
+            if decoded[row * (row_bytes + 1)] > 4:
+                raise VerificationError(
+                    "{} has an unsupported PNG row filter".format(context)
+                )
+    else:
+        decode_png_stream(b"".join(image_data), context, 64 * 1024 * 1024)
 
 
 def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, str, Path]:
@@ -2591,28 +2728,73 @@ def validate_release(
     return release, file_refs, candidate_dir
 
 
-def invoke_tagged_candidate_verifier(root: Path, candidate_dir: Path) -> None:
-    verifier = root / "scripts" / "verify_tagged_alpha_candidate.sh"
-    if not verifier.is_file() or verifier.is_symlink():
-        raise VerificationError("scripts/verify_tagged_alpha_candidate.sh is missing")
+def invoke_tagged_candidate_verifier(
+    root: Path,
+    candidate_dir: Path,
+    file_refs: Mapping[str, Tuple[Path, str]],
+) -> None:
+    verifier = resolve_repository_file(
+        root,
+        "scripts/verify_tagged_alpha_candidate.sh",
+        "tagged candidate verifier",
+    )
+    verifier_parent_fd = open_repository_directory_no_follow(
+        root, verifier.parent, "tagged verifier directory"
+    )
+    try:
+        verifier_data = read_regular_file_no_follow(
+            Path(verifier.name),
+            "scripts/verify_tagged_alpha_candidate.sh",
+            directory_fd=verifier_parent_fd,
+        )
+    finally:
+        os.close(verifier_parent_fd)
     try:
         completed = subprocess.run(
-            ["sh", str(verifier), str(root), str(candidate_dir)],
+            ["sh", "-s", "--", str(root), str(candidate_dir)],
+            input=verifier_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
             check=False,
         )
     except OSError as exc:
         raise VerificationError("cannot run tagged candidate verifier: {}".format(exc))
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()
+        detail = (completed.stderr or completed.stdout).decode(
+            "utf-8", errors="replace"
+        ).strip()
         if len(detail) > 600:
             detail = detail[-600:]
         raise VerificationError(
             "tagged candidate verifier failed (exit {}): {}".format(
                 completed.returncode, detail or "no diagnostic"
             )
+        )
+    try:
+        verifier_stdout = completed.stdout.decode("utf-8")
+    except UnicodeError as exc:
+        raise VerificationError("tagged verifier output is not UTF-8: {}".format(exc))
+    prefix = "VERIFIED CANDIDATE FILE SHA256 "
+    receipt: Dict[str, str] = {}
+    for line in verifier_stdout.splitlines():
+        if not line.startswith(prefix):
+            continue
+        fields = line[len(prefix) :].split(" ", 1)
+        if len(fields) != 2:
+            raise VerificationError("tagged verifier emitted a malformed candidate receipt")
+        digest, name = fields
+        if SHA256_RE.fullmatch(digest) is None or TOKEN_RE.fullmatch(name) is None:
+            raise VerificationError("tagged verifier emitted an invalid candidate receipt")
+        if name in receipt:
+            raise VerificationError("tagged verifier emitted a duplicate candidate receipt")
+        receipt[name] = digest
+    expected_receipt = {
+        file_refs[key][0].name: file_refs[key][1]
+        for key in ("artifact", "checksum", "attestation", "gate_log", "build_config")
+    }
+    if len(receipt) != 5 or receipt != expected_receipt:
+        raise VerificationError(
+            "tagged verifier receipt does not match the five release candidate files"
         )
 
 
@@ -3410,7 +3592,7 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         approvals,
         report["release_date"],
     )
-    invoke_tagged_candidate_verifier(root, candidate_dir)
+    invoke_tagged_candidate_verifier(root, candidate_dir, file_refs)
 
     if not blockers and requirements_profile == "macos-alpha-v1":
         raise VerificationError(
