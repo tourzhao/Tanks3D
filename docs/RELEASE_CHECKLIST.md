@@ -406,7 +406,13 @@ the candidate ZIP before extraction, so a concurrent replacement cannot alter
 the executed bundle. Before creating any evidence file, it checks the private
 snapshot's exact capability JSON with a five-second timeout and verifies the
 source identity; the long process also has a duration-plus-120-second watchdog
-with terminate/kill cleanup. Add all four generated files to the
+with terminate/kill cleanup. Before publishing the receipt, the runner and final
+verifier use `scripts/release_performance_contract.py` to enforce the same exact
+raw-v2 keys, identity, nested UTC interval, continuous sample coverage, and
+cross-field semantics. The runner rejects telemetry over 32 MiB and rechecks
+that the receipt hashes the bytes it validated. A receipt attests provenance
+and structural integrity, not performance acceptance; only the final verifier
+applies the fixed Alpha thresholds. Add all four generated files to the
 `extended_session_metrics` evidence before final verification.
 
 `build/release-evidence/<tag>/` is an ignored local intake directory, not a

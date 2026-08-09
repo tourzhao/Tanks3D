@@ -165,7 +165,14 @@ the tagged strict verifier enforced this capability contract.
 Compatible candidates record real one-second frame/RSS windows for 1,801
 seconds; the runner terminates a hung process after the requested duration plus
 a two-minute grace period and refuses to replace an existing evidence
-directory. For the inherited 22-sound set, the profile
+directory. Before signing the receipt, it applies the same shared raw-v2
+contract as the final verifier: exact keys and identity, nested UTC times,
+continuous 0.75–1.25 second samples, valid state/focus/stage relationships, and
+complete duration coverage. Telemetry over 32 MiB or bytes changed between
+validation and receipt hashing are rejected. The receipt proves evidence
+integrity; the final verifier still decides whether the run meets the fixed
+30-minute, FPS, memory, gameplay, focus, and cleared-stage thresholds. For the
+inherited 22-sound set, the profile
 accepts only the release owner's explicit `ACCEPT` risk decision; `CONFIRM`
 needs a future profile with an externally trusted cryptographic rights-holder
 signature.
@@ -372,7 +379,9 @@ guarantee. Normal play continues to choose a fresh seed at process startup.
 
 The complete automated gate currently runs 17 integrated suites with 7,181
 checks, 154 core/game suites with 1,107 checks, and 50 app-layer suites with
-292 checks: 221 suites and 8,580 checks across eighteen profiles. The direct
+292 checks: 221 suites and 8,580 checks across nineteen profiles. The exclusive
+release-performance capability handshake supplies the second instrumented game
+profile and is byte-compared with its golden JSON contract. The direct
 PlayerSystem executable contributes 31 suites and 64 checks. Its direct and
 production-path coverage includes spawn-position adapter mapping, both
 progression modes, complete 19-field write masks, invalid-input atomicity,

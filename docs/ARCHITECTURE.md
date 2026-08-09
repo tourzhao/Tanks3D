@@ -850,8 +850,11 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   the full headless gates. Instrumented compiled-module
   tests reuse canonical production coverage objects; the CombatSystem test
   driver is also instrumented for inline event value semantics. Ten pure-rule
-  and seven app-layer executables now contribute to eighteen profiles, which
-  merge without duplicate-map warnings.
+  and seven app-layer executables plus the integrated and exclusive-capability
+  runs of the instrumented game now contribute to nineteen profiles, which
+  merge without duplicate-map warnings. The capability profile reaches 86.36%
+  line coverage in its implementation while exercising the production parser,
+  recorder, JSON serializer, and pre-resource CLI branch.
 - The macOS Alpha distribution path requires and statically links raylib 6.0,
   matches its real deployment target, carries the exact raylib license and the
   version-locked embedded-dependency notices, applies an ad-hoc integrity
@@ -911,12 +914,16 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   snapshot before the long session and bounds that session with a
   duration-plus-grace watchdog. Candidate attestation v3 proves that the
   attested tag's strict verifier enforced the current capability contract; all
-  `macos-alpha-v2` records require v3 even while blocked. Compatible candidates then record
-  genuine frame/RSS windows plus active-gameplay, focused-window, and cleared-
-  stage evidence, publishes with atomic no-replace output, and binds them to the
-  tagged ZIP through a launch receipt. The runner hashes a no-follow private ZIP
-  snapshot and extracts only that immutable input. Fixed Alpha thresholds and
-  ordered human approvals cannot be redefined after a run. Legacy v1 records
+  `macos-alpha-v2` records require v3 even while blocked. Compatible candidates
+  then record genuine frame/RSS windows plus active-gameplay, focused-window,
+  and cleared-stage evidence, publish with atomic no-replace output, and bind
+  them to the tagged ZIP through a launch receipt. The runner hashes a no-follow
+  private ZIP snapshot and extracts only that immutable input. A shared,
+  I/O-free contract module validates exact raw-v2 keys, identity, timestamps,
+  sample continuity, and state semantics in both the runner and final verifier;
+  the runner also binds its receipt hash to the bytes it validated. Fixed Alpha
+  performance thresholds, status cross-checks, and ordered human approvals stay
+  in the final verifier and cannot be redefined after a run. Legacy v1 records
   remain readable only while blocked; `--allow-blocked` never grants
   publication approval.
 

@@ -1230,3 +1230,31 @@ rejections, five tagged-verifier rejections, and both success paths. The static
 distribution still passes 17 embedded suites / 7,181 checks, and the C++ ledger
 remains 221 suites / 8,580 checks. No candidate, tag, push, or publication was
 created.
+
+The fifty-fourth increment closes the coverage blind spot introduced by the
+packaged capability without changing gameplay, maps, assets, rendering, or the
+suite/check ledger. `make coverage` now runs the exclusive no-window handshake
+through the instrumented game as its own profile, requires empty stderr,
+byte-compares the emitted JSON with the golden contract, and merges the profile
+with the existing integrated and standalone runs. The merge now contains 19
+profiles. Overall production coverage is
+51.82%/65.53%/47.10%/53.39%; the capability implementation reaches
+85.00%/100.00%/86.36%/52.94% and its serializer header reaches 100% line
+coverage. The current production denominator is 49 files / 21,109 lines, with
+`main.cpp` at 7,552 lines. No candidate, tag, push, or publication was created.
+
+The fifty-fifth increment closes the performance-receipt validation gap without
+changing gameplay, maps, assets, rendering, or telemetry production. A new
+stdlib-only `release_performance_contract.py` owns the exact raw-v2 envelope,
+identity, UTC nesting, duration, 0.75–1.25 second window continuity, integer
+domains, one-player state semantics, stage progression, and complete sampling
+rules. Both the candidate runner and final verifier now call that contract, so
+the runner cannot sign an empty, partial, or internally impossible log that the
+final gate must later reject. Marker-prefixed stdout is exact, the runner's
+telemetry ceiling now matches the verifier's 32 MiB limit, and the receipt hash
+is rechecked against the bytes validated through a stable no-follow read. Fixed
+30-minute, FPS, memory, gameplay/focus, and cleared-stage acceptance policy
+remains final-verifier-only, preserving honest short or below-threshold
+diagnostics. The unchanged 60-test final-verifier suite and expanded 30-test
+runner suite pass, including a table of 37 malformed or contradictory raw-log
+mutations. No candidate, tag, push, or publication was created.

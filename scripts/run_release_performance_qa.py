@@ -25,14 +25,21 @@ from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 
-TELEMETRY_SCHEMA = "tanks3d-performance-log-v2"
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+import release_performance_contract as performance_contract  # noqa: E402
+
+
+TELEMETRY_SCHEMA = performance_contract.PERFORMANCE_LOG_V2_SCHEMA
 RECEIPT_SCHEMA = "tanks3d-performance-qa-receipt-v1"
 TELEMETRY_FILENAME = "performance-log-v2.json"
 STDOUT_FILENAME = "performance-stdout.log"
 STDERR_FILENAME = "performance-stderr.log"
 RECEIPT_FILENAME = "performance-qa-receipt.json"
-START_MARKER = "TANKS3D_PERFORMANCE_START"
-COMPLETE_MARKER = "TANKS3D_PERFORMANCE_COMPLETE"
+START_MARKER = performance_contract.PERFORMANCE_V2_START_MARKER
+COMPLETE_MARKER = performance_contract.PERFORMANCE_V2_COMPLETE_MARKER
 CAPABILITY_ARGUMENT = "--self-test=release-performance-capabilities"
 CAPABILITY_SCHEMA = "tanks3d-release-performance-capabilities-v1"
 CAPABILITY_CONTRACT_SHA256 = (
@@ -43,8 +50,8 @@ PROCESS_TIMEOUT_GRACE_SECONDS = 120
 PROCESS_TERMINATE_GRACE_SECONDS = 5
 CANDIDATE_ATTESTATION_SCHEMA = "tanks3d-alpha-candidate-v3"
 DEFAULT_DURATION_SECONDS = 1801
-MAX_DURATION_SECONDS = 4 * 60 * 60
-MAX_TELEMETRY_BYTES = 128 * 1024 * 1024
+MAX_DURATION_SECONDS = performance_contract.PERFORMANCE_V2_MAXIMUM_DURATION_SECONDS
+MAX_TELEMETRY_BYTES = performance_contract.MAX_TELEMETRY_BYTES
 MAX_MARKER_LOG_BYTES = 16 * 1024 * 1024
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -68,14 +75,6 @@ RECEIPT_KEYS = {
     "stderr",
 }
 FILE_REFERENCE_KEYS = {"path", "sha256"}
-REQUIRED_TELEMETRY_KEYS = {
-    "schema",
-    "candidate_sha256",
-    "session_nonce",
-    "source_commit",
-    "source_tag",
-    "clean_shutdown",
-}
 PERFORMANCE_BUILD_CONFIG = {
     "performance-capability-schema": CAPABILITY_SCHEMA,
     "performance-telemetry-schema": TELEMETRY_SCHEMA,
@@ -171,7 +170,10 @@ def sha256_descriptor(descriptor: int, label: str) -> str:
 
 
 def read_regular_file_no_follow(
-    path: Path, label: str, directory_fd: Optional[int] = None
+    path: Path,
+    label: str,
+    directory_fd: Optional[int] = None,
+    maximum_bytes: Optional[int] = None,
 ) -> bytes:
     descriptor = -1
     try:
@@ -181,11 +183,19 @@ def read_regular_file_no_follow(
             os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
             directory_fd=directory_fd,
         )
+        if maximum_bytes is not None and before.st_size > maximum_bytes:
+            raise RunnerError("{} exceeds the safety limit".format(label))
+        total_bytes = 0
         chunks = []
-        while True:
-            chunk = os.read(descriptor, 1024 * 1024)
+        while total_bytes < before.st_size:
+            chunk = os.read(
+                descriptor, min(1024 * 1024, before.st_size - total_bytes)
+            )
             if not chunk:
-                break
+                raise RunnerError("{} changed while it was read".format(label))
+            total_bytes += len(chunk)
+            if maximum_bytes is not None and total_bytes > maximum_bytes:
+                raise RunnerError("{} exceeds the safety limit".format(label))
             chunks.append(chunk)
         after = os.fstat(descriptor)
         identity_before = (
@@ -210,6 +220,59 @@ def read_regular_file_no_follow(
         raise
     except OSError as exc:
         raise RunnerError("cannot read {}: {}".format(label, exc))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def sha256_regular_file_no_follow(
+    path: Path,
+    label: str,
+    maximum_bytes: Optional[int] = None,
+) -> str:
+    descriptor = -1
+    try:
+        descriptor, before = open_regular_file_no_follow(
+            path,
+            label,
+            os.O_RDONLY | getattr(os, "O_NONBLOCK", 0),
+        )
+        if maximum_bytes is not None and before.st_size > maximum_bytes:
+            raise RunnerError("{} exceeds the safety limit".format(label))
+        digest = hashlib.sha256()
+        total_bytes = 0
+        while total_bytes < before.st_size:
+            chunk = os.read(
+                descriptor, min(1024 * 1024, before.st_size - total_bytes)
+            )
+            if not chunk:
+                raise RunnerError("{} changed while it was hashed".format(label))
+            total_bytes += len(chunk)
+            if maximum_bytes is not None and total_bytes > maximum_bytes:
+                raise RunnerError("{} exceeds the safety limit".format(label))
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if identity_before != identity_after or total_bytes != after.st_size:
+            raise RunnerError("{} changed while it was hashed".format(label))
+        return digest.hexdigest()
+    except RunnerError:
+        raise
+    except OSError as exc:
+        raise RunnerError("cannot hash {}: {}".format(label, exc))
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -318,23 +381,29 @@ def reject_duplicate_pairs(pairs: Sequence[Tuple[str, Any]]) -> Dict[str, Any]:
     return result
 
 
-def load_strict_json(path: Path) -> Any:
+def load_strict_json_with_digest(path: Path) -> Tuple[Any, str]:
+    data = read_regular_file_no_follow(
+        path,
+        "candidate performance telemetry",
+        maximum_bytes=MAX_TELEMETRY_BYTES,
+    )
+    if len(data) <= 0:
+        raise RunnerError("telemetry is empty")
     try:
-        size = path.stat().st_size
-    except OSError as exc:
-        raise RunnerError("cannot stat telemetry {}: {}".format(path, exc))
-    if size <= 0 or size > MAX_TELEMETRY_BYTES:
-        raise RunnerError("telemetry size is empty or exceeds the safety limit")
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+        text = data.decode("utf-8")
+    except UnicodeError as exc:
         raise RunnerError("cannot read telemetry {}: {}".format(path, exc))
     try:
-        return json.loads(text, object_pairs_hook=reject_duplicate_pairs)
+        value = json.loads(text, object_pairs_hook=reject_duplicate_pairs)
     except RunnerError:
         raise
     except json.JSONDecodeError as exc:
         raise RunnerError("candidate telemetry is invalid JSON: {}".format(exc))
+    return value, hashlib.sha256(data).hexdigest()
+
+
+def load_strict_json(path: Path) -> Any:
+    return load_strict_json_with_digest(path)[0]
 
 
 def require_real_directory(path: Path, label: str) -> Path:
@@ -694,7 +763,7 @@ def expected_performance_capabilities(identity: CandidateIdentity) -> Dict[str, 
     return {
         "schema": CAPABILITY_SCHEMA,
         "telemetry_schema": TELEMETRY_SCHEMA,
-        "producer": "Tanks3D",
+        "producer": performance_contract.PERFORMANCE_V2_PRODUCER,
         "quick_start_argument": "--quick-start",
         "log_argument_prefix": "--release-performance-log=",
         "candidate_sha256_argument_prefix": "--release-candidate-sha256=",
@@ -704,11 +773,13 @@ def expected_performance_capabilities(identity: CandidateIdentity) -> Dict[str, 
         "complete_marker": COMPLETE_MARKER,
         "default_duration_seconds": DEFAULT_DURATION_SECONDS,
         "maximum_duration_seconds": MAX_DURATION_SECONDS,
-        "sample_interval_microseconds": 1_000_000,
-        "clock": "steady_clock",
-        "memory_metric": "proc_pid_rusage.ri_phys_footprint",
-        "memory_unit": "bytes",
-        "app_states": ["gameplay", "settlement", "high_score"],
+        "sample_interval_microseconds": (
+            performance_contract.PERFORMANCE_V2_TARGET_INTERVAL_US
+        ),
+        "clock": performance_contract.PERFORMANCE_V2_CLOCK,
+        "memory_metric": performance_contract.PERFORMANCE_V2_MEMORY_METRIC,
+        "memory_unit": performance_contract.PERFORMANCE_V2_MEMORY_UNIT,
+        "app_states": list(performance_contract.PERFORMANCE_V2_APP_STATES),
         "source_commit": identity.source_commit,
         "source_tag": identity.source_tag,
         "self_check": "PASS",
@@ -800,53 +871,67 @@ def create_output_file(path: Path):
     return os.fdopen(descriptor, "wb", buffering=0)
 
 
-def read_marker_log(path: Path) -> str:
+def read_marker_log_with_digest(path: Path) -> Tuple[str, str]:
+    data = read_regular_file_no_follow(
+        path,
+        "candidate stdout",
+        maximum_bytes=MAX_MARKER_LOG_BYTES,
+    )
     try:
-        size = path.stat().st_size
-    except OSError as exc:
-        raise RunnerError("cannot inspect candidate stdout: {}".format(exc))
-    if size > MAX_MARKER_LOG_BYTES:
-        raise RunnerError("candidate stdout exceeds the marker-log safety limit")
-    try:
-        return path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+        text = data.decode("utf-8")
+    except UnicodeError as exc:
         raise RunnerError("candidate stdout is not valid UTF-8: {}".format(exc))
+    return text, hashlib.sha256(data).hexdigest()
 
 
 def validate_markers(stdout_text: str, nonce: str) -> None:
-    start = "{} {}".format(START_MARKER, nonce)
-    complete = "{} {}".format(COMPLETE_MARKER, nonce)
-    lines = stdout_text.splitlines()
-    if lines.count(start) != 1 or lines.count(complete) != 1:
-        raise RunnerError("candidate stdout lacks exactly one matching START/COMPLETE marker")
-    if lines.index(start) >= lines.index(complete):
-        raise RunnerError("candidate performance markers are out of order")
+    try:
+        performance_contract.validate_performance_markers(stdout_text, nonce)
+    except performance_contract.PerformanceContractError as exc:
+        raise RunnerError(str(exc))
 
 
-def validate_telemetry(path: Path, identity: CandidateIdentity, nonce: str) -> None:
+def validate_telemetry(
+    path: Path,
+    identity: CandidateIdentity,
+    nonce: str,
+    duration_seconds: int,
+    started_at_utc: str,
+    completed_at_utc: str,
+) -> Tuple[performance_contract.PerformanceSummary, str]:
     require_regular_non_symlink(path, "candidate performance telemetry")
-    value = load_strict_json(path)
-    if not isinstance(value, dict):
-        raise RunnerError("candidate telemetry must be a JSON object")
-    missing = sorted(REQUIRED_TELEMETRY_KEYS - set(value))
-    if missing:
-        raise RunnerError("candidate telemetry is missing keys: {}".format(", ".join(missing)))
-    expected = {
-        "schema": TELEMETRY_SCHEMA,
-        "candidate_sha256": identity.artifact_sha256,
-        "session_nonce": nonce,
-        "source_commit": identity.source_commit,
-        "source_tag": identity.source_tag,
-    }
-    for key, expected_value in expected.items():
-        if value[key] != expected_value or not isinstance(value[key], str):
-            raise RunnerError("candidate telemetry {} does not match the candidate run".format(key))
-    if value["clean_shutdown"] is not True:
-        raise RunnerError("candidate telemetry must record clean_shutdown=true")
+    value, digest = load_strict_json_with_digest(path)
+    try:
+        summary = performance_contract.validate_performance_log_v2(
+            value,
+            performance_contract.RunBinding(
+                source_commit=identity.source_commit,
+                source_tag=identity.source_tag,
+                candidate_sha256=identity.artifact_sha256,
+                session_nonce=nonce,
+                requested_duration_seconds=duration_seconds,
+                receipt_started_at_utc=started_at_utc,
+                receipt_completed_at_utc=completed_at_utc,
+            ),
+        )
+    except performance_contract.PerformanceContractError as exc:
+        raise RunnerError(str(exc))
+    return summary, digest
 
 
-def file_reference(path: Path) -> Dict[str, str]:
-    return {"path": path.name, "sha256": sha256_file(path)}
+def file_reference(
+    path: Path,
+    validated_sha256: Optional[str] = None,
+    maximum_bytes: Optional[int] = None,
+) -> Dict[str, str]:
+    digest = sha256_regular_file_no_follow(
+        path,
+        path.name,
+        maximum_bytes=maximum_bytes,
+    )
+    if validated_sha256 is not None and digest != validated_sha256:
+        raise RunnerError("{} changed after validation".format(path.name))
+    return {"path": path.name, "sha256": digest}
 
 
 def publish_json_no_replace(path: Path, value: Mapping[str, Any]) -> None:
@@ -898,10 +983,12 @@ def run_performance_qa(
     output_dir_argument: Path,
     duration_seconds: int = DEFAULT_DURATION_SECONDS,
 ) -> Path:
-    if isinstance(duration_seconds, bool) or not isinstance(duration_seconds, int):
-        raise RunnerError("duration seconds must be an integer")
-    if duration_seconds < 1 or duration_seconds > MAX_DURATION_SECONDS:
-        raise RunnerError("duration seconds must be between 1 and {}".format(MAX_DURATION_SECONDS))
+    try:
+        duration_seconds = performance_contract.validate_duration_seconds(
+            duration_seconds
+        )
+    except performance_contract.PerformanceContractError as exc:
+        raise RunnerError(str(exc))
     project_root = require_real_directory(project_root_argument, "project root")
     output_dir = require_private_empty_output(output_dir_argument)
     identity = parse_candidate(project_root, candidate_dir_argument)
@@ -964,8 +1051,16 @@ def run_performance_qa(
             raise RunnerError("candidate process did not provide a valid PID")
         if exit_code != 0:
             raise RunnerError("candidate performance run exited {}".format(exit_code))
-        validate_markers(read_marker_log(stdout_path), nonce)
-        validate_telemetry(telemetry_path, identity, nonce)
+        stdout_text, stdout_sha256 = read_marker_log_with_digest(stdout_path)
+        validate_markers(stdout_text, nonce)
+        _, telemetry_sha256 = validate_telemetry(
+            telemetry_path,
+            identity,
+            nonce,
+            duration_seconds,
+            started_at_utc,
+            completed_at_utc,
+        )
 
         receipt = {
             "schema": RECEIPT_SCHEMA,
@@ -980,8 +1075,16 @@ def run_performance_qa(
             "started_at_utc": started_at_utc,
             "completed_at_utc": completed_at_utc,
             "exit_code": exit_code,
-            "telemetry": file_reference(telemetry_path),
-            "stdout": file_reference(stdout_path),
+            "telemetry": file_reference(
+                telemetry_path,
+                telemetry_sha256,
+                maximum_bytes=MAX_TELEMETRY_BYTES,
+            ),
+            "stdout": file_reference(
+                stdout_path,
+                stdout_sha256,
+                maximum_bytes=MAX_MARKER_LOG_BYTES,
+            ),
             "stderr": file_reference(stderr_path),
         }
     publish_json_no_replace(receipt_path, receipt)
@@ -993,11 +1096,12 @@ def positive_duration(value: str) -> int:
         parsed = int(value, 10)
     except ValueError:
         raise argparse.ArgumentTypeError("duration must be a base-10 integer")
-    if parsed < 1 or parsed > MAX_DURATION_SECONDS:
+    try:
+        return performance_contract.validate_duration_seconds(parsed)
+    except performance_contract.PerformanceContractError:
         raise argparse.ArgumentTypeError(
             "duration must be between 1 and {} seconds".format(MAX_DURATION_SECONDS)
         )
-    return parsed
 
 
 def build_argument_parser() -> argparse.ArgumentParser:

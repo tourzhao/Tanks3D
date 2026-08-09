@@ -122,6 +122,7 @@ RELEASE_REQUIREMENTS_PROFILE := \
 	docs/release-requirements/macos-alpha-v1.json
 RELEASE_REQUIREMENTS_PROFILE_V2 := \
 	docs/release-requirements/macos-alpha-v2.json
+RELEASE_PERFORMANCE_CONTRACT := scripts/release_performance_contract.py
 RELEASE_STATUS_VERIFY_SCRIPT := scripts/verify_release_status.py
 RELEASE_STATUS_TEST := tests/test_release_status_verifier.py
 ALPHA_V2_STATUS_INIT_SCRIPT := scripts/init_alpha_v2_status.py
@@ -307,6 +308,12 @@ COVERAGE_TARGET := $(COVERAGE_DIR)/Tanks3D-coverage
 COVERAGE_OBJECTS := $(patsubst src/%.cpp,$(COVERAGE_DIR)/%.o,$(SOURCES))
 COVERAGE_DEPFILES := $(COVERAGE_OBJECTS:.o=.d)
 COVERAGE_RAW_PROFILE := $(COVERAGE_DIR)/self-test.profraw
+RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE := \
+	$(COVERAGE_DIR)/release-performance-capabilities.profraw
+RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_OUTPUT := \
+	$(COVERAGE_DIR)/release-performance-capabilities.json
+RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR := \
+	$(COVERAGE_DIR)/release-performance-capabilities.stderr
 COVERAGE_PROFILE := $(COVERAGE_DIR)/self-test.profdata
 RULE_COVERAGE_TARGETS := $(patsubst tests/%.cpp,$(COVERAGE_DIR)/%, \
 	$(RULE_TEST_SOURCES))
@@ -638,6 +645,7 @@ dist: test test-dist
 
 test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(RELEASE_REQUIREMENTS_PROFILE_V2) \
+		$(RELEASE_PERFORMANCE_CONTRACT) \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST) \
 		$(ALPHA_V2_STATUS_INIT_SCRIPT) $(ALPHA_V2_STATUS_INIT_TEST) \
 		$(ALPHA_V2_INTERACTIVE_COMPILER) \
@@ -840,7 +848,8 @@ test-release-performance-smoke: all
 
 # Create the output directory once. The runner refuses non-empty destinations,
 # re-verifies the immutable candidate, and writes evidence without replacement.
-run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER)
+run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER) \
+		$(RELEASE_PERFORMANCE_CONTRACT)
 	install -d -m 700 $(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)
 	python3 -B $(RELEASE_PERFORMANCE_QA_RUNNER) \
 		--project-root "$(abspath .)" \
@@ -1288,18 +1297,33 @@ $(OBJECT_DIR)/main.o $(DEBUG_DIR)/main.o $(SANITIZER_DIR)/main.o \
 
 # The game contains the canonical coverage maps for every production path;
 # standalone profiles add counts. Passing their binaries again duplicates
-# inline maps and makes llvm-cov report spurious mismatched-data warnings.
-coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES)
-	$(RM) $(COVERAGE_RAW_PROFILE) $(COVERAGE_TEST_RAW_PROFILES) \
-		$(COVERAGE_PROFILE)
+# inline maps and makes llvm-cov report spurious mismatched-data warnings. The
+# exclusive capability handshake needs its own game profile because the normal
+# integrated self-test deliberately cannot enter that pre-resource CLI path.
+coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT)
+	$(RM) $(COVERAGE_RAW_PROFILE) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_OUTPUT) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR) \
+		$(COVERAGE_TEST_RAW_PROFILES) $(COVERAGE_PROFILE)
 	LLVM_PROFILE_FILE=$(abspath $(COVERAGE_RAW_PROFILE)) \
 		./$(COVERAGE_TARGET) --self-test
+	LLVM_PROFILE_FILE=$(abspath \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE)) \
+		./$(COVERAGE_TARGET) --self-test=release-performance-capabilities \
+			> $(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_OUTPUT) \
+			2> $(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR)
+	test ! -s $(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR)
+	cmp -s $(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_OUTPUT)
 	@set -e; for test_binary in $(COVERAGE_TEST_TARGETS); do \
 		profile_name=$${test_binary##*/}; \
 		LLVM_PROFILE_FILE="$(abspath $(COVERAGE_DIR))/$$profile_name.profraw" \
 			"$$test_binary"; \
 	done
 	"$(LLVM_PROFDATA)" merge -sparse $(COVERAGE_RAW_PROFILE) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE) \
 		$(COVERAGE_TEST_RAW_PROFILES) \
 		-o $(COVERAGE_PROFILE)
 	"$(LLVM_COV)" report $(COVERAGE_TARGET) \

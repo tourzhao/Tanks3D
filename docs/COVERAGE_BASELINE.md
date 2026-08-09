@@ -1,33 +1,40 @@
 # Coverage Baseline
 
 This report records the pre-modularization self-test baseline begun on
-2026-08-04 and refreshed on 2026-08-08 after the forty-fifth atomic screenshot
-writer increment.
+2026-08-04 and refreshed on 2026-08-09 after the release-performance capability
+coverage increment.
 It is a measurement, not a whole-project merge threshold. The larger self-test
 is still textually included from `tests/self_tests.inl` in `src/main.cpp`; the
 new core/game rule suites and app-layer suites are independent executables that
-do not link raylib. The Makefile merges all sixteen profiles and explicitly passes
-only production source/header paths to `llvm-cov`, excluding `tests/` and
-third-party headers from the denominator. Compiled-module tests reuse canonical instrumented
-objects; the CombatSystem test driver is instrumented for inline `GameEvent`
-value semantics. The merge completes without duplicate-map warnings. Renderer
-and embedded visual code lower the whole-source number.
+do not link raylib. The Makefile merges all nineteen profiles and explicitly
+passes only production source/header paths to `llvm-cov`, excluding `tests/`
+and third-party headers from the denominator. Compiled-module tests reuse
+canonical instrumented objects; the CombatSystem test driver is instrumented
+for inline `GameEvent` value semantics. The instrumented game runs both the
+integrated self-test and the exclusive no-window performance-capability
+handshake in separate profiles. The merge completes without duplicate-map
+warnings. Renderer and embedded visual code lower the whole-source number.
 
 ## Instrumented Result
 
-Apple clang 21 compiled the game, ten pure-rule executables, and five raylib-free
-app-layer executables with
+Apple clang 21 compiled the game, ten pure-rule executables, and seven
+raylib-free app-layer executables with
 `-O0 -g -fprofile-instr-generate -fcoverage-mapping`. The game ran
-`--self-test`, the pure-rule executables ran their table suites, and
-`llvm-profdata`/`llvm-cov`
-reported:
+`--self-test` plus `--self-test=release-performance-capabilities` in distinct
+profiles, the pure-rule and app-layer executables ran their table suites, and
+`llvm-profdata`/`llvm-cov` reported:
 
 | Scope | Region | Function | Line | Branch |
 | --- | ---: | ---: | ---: | ---: |
-| All forty-two production source/header files | 49.77% | 63.83% | 45.38% | 52.16% |
-| `src/main.cpp` | 23.32% | 59.14% | 29.29% | 20.72% |
+| All forty-nine production source/header files | 51.82% | 65.53% | 47.10% | 53.39% |
+| `src/main.cpp` | 23.09% | 59.14% | 28.55% | 20.31% |
 | `src/app/command_side_effect_dispatch.cpp` | 100.00% | 100.00% | 99.55% | 100.00% |
-| `src/app/release_screenshot_file.cpp` | 59.60% | 100.00% | 68.70% | 51.79% |
+| `src/app/atomic_output_file.cpp` | 60.40% | 100.00% | 69.92% | 53.45% |
+| `src/app/release_performance_capabilities.cpp` | 85.00% | 100.00% | 86.36% | 52.94% |
+| `src/app/release_performance_capabilities.h` | 100.00% | 100.00% | 100.00% | N/A |
+| `src/app/release_performance_log.cpp` | 88.33% | 95.45% | 81.60% | 73.50% |
+| `src/app/release_performance_options.h` | 100.00% | 100.00% | 100.00% | 97.54% |
+| `src/app/release_screenshot_file.cpp` | 66.67% | 100.00% | 78.26% | 78.57% |
 | `src/app/release_screenshot_file.h` | 100.00% | 100.00% | 100.00% | N/A |
 | `src/app/shell_cancellation_presentation.cpp` | 100.00% | 100.00% | 100.00% | 100.00% |
 | `src/app/shell_map_core_presentation.cpp` | 93.36% | 100.00% | 99.37% | 94.63% |
@@ -50,16 +57,17 @@ reported:
 | `src/game/stage_map.cpp` | 97.97% | 100.00% | 98.18% | 93.40% |
 | `StageMap::impactShell` | 100.00% | 100.00% | 100.00% | 97.37% |
 
-The overall percentages now include all forty-two production files and 19,662
-production lines: `src/main.cpp` is 7,302 lines and the textually included
+The overall percentages now include all forty-nine production files and 21,109
+production lines: `src/main.cpp` is 7,552 lines and the textually included
 `tests/self_tests.inl` is 10,826 lines. Thirteen pure headers and seven pure
-implementation sources are compiled independently. `player_system.h` is 277
-lines, `player_system.cpp` is 289 lines, and its 1,793-line direct test remains
-outside the production denominator. Moving tile generation from `StageMap`
-into `StageGenerator` changes both files'
-instrumentation denominators. All 35 direct generator goldens, the mutable-map
-bridge and routes, dumped signatures, gameplay expectations, and the versioned
-same-build deterministic replay gate pass.
+implementation sources are compiled independently; eight app implementation
+modules remain raylib-free. `player_system.h` is 277 lines,
+`player_system.cpp` is 289 lines, and its 1,793-line direct test remains outside
+the production denominator. Moving tile generation from `StageMap` into
+`StageGenerator` changes both files' instrumentation denominators. All 35 direct
+generator goldens, the mutable-map bridge and routes, dumped signatures,
+gameplay expectations, and the versioned same-build deterministic replay gate
+pass.
 
 The first PR 3.3 increment mechanically moved shell spawn, impact state,
 cancellation eligibility/overlap, swept cancellation, and the `StageMap`
@@ -634,7 +642,8 @@ make coverage
 
 The target builds the instrumented game, pure-rule executables, and app-layer
 executables, reuses the canonical compiled-module objects, and instruments the
-CombatSystem driver for inline event value branches. It runs all sixteen profiles
-and reports only the
-production source/header list. Raw and merged profiles remain under
-`build/coverage/` for local inspection.
+CombatSystem driver for inline event value branches. It runs all nineteen
+profiles, byte-compares the capability output with its golden JSON contract,
+requires empty capability stderr, and reports only the production source/header
+list. Raw and merged profiles remain under `build/coverage/` for local
+inspection.

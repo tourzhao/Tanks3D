@@ -34,6 +34,7 @@ SCRIPT_DIRECTORY = Path(__file__).resolve().parent
 if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
 
+import release_performance_contract as performance_contract  # noqa: E402
 import validate_media_recording as recording_validator  # noqa: E402
 
 
@@ -606,39 +607,11 @@ PERFORMANCE_LOG_KEYS = [
     "samples",
 ]
 PERFORMANCE_SAMPLE_KEYS = ["elapsed_seconds", "fps", "memory_mb"]
-PERFORMANCE_LOG_V2_SCHEMA = "tanks3d-performance-log-v2"
-PERFORMANCE_LOG_V2_KEYS = [
-    "schema",
-    "producer",
-    "source_commit",
-    "source_tag",
-    "candidate_sha256",
-    "session_nonce",
-    "started_at_utc",
-    "completed_at_utc",
-    "monotonic_duration_us",
-    "target_interval_us",
-    "clock",
-    "memory_metric",
-    "memory_unit",
-    "clean_shutdown",
-    "samples",
-]
-PERFORMANCE_SAMPLE_V2_KEYS = [
-    "sequence",
-    "elapsed_us",
-    "window_duration_us",
-    "rendered_frames",
-    "resident_bytes",
-    "gameplay_duration_us",
-    "focused_duration_us",
-    "stage_clear_events",
-    "completed_stages",
-    "stage_number",
-    "player_count",
-    "app_state",
-    "window_focused",
-]
+PERFORMANCE_LOG_V2_SCHEMA = performance_contract.PERFORMANCE_LOG_V2_SCHEMA
+PERFORMANCE_LOG_V2_KEYS = list(performance_contract.PERFORMANCE_LOG_V2_KEYS)
+PERFORMANCE_SAMPLE_V2_KEYS = list(
+    performance_contract.PERFORMANCE_SAMPLE_V2_KEYS
+)
 PERFORMANCE_QA_RECEIPT_SCHEMA = "tanks3d-performance-qa-receipt-v1"
 PERFORMANCE_QA_RECEIPT_KEYS = [
     "schema",
@@ -658,20 +631,24 @@ PERFORMANCE_QA_RECEIPT_KEYS = [
     "stderr",
 ]
 PERFORMANCE_QA_FILE_REFERENCE_KEYS = ["path", "sha256"]
-PERFORMANCE_V2_APP_STATES = [
-    "gameplay",
-    "settlement",
-    "high_score",
-]
-PERFORMANCE_V2_PRODUCER = "Tanks3D"
-PERFORMANCE_V2_CLOCK = "steady_clock"
-PERFORMANCE_V2_MEMORY_METRIC = "proc_pid_rusage.ri_phys_footprint"
-PERFORMANCE_V2_MEMORY_UNIT = "bytes"
-PERFORMANCE_V2_TARGET_INTERVAL_US = 1_000_000
-PERFORMANCE_V2_MINIMUM_WINDOW_US = 750_000
-PERFORMANCE_V2_MAXIMUM_WINDOW_US = 1_250_000
+PERFORMANCE_V2_APP_STATES = list(performance_contract.PERFORMANCE_V2_APP_STATES)
+PERFORMANCE_V2_PRODUCER = performance_contract.PERFORMANCE_V2_PRODUCER
+PERFORMANCE_V2_CLOCK = performance_contract.PERFORMANCE_V2_CLOCK
+PERFORMANCE_V2_MEMORY_METRIC = performance_contract.PERFORMANCE_V2_MEMORY_METRIC
+PERFORMANCE_V2_MEMORY_UNIT = performance_contract.PERFORMANCE_V2_MEMORY_UNIT
+PERFORMANCE_V2_TARGET_INTERVAL_US = (
+    performance_contract.PERFORMANCE_V2_TARGET_INTERVAL_US
+)
+PERFORMANCE_V2_MINIMUM_WINDOW_US = (
+    performance_contract.PERFORMANCE_V2_MINIMUM_WINDOW_US
+)
+PERFORMANCE_V2_MAXIMUM_WINDOW_US = (
+    performance_contract.PERFORMANCE_V2_MAXIMUM_WINDOW_US
+)
 PERFORMANCE_V2_MINIMUM_DURATION_US = 1_800_000_000
-PERFORMANCE_V2_MAXIMUM_DURATION_SECONDS = 4 * 60 * 60
+PERFORMANCE_V2_MAXIMUM_DURATION_SECONDS = (
+    performance_contract.PERFORMANCE_V2_MAXIMUM_DURATION_SECONDS
+)
 PERFORMANCE_V2_MAXIMUM_MEMORY_GROWTH_BYTES = 256 * 1024 * 1024
 PERFORMANCE_V2_MINIMUM_GAMEPLAY_DURATION_RATIO = 0.80
 PERFORMANCE_V2_MINIMUM_FOCUSED_DURATION_RATIO = 0.95
@@ -684,8 +661,8 @@ PERFORMANCE_V2_FILENAMES = {
     "stdout": "performance-stdout.log",
     "stderr": "performance-stderr.log",
 }
-PERFORMANCE_V2_START_MARKER = "TANKS3D_PERFORMANCE_START"
-PERFORMANCE_V2_COMPLETE_MARKER = "TANKS3D_PERFORMANCE_COMPLETE"
+PERFORMANCE_V2_START_MARKER = performance_contract.PERFORMANCE_V2_START_MARKER
+PERFORMANCE_V2_COMPLETE_MARKER = performance_contract.PERFORMANCE_V2_COMPLETE_MARKER
 CURRENT_V2_PERFORMANCE_BUILD_CONFIG = {
     "performance-capability-schema":
         "tanks3d-release-performance-capabilities-v1",
@@ -3970,46 +3947,6 @@ def validate_performance_log_v2(
         stdout_text = stdout_artifact[3].read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise VerificationError("cannot read performance stdout: {}".format(exc))
-    start_marker = "{} {}".format(PERFORMANCE_V2_START_MARKER, nonce)
-    complete_marker = "{} {}".format(PERFORMANCE_V2_COMPLETE_MARKER, nonce)
-    marker_lines = [
-        line
-        for line in stdout_text.splitlines()
-        if line.startswith(PERFORMANCE_V2_START_MARKER + " ")
-        or line.startswith(PERFORMANCE_V2_COMPLETE_MARKER + " ")
-    ]
-    if marker_lines != [start_marker, complete_marker]:
-        raise VerificationError(
-            "performance stdout must contain exactly one ordered matching START/COMPLETE marker"
-        )
-
-    require_exact_keys(log, set(PERFORMANCE_LOG_V2_KEYS), "performance log v2")
-    expected_strings = {
-        "schema": PERFORMANCE_LOG_V2_SCHEMA,
-        "producer": PERFORMANCE_V2_PRODUCER,
-        "source_commit": release["source_commit"],
-        "source_tag": release["tag"],
-        "candidate_sha256": candidate_sha256,
-        "session_nonce": nonce,
-        "clock": PERFORMANCE_V2_CLOCK,
-        "memory_metric": PERFORMANCE_V2_MEMORY_METRIC,
-        "memory_unit": PERFORMANCE_V2_MEMORY_UNIT,
-    }
-    for key, expected in expected_strings.items():
-        if require_string(log[key], "performance log v2." + key) != expected:
-            raise VerificationError(
-                "performance log v2 {} does not match its candidate receipt".format(key)
-            )
-    if log["clean_shutdown"] is not True:
-        raise VerificationError("performance log v2 requires clean_shutdown=true")
-    started_text = require_timestamp(
-        log["started_at_utc"], "performance log v2.started_at_utc"
-    )
-    completed_text = require_timestamp(
-        log["completed_at_utc"], "performance log v2.completed_at_utc"
-    )
-    started = timestamp_value(started_text)
-    completed = timestamp_value(completed_text)
     sessions = [
         value
         for _, value in structured
@@ -4019,189 +3956,44 @@ def validate_performance_log_v2(
         raise VerificationError(
             "extended-session PASS requires exactly one matching interactive session"
         )
-    if (
-        started_text != sessions[0]["started_at_utc"]
-        or completed_text != sessions[0]["completed_at_utc"]
-    ):
-        raise VerificationError(
-            "performance log interval does not match its interactive session"
+    try:
+        performance_contract.validate_performance_markers(stdout_text, nonce)
+        summary = performance_contract.validate_performance_log_v2(
+            log,
+            performance_contract.RunBinding(
+                source_commit=release["source_commit"],
+                source_tag=release["tag"],
+                candidate_sha256=candidate_sha256,
+                session_nonce=nonce,
+                requested_duration_seconds=requested_duration_seconds,
+                receipt_started_at_utc=receipt_started_text,
+                receipt_completed_at_utc=receipt_completed_text,
+                expected_started_at_utc=sessions[0]["started_at_utc"],
+                expected_completed_at_utc=sessions[0]["completed_at_utc"],
+            ),
         )
-    if not (receipt_started <= started <= completed <= receipt_completed):
-        raise VerificationError(
-            "performance receipt and telemetry timestamps are not nested chronologically"
-        )
-
-    monotonic_duration = require_json_integer(
-        log["monotonic_duration_us"],
-        PERFORMANCE_V2_MINIMUM_DURATION_US,
-        "performance log v2.monotonic_duration_us",
-    )
-    target_interval = require_json_integer(
-        log["target_interval_us"], 1, "performance log v2.target_interval_us"
-    )
-    if target_interval != PERFORMANCE_V2_TARGET_INTERVAL_US:
-        raise VerificationError("performance log v2 target interval is not canonical")
-    requested_duration_us = requested_duration_seconds * 1_000_000
-    if not (
-        requested_duration_us
-        <= monotonic_duration
-        <= requested_duration_us + PERFORMANCE_V2_MAXIMUM_WINDOW_US
-    ):
-        raise VerificationError(
-            "performance log v2 duration does not match the runner request"
-        )
-    wall_duration_us = int((completed - started).total_seconds() * 1_000_000)
-    if wall_duration_us < PERFORMANCE_V2_MINIMUM_DURATION_US:
+    except performance_contract.PerformanceContractError as exc:
+        raise VerificationError(str(exc))
+    if summary.wall_duration_us < PERFORMANCE_V2_MINIMUM_DURATION_US:
         raise VerificationError("performance log v2 wall duration is shorter than 30 minutes")
-    if abs(wall_duration_us - monotonic_duration) > 2 * target_interval:
-        raise VerificationError(
-            "performance log v2 wall and monotonic durations disagree"
-        )
-
-    samples = require_array(log["samples"], "performance log v2.samples")
-    if not samples:
-        raise VerificationError("performance log v2 has no raw samples")
-    previous_elapsed = 0
-    total_frames = 0
-    total_window_duration = 0
-    total_gameplay_duration = 0
-    total_focused_duration = 0
-    total_stage_clear_events = 0
-    previous_completed_stages = 0
-    fps_values: List[float] = []
-    memory_values: List[int] = []
-    for index, raw_sample in enumerate(samples):
-        context = "performance log v2.samples[{}]".format(index)
-        sample = require_object(raw_sample, context)
-        require_exact_keys(sample, set(PERFORMANCE_SAMPLE_V2_KEYS), context)
-        sequence = require_json_integer(sample["sequence"], 1, context + ".sequence")
-        if sequence != index + 1:
-            raise VerificationError(
-                "performance log v2 sample sequence must be contiguous from 1"
-            )
-        elapsed = require_json_integer(sample["elapsed_us"], 1, context + ".elapsed_us")
-        window = require_json_integer(
-            sample["window_duration_us"], 1, context + ".window_duration_us"
-        )
-        if not (
-            PERFORMANCE_V2_MINIMUM_WINDOW_US
-            <= window
-            <= PERFORMANCE_V2_MAXIMUM_WINDOW_US
-        ):
-            raise VerificationError(
-                "performance log v2 sample window is outside 0.75-1.25 seconds"
-            )
-        if elapsed != previous_elapsed + window:
-            raise VerificationError(
-                "performance log v2 samples are missing or contain fabricated catch-up"
-            )
-        frames = require_json_integer(
-            sample["rendered_frames"], 1, context + ".rendered_frames"
-        )
-        resident = require_json_integer(
-            sample["resident_bytes"], 1, context + ".resident_bytes"
-        )
-        gameplay_duration = require_json_integer(
-            sample["gameplay_duration_us"],
-            0,
-            context + ".gameplay_duration_us",
-        )
-        focused_duration = require_json_integer(
-            sample["focused_duration_us"],
-            0,
-            context + ".focused_duration_us",
-        )
-        if gameplay_duration > window or focused_duration > window:
-            raise VerificationError(
-                context + " records gameplay/focus duration beyond its sample window"
-            )
-        stage_clear_events = require_json_integer(
-            sample["stage_clear_events"], 0, context + ".stage_clear_events"
-        )
-        if stage_clear_events > 1:
-            raise VerificationError(
-                context + " records more than one cleared stage in one sample window"
-            )
-        completed_stages = require_json_integer(
-            sample["completed_stages"], 0, context + ".completed_stages"
-        )
-        if completed_stages != previous_completed_stages + stage_clear_events:
-            raise VerificationError(
-                "performance log v2 completed_stages contradicts its clear events"
-            )
-        require_json_integer(sample["stage_number"], 1, context + ".stage_number")
-        player_count = require_json_integer(
-            sample["player_count"], 1, context + ".player_count"
-        )
-        if player_count != 1:
-            raise VerificationError(
-                "performance log v2 --quick-start receipt requires one-player samples"
-            )
-        app_state = require_string(sample["app_state"], context + ".app_state")
-        if app_state not in PERFORMANCE_V2_APP_STATES:
-            raise VerificationError(
-                "performance log v2 sample app_state is not canonical"
-            )
-        if not isinstance(sample["window_focused"], bool):
-            raise VerificationError(
-                "{}.window_focused must be a JSON boolean".format(context)
-            )
-        if app_state == "gameplay" and gameplay_duration == 0:
-            raise VerificationError(
-                context + " gameplay duration contradicts its app_state"
-            )
-        if app_state != "gameplay" and gameplay_duration == window:
-            raise VerificationError(
-                context + " non-gameplay state contradicts a full gameplay window"
-            )
-        if stage_clear_events > 0 and gameplay_duration == window:
-            raise VerificationError(
-                context + " clear event lacks a rendered settlement frame"
-            )
-        if sample["window_focused"] and focused_duration == 0:
-            raise VerificationError(
-                context + " focused endpoint contradicts zero focused duration"
-            )
-        if not sample["window_focused"] and focused_duration == window:
-            raise VerificationError(
-                context + " unfocused endpoint contradicts a fully focused window"
-            )
-        fps = frames * 1_000_000.0 / window
-        if not (0 < fps <= 1000):
-            raise VerificationError(context + " records an implausible FPS value")
-        previous_elapsed = elapsed
-        previous_completed_stages = completed_stages
-        total_frames += frames
-        total_window_duration += window
-        total_gameplay_duration += gameplay_duration
-        total_focused_duration += focused_duration
-        total_stage_clear_events += stage_clear_events
-        fps_values.append(fps)
-        memory_values.append(resident)
-    if previous_elapsed != monotonic_duration or total_window_duration != monotonic_duration:
-        raise VerificationError(
-            "performance log v2 has insufficient raw sampling coverage or an "
-            "inconsistent monotonic duration"
-        )
-
-    weighted_average = total_frames * 1_000_000.0 / total_window_duration
-    gameplay_duration_ratio = total_gameplay_duration / total_window_duration
-    focused_duration_ratio = total_focused_duration / total_window_duration
     if (
-        gameplay_duration_ratio
+        summary.gameplay_duration_ratio
         < PERFORMANCE_V2_MINIMUM_GAMEPLAY_DURATION_RATIO
     ):
         raise VerificationError(
             "raw performance samples do not contain enough active gameplay"
         )
-    if focused_duration_ratio < PERFORMANCE_V2_MINIMUM_FOCUSED_DURATION_RATIO:
+    if (
+        summary.focused_duration_ratio
+        < PERFORMANCE_V2_MINIMUM_FOCUSED_DURATION_RATIO
+    ):
         raise VerificationError(
             "raw performance samples do not contain enough focused-window time"
         )
     minimum_stages = PERFORMANCE_THRESHOLDS_V2["minimum_stages_completed"]
     if (
-        previous_completed_stages < minimum_stages
-        or total_stage_clear_events != previous_completed_stages
+        summary.completed_stages < minimum_stages
+        or summary.stage_clear_events != summary.completed_stages
     ):
         raise VerificationError(
             "raw performance samples do not prove a completed stage"
@@ -4211,7 +4003,10 @@ def validate_performance_log_v2(
         0,
         "extended-session stages_completed",
     )
-    if not recorded_stages.is_integer() or int(recorded_stages) != previous_completed_stages:
+    if (
+        not recorded_stages.is_integer()
+        or int(recorded_stages) != summary.completed_stages
+    ):
         raise VerificationError(
             "extended-session stages_completed contradicts raw v2 samples"
         )
@@ -4223,23 +4018,21 @@ def validate_performance_log_v2(
         raise VerificationError(
             "extended-session mode_mix contradicts raw v2 samples"
         )
-    low_count = max(1, math.ceil(len(fps_values) * 0.01))
-    one_percent_low = sum(sorted(fps_values)[:low_count]) / low_count
-    memory_start_mb = memory_values[0] / 1048576.0
-    memory_end_mb = memory_values[-1] / 1048576.0
-    memory_growth_bytes = max(memory_values) - memory_values[0]
-    if memory_growth_bytes > PERFORMANCE_V2_MAXIMUM_MEMORY_GROWTH_BYTES:
+    if (
+        summary.memory_growth_bytes
+        > PERFORMANCE_V2_MAXIMUM_MEMORY_GROWTH_BYTES
+    ):
         raise VerificationError(
             "raw performance samples exceed the fixed Alpha memory-growth limit"
         )
     details = status["extended_session"]["details"]
     actual_metrics = {
-        "duration_minutes": monotonic_duration / 60_000_000.0,
-        "average_fps": weighted_average,
-        "minimum_fps": min(fps_values),
-        "one_percent_low_fps": one_percent_low,
-        "memory_start_mb": memory_start_mb,
-        "memory_end_mb": memory_end_mb,
+        "duration_minutes": summary.monotonic_duration_us / 60_000_000.0,
+        "average_fps": summary.average_fps,
+        "minimum_fps": summary.minimum_fps,
+        "one_percent_low_fps": summary.one_percent_low_fps,
+        "memory_start_mb": summary.memory_start_mb,
+        "memory_end_mb": summary.memory_end_mb,
     }
     for key, actual in actual_metrics.items():
         recorded = require_number_at_least(
@@ -4276,8 +4069,8 @@ def validate_performance_log_v2(
                 )
             )
     if (
-        weighted_average < PERFORMANCE_THRESHOLDS_V2["minimum_average_fps"]
-        or one_percent_low
+        summary.average_fps < PERFORMANCE_THRESHOLDS_V2["minimum_average_fps"]
+        or summary.one_percent_low_fps
         < PERFORMANCE_THRESHOLDS_V2["minimum_one_percent_low_fps"]
     ):
         raise VerificationError("raw performance samples miss the fixed Alpha FPS threshold")

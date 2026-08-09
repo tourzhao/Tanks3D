@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Focused, dependency-free tests for the release performance QA runner."""
 
+import copy
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -21,6 +23,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = REPOSITORY_ROOT / "scripts" / "run_release_performance_qa.py"
 CAPABILITY_GOLDEN = (
     REPOSITORY_ROOT / "tests" / "expected_release_performance_capabilities.json"
+)
+REQUIREMENTS_PATH = (
+    REPOSITORY_ROOT / "docs" / "release-requirements" / "macos-alpha-v2.json"
 )
 SPEC = importlib.util.spec_from_file_location("run_release_performance_qa", RUNNER_PATH)
 if SPEC is None or SPEC.loader is None:
@@ -90,6 +95,7 @@ class RunnerFixture:
         self.capability_mode = "valid"
         self.marker_mode = "valid"
         self.telemetry_mode = "valid"
+        self.telemetry_mutator = None
         self.receipt_race = False
         self.replace_artifact_before_extract = False
         self.replace_snapshot_path_before_extract = False
@@ -253,12 +259,58 @@ class RunnerFixture:
     def argument(argv, prefix):
         return next(value[len(prefix) :] for value in argv if value.startswith(prefix))
 
+    @staticmethod
+    def valid_telemetry(candidate_sha, nonce, duration_seconds):
+        started = datetime.datetime.strptime(STARTED, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=datetime.timezone.utc
+        )
+        completed = started + datetime.timedelta(seconds=duration_seconds)
+        samples = []
+        for index in range(duration_seconds):
+            samples.append(
+                {
+                    "sequence": index + 1,
+                    "elapsed_us": (index + 1) * 1_000_000,
+                    "window_duration_us": 1_000_000,
+                    "rendered_frames": 60,
+                    "resident_bytes": 200 * 1024 * 1024,
+                    "gameplay_duration_us": 1_000_000,
+                    "focused_duration_us": 1_000_000,
+                    "stage_clear_events": 0,
+                    "completed_stages": 0,
+                    "stage_number": 1,
+                    "player_count": 1,
+                    "app_state": "gameplay",
+                    "window_focused": True,
+                }
+            )
+        return {
+            "schema": RUNNER.TELEMETRY_SCHEMA,
+            "producer": RUNNER.performance_contract.PERFORMANCE_V2_PRODUCER,
+            "source_commit": SOURCE_COMMIT,
+            "source_tag": SOURCE_TAG,
+            "candidate_sha256": candidate_sha,
+            "session_nonce": nonce,
+            "started_at_utc": STARTED,
+            "completed_at_utc": completed.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "monotonic_duration_us": duration_seconds * 1_000_000,
+            "target_interval_us": 1_000_000,
+            "clock": RUNNER.performance_contract.PERFORMANCE_V2_CLOCK,
+            "memory_metric": RUNNER.performance_contract.PERFORMANCE_V2_MEMORY_METRIC,
+            "memory_unit": RUNNER.performance_contract.PERFORMANCE_V2_MEMORY_UNIT,
+            "clean_shutdown": True,
+            "samples": samples,
+        }
+
     def fake_popen(self, argv, stdout, stderr, cwd, close_fds):
         del cwd, close_fds
         self.calls.append(list(argv))
         nonce = self.argument(argv, "--release-session-nonce=")
         telemetry_path = Path(self.argument(argv, "--release-performance-log="))
         candidate_sha = self.argument(argv, "--release-candidate-sha256=")
+        duration_seconds = int(
+            self.argument(argv, "--release-performance-duration-seconds=")
+        )
         if self.marker_mode == "valid":
             stdout.write(
                 (
@@ -278,21 +330,27 @@ class RunnerFixture:
                     RUNNER.START_MARKER, RUNNER.COMPLETE_MARKER
                 ).encode("utf-8")
             )
+        elif self.marker_mode == "extra_foreign":
+            stdout.write(
+                (
+                    "{} {}\n{} foreign\n{} {}\n".format(
+                        RUNNER.START_MARKER,
+                        nonce,
+                        RUNNER.START_MARKER,
+                        RUNNER.COMPLETE_MARKER,
+                        nonce,
+                    )
+                ).encode("utf-8")
+            )
         stderr.write(b"fixture candidate stderr\n")
 
-        telemetry = {
-            "schema": RUNNER.TELEMETRY_SCHEMA,
-            "candidate_sha256": candidate_sha,
-            "session_nonce": nonce,
-            "source_commit": SOURCE_COMMIT,
-            "source_tag": SOURCE_TAG,
-            "clean_shutdown": True,
-            "samples": [],
-        }
+        telemetry = self.valid_telemetry(candidate_sha, nonce, duration_seconds)
         if self.telemetry_mode == "wrong_candidate":
             telemetry["candidate_sha256"] = "0" * 64
         elif self.telemetry_mode == "unclean":
             telemetry["clean_shutdown"] = False
+        if self.telemetry_mutator is not None:
+            self.telemetry_mutator(telemetry)
         if self.telemetry_mode == "duplicate_key":
             telemetry_path.write_text(
                 '{"schema":"tanks3d-performance-log-v2",'
@@ -339,6 +397,29 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             fixture.run(duration=2)
         self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
 
+    @staticmethod
+    def identity(fixture):
+        return RUNNER.CandidateIdentity(
+            candidate_dir=fixture.candidate,
+            artifact=fixture.artifact,
+            artifact_sha256=fixture.artifact_sha256,
+            source_commit=SOURCE_COMMIT,
+            source_tag=SOURCE_TAG,
+        )
+
+    def validate_payload(self, fixture, payload, duration=2):
+        path = fixture.output / RUNNER.TELEMETRY_FILENAME
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        summary, _ = RUNNER.validate_telemetry(
+            path,
+            self.identity(fixture),
+            NONCE,
+            duration,
+            STARTED,
+            COMPLETED,
+        )
+        return summary
+
     def test_python_capability_contract_exactly_specializes_repository_golden(self):
         fixture = self.new_fixture()
         identity = RUNNER.CandidateIdentity(
@@ -358,6 +439,262 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             (json.dumps(actual, indent=2, sort_keys=False) + "\n").encode("utf-8"),
             (json.dumps(golden, indent=2, sort_keys=False) + "\n").encode("utf-8"),
         )
+
+    def test_shared_raw_contract_matches_the_canonical_v2_requirements(self):
+        requirements = json.loads(REQUIREMENTS_PATH.read_text(encoding="utf-8"))
+        contract = RUNNER.performance_contract
+        self.assertEqual(requirements["performance_log_schema"], RUNNER.TELEMETRY_SCHEMA)
+        self.assertEqual(
+            requirements["performance_log_keys"],
+            list(contract.PERFORMANCE_LOG_V2_KEYS),
+        )
+        self.assertEqual(
+            requirements["performance_sample_keys"],
+            list(contract.PERFORMANCE_SAMPLE_V2_KEYS),
+        )
+        self.assertEqual(
+            requirements["performance_app_states"],
+            list(contract.PERFORMANCE_V2_APP_STATES),
+        )
+        self.assertEqual(
+            requirements["performance_producer"], contract.PERFORMANCE_V2_PRODUCER
+        )
+        self.assertEqual(requirements["performance_clock"], contract.PERFORMANCE_V2_CLOCK)
+        self.assertEqual(
+            requirements["performance_memory_metric"],
+            contract.PERFORMANCE_V2_MEMORY_METRIC,
+        )
+        self.assertEqual(
+            requirements["performance_memory_unit"],
+            contract.PERFORMANCE_V2_MEMORY_UNIT,
+        )
+        thresholds = requirements["performance_thresholds"]
+        self.assertEqual(
+            thresholds["target_interval_us"],
+            contract.PERFORMANCE_V2_TARGET_INTERVAL_US,
+        )
+        self.assertEqual(
+            thresholds["minimum_window_duration_us"],
+            contract.PERFORMANCE_V2_MINIMUM_WINDOW_US,
+        )
+        self.assertEqual(
+            thresholds["maximum_window_duration_us"],
+            contract.PERFORMANCE_V2_MAXIMUM_WINDOW_US,
+        )
+
+    def test_raw_validator_accepts_honest_short_below_threshold_diagnostics(self):
+        fixture = self.new_fixture()
+        payload = fixture.valid_telemetry(fixture.artifact_sha256, NONCE, 2)
+        for sample in payload["samples"]:
+            sample.update(
+                {
+                    "rendered_frames": 1,
+                    "gameplay_duration_us": 0,
+                    "focused_duration_us": 0,
+                    "app_state": "settlement",
+                    "window_focused": False,
+                }
+            )
+        payload["samples"][0]["resident_bytes"] = 1
+        payload["samples"][1]["resident_bytes"] = 300 * 1024 * 1024
+        summary = self.validate_payload(fixture, payload)
+        self.assertEqual(summary.sample_count, 2)
+        self.assertEqual(summary.completed_stages, 0)
+        self.assertEqual(summary.average_fps, 1.0)
+        self.assertEqual(summary.gameplay_duration_ratio, 0.0)
+        self.assertEqual(summary.focused_duration_ratio, 0.0)
+        self.assertGreater(summary.memory_growth_bytes, 256 * 1024 * 1024)
+
+    def test_raw_validator_accepts_inclusive_window_fps_and_uint64_boundaries(self):
+        fixture = self.new_fixture()
+        payload = fixture.valid_telemetry(fixture.artifact_sha256, NONCE, 2)
+        first, second = payload["samples"]
+        first.update(
+            {
+                "elapsed_us": 750_000,
+                "window_duration_us": 750_000,
+                "rendered_frames": 750,
+                "gameplay_duration_us": 750_000,
+                "focused_duration_us": 750_000,
+            }
+        )
+        second.update(
+            {
+                "elapsed_us": 2_000_000,
+                "window_duration_us": 1_250_000,
+                "rendered_frames": 1250,
+                "resident_bytes": (1 << 64) - 1,
+                "gameplay_duration_us": 1_250_000,
+                "focused_duration_us": 1_250_000,
+            }
+        )
+        summary = self.validate_payload(fixture, payload)
+        self.assertEqual(summary.sample_count, 2)
+        self.assertEqual(summary.minimum_fps, 1000.0)
+        self.assertEqual(summary.average_fps, 1000.0)
+
+    def test_raw_validator_rejects_malformed_and_internally_impossible_samples(self):
+        base_fixture = self.new_fixture()
+        base = base_fixture.valid_telemetry(base_fixture.artifact_sha256, NONCE, 2)
+        cases = [
+            ("missing top key", lambda value: value.pop("producer"), "invalid keys"),
+            ("extra top key", lambda value: value.__setitem__("extra", 1), "invalid keys"),
+            ("producer type", lambda value: value.__setitem__("producer", 1), "must be a string"),
+            ("clean bool", lambda value: value.__setitem__("clean_shutdown", 1), "clean_shutdown=true"),
+            ("bad timestamp", lambda value: value.__setitem__("completed_at_utc", "bad"), "YYYY-MM-DD"),
+            ("future timestamp", lambda value: value.__setitem__("completed_at_utc", "2099-01-01T00:00:00Z"), "future"),
+            ("outside receipt", lambda value: value.__setitem__("started_at_utc", "2020-01-01T00:00:00Z"), "not nested"),
+            ("target bool", lambda value: value.__setitem__("target_interval_us", True), "raw JSON integer"),
+            ("duration mismatch", lambda value: value.__setitem__("monotonic_duration_us", 1_000_000), "runner request"),
+            ("samples type", lambda value: value.__setitem__("samples", {}), "must be an array"),
+            ("samples empty", lambda value: value.__setitem__("samples", []), "no raw samples"),
+            ("sample type", lambda value: value["samples"].__setitem__(0, []), "must be an object"),
+            ("missing sample key", lambda value: value["samples"][0].pop("resident_bytes"), "invalid keys"),
+            ("extra sample key", lambda value: value["samples"][0].__setitem__("extra", 1), "invalid keys"),
+            ("sequence bool", lambda value: value["samples"][0].__setitem__("sequence", True), "raw JSON integer"),
+            ("frame float", lambda value: value["samples"][0].__setitem__("rendered_frames", 60.5), "raw JSON integer"),
+            ("sequence gap", lambda value: value["samples"][0].__setitem__("sequence", 2), "contiguous"),
+            ("short window", lambda value: value["samples"][0].__setitem__("window_duration_us", 749_999), "outside 0.75-1.25"),
+            ("elapsed gap", lambda value: value["samples"][1].__setitem__("elapsed_us", 2_000_001), "fabricated catch-up"),
+            ("zero frames", lambda value: value["samples"][0].__setitem__("rendered_frames", 0), "at least 1"),
+            ("implausible fps", lambda value: value["samples"][0].__setitem__("rendered_frames", 1001), "implausible FPS"),
+            ("zero rss", lambda value: value["samples"][0].__setitem__("resident_bytes", 0), "at least 1"),
+            ("rss overflow", lambda value: value["samples"][0].__setitem__("resident_bytes", 1 << 64), "unsigned 64-bit"),
+            ("long gameplay", lambda value: value["samples"][0].__setitem__("gameplay_duration_us", 1_000_001), "beyond its sample window"),
+            ("long focus", lambda value: value["samples"][0].__setitem__("focused_duration_us", 1_000_001), "beyond its sample window"),
+            ("two clears", lambda value: value["samples"][0].__setitem__("stage_clear_events", 2), "more than one cleared stage"),
+            ("stage mismatch", lambda value: value["samples"][0].__setitem__("completed_stages", 1), "contradicts its clear events"),
+            ("stage zero", lambda value: value["samples"][0].__setitem__("stage_number", 0), "at least 1"),
+            ("two players", lambda value: value["samples"][0].__setitem__("player_count", 2), "one-player samples"),
+            ("bad state", lambda value: value["samples"][0].__setitem__("app_state", "paused"), "app_state is not canonical"),
+            ("focus type", lambda value: value["samples"][0].__setitem__("window_focused", 1), "JSON boolean"),
+            ("gameplay zero", lambda value: value["samples"][0].__setitem__("gameplay_duration_us", 0), "contradicts its app_state"),
+            ("non-gameplay full", lambda value: value["samples"][0].__setitem__("app_state", "settlement"), "non-gameplay state"),
+            (
+                "clear without settlement",
+                lambda value: value["samples"][0].update(
+                    {"stage_clear_events": 1, "completed_stages": 1}
+                ),
+                "lacks a rendered settlement frame",
+            ),
+            ("focused zero", lambda value: value["samples"][0].__setitem__("focused_duration_us", 0), "focused endpoint"),
+            ("unfocused full", lambda value: value["samples"][0].__setitem__("window_focused", False), "unfocused endpoint"),
+            ("coverage gap", lambda value: value["samples"].pop(), "insufficient raw sampling coverage"),
+        ]
+        for name, mutation, expected in cases:
+            with self.subTest(name=name):
+                fixture = self.new_fixture()
+                payload = copy.deepcopy(base)
+                mutation(payload)
+                with self.assertRaisesRegex(RUNNER.RunnerError, expected):
+                    self.validate_payload(fixture, payload)
+
+        fixture = self.new_fixture()
+        path = fixture.output / RUNNER.TELEMETRY_FILENAME
+        path.write_text("[]\n", encoding="utf-8")
+        with self.assertRaisesRegex(RUNNER.RunnerError, "must be an object"):
+            RUNNER.validate_telemetry(
+                path,
+                self.identity(fixture),
+                NONCE,
+                2,
+                STARTED,
+                COMPLETED,
+            )
+
+    def test_runner_uses_the_final_verifiers_32_mib_telemetry_limit(self):
+        self.assertEqual(
+            RUNNER.MAX_TELEMETRY_BYTES,
+            RUNNER.performance_contract.MAX_TELEMETRY_BYTES,
+        )
+        self.assertEqual(RUNNER.MAX_TELEMETRY_BYTES, 32 * 1024 * 1024)
+        fixture = self.new_fixture()
+        path = fixture.output / RUNNER.TELEMETRY_FILENAME
+        path.write_bytes(b"{" + b" " * 64 + b"}")
+        with mock.patch.object(RUNNER, "MAX_TELEMETRY_BYTES", 64):
+            with mock.patch.object(RUNNER.os, "read") as read:
+                with self.assertRaisesRegex(RUNNER.RunnerError, "safety limit"):
+                    RUNNER.load_strict_json(path)
+                read.assert_not_called()
+
+    def test_receipt_cannot_hash_different_bytes_than_the_validated_telemetry(self):
+        fixture = self.new_fixture()
+        path = fixture.output / RUNNER.TELEMETRY_FILENAME
+        payload = fixture.valid_telemetry(fixture.artifact_sha256, NONCE, 2)
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        _, validated_digest = RUNNER.validate_telemetry(
+            path,
+            self.identity(fixture),
+            NONCE,
+            2,
+            STARTED,
+            COMPLETED,
+        )
+        payload["producer"] = "replacement"
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        with self.assertRaisesRegex(RUNNER.RunnerError, "changed after validation"):
+            RUNNER.file_reference(path, validated_digest)
+
+    def test_receipt_cannot_hash_different_bytes_than_the_validated_markers(self):
+        fixture = self.new_fixture()
+        original_read = RUNNER.read_marker_log_with_digest
+
+        def replace_after_read(path):
+            text, validated_digest = original_read(path)
+            path.write_text("marker output replaced after validation\n", encoding="utf-8")
+            return text, validated_digest
+
+        with mock.patch.object(
+            RUNNER,
+            "read_marker_log_with_digest",
+            side_effect=replace_after_read,
+        ):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError, "performance-stdout.log changed after validation"
+            ):
+                fixture.run(duration=2)
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_receipt_rejects_a_symlinked_candidate_output(self):
+        fixture = self.new_fixture()
+        replacement = fixture.root / "replacement-stderr.log"
+        replacement.write_text("replacement output\n", encoding="utf-8")
+        original_validate = RUNNER.validate_telemetry
+
+        def replace_stderr_after_validation(*args, **kwargs):
+            result = original_validate(*args, **kwargs)
+            stderr = fixture.output / RUNNER.STDERR_FILENAME
+            stderr.unlink()
+            stderr.symlink_to(replacement)
+            return result
+
+        with mock.patch.object(
+            RUNNER,
+            "validate_telemetry",
+            side_effect=replace_stderr_after_validation,
+        ):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError, "cannot securely open performance-stderr.log"
+            ):
+                fixture.run(duration=2)
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_marker_prefixed_lines_must_be_exact(self):
+        valid = "{} {}\n{} {}\n".format(
+            RUNNER.START_MARKER,
+            NONCE,
+            RUNNER.COMPLETE_MARKER,
+            NONCE,
+        )
+        for extra in (
+            RUNNER.START_MARKER,
+            RUNNER.START_MARKER + "junk",
+            RUNNER.COMPLETE_MARKER,
+            RUNNER.COMPLETE_MARKER + "junk",
+        ):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(RUNNER.RunnerError, "START/COMPLETE"):
+                    RUNNER.validate_markers(valid + extra + "\n", NONCE)
 
     def test_success_binds_candidate_process_nonce_time_and_three_outputs(self):
         fixture = self.new_fixture()
@@ -687,6 +1024,7 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             ("process", "valid", "valid", 7, "exited 7"),
             ("marker", "missing_complete", "valid", 0, "START/COMPLETE"),
             ("nonce_marker", "wrong_nonce", "valid", 0, "START/COMPLETE"),
+            ("foreign_marker", "extra_foreign", "valid", 0, "START/COMPLETE"),
             ("missing_telemetry", "valid", "missing", 0, "telemetry.*missing"),
             ("identity", "valid", "wrong_candidate", 0, "does not match"),
             ("unclean", "valid", "unclean", 0, "clean_shutdown=true"),
@@ -698,6 +1036,10 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             fixture.telemetry_mode = telemetry_mode
             fixture.process_returncode = returncode
             self.assert_runner_error(fixture, expected)
+
+        fixture = self.new_fixture()
+        fixture.telemetry_mutator = lambda value: value.pop("producer")
+        self.assert_runner_error(fixture, "invalid keys")
 
     def test_output_must_be_existing_empty_owned_private_and_not_symlink(self):
         fixture = self.new_fixture()
