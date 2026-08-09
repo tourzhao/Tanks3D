@@ -1,0 +1,467 @@
+#!/usr/bin/env python3
+"""Tests for the explicit Alpha-v2 interactive evidence compiler."""
+
+from datetime import datetime, timedelta, timezone
+import importlib.util
+import json
+import os
+from pathlib import Path
+import struct
+import sys
+import tempfile
+import unittest
+from unittest import mock
+import zlib
+
+
+SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "compile_alpha_v2_interactive_evidence.py"
+)
+SPEC = importlib.util.spec_from_file_location("alpha_v2_evidence_compiler", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+compiler = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = compiler
+SPEC.loader.exec_module(compiler)
+
+
+CANDIDATE_SHA256 = "a" * 64
+
+
+def write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def png_chunk(kind, payload):
+    checksum = zlib.crc32(kind)
+    checksum = zlib.crc32(payload, checksum) & 0xFFFFFFFF
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", checksum)
+
+
+def write_png(path, width=2, height=2):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pixel = bytes((47, 127, 211, 255))
+    rows = (b"\x00" + pixel * width) * height
+    data = b"\x89PNG\r\n\x1a\n"
+    data += png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    data += png_chunk(b"IDAT", zlib.compress(rows))
+    data += png_chunk(b"IEND", b"")
+    path.write_bytes(data)
+
+
+def result_row(item_id, mode=None):
+    row = {
+        "id": item_id,
+        "status": "NOT_RUN",
+        "tester": "",
+        "tested_at_utc": None,
+        "evidence_ids": [],
+        "checks_confirmed": [],
+        "notes": "Not run against this candidate.",
+    }
+    if mode is not None:
+        row = {"id": item_id, "mode": mode, **{key: value for key, value in row.items() if key != "id"}}
+    return row
+
+
+class CompilerFixture:
+    def __init__(self, testcase):
+        self.testcase = testcase
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.requirements_path = self.root / "docs" / "release-requirements" / "macos-alpha-v2.json"
+        self.status_path = self.root / "docs" / "releases" / "alpha-status.json"
+        self.manifest_path = self.root / "observation-plan.json"
+        self.output_dir = self.root / "compiled-evidence"
+        self.profile = {
+            "schema": compiler.REQUIREMENTS_SCHEMA,
+            "profile": "macos-alpha-v2",
+            "interactive_observation_manifest_schema": (
+                compiler.OBSERVATION_MANIFEST_SCHEMA
+            ),
+            "interactive_observation_manifest_keys": sorted(
+                compiler.MANIFEST_KEYS
+            ),
+            "interactive_observation_keys": sorted(
+                compiler.OBSERVATION_KEYS
+            ),
+            "interactive_observation_evidence_ids": list(
+                compiler.EVIDENCE_IDS
+            ),
+            "interactive_supporting_artifact_group_keys": [
+                "evidence_id",
+                "artifacts",
+            ],
+            "interactive_supporting_artifact_keys": ["path", "kind"],
+            "gameplay_event_log_schema": compiler.EVENT_LOG_SCHEMA,
+            "gameplay_event_log_producer": compiler.EVENT_LOG_PRODUCER,
+            "gameplay_event_log_keys": [
+                "schema",
+                "producer",
+                compiler.OBSERVATION_MANIFEST_SHA256_KEY,
+                "candidate_sha256",
+                "tester",
+                "machine",
+                "started_at_utc",
+                "completed_at_utc",
+                "events",
+            ],
+            "modes": ["one_player", "two_player"],
+            "gameplay_ids": ["movement"],
+            "base_ids": ["usa"],
+            "base_checks": ["wall_damage", "core_loss"],
+            "pickup_requirements": [
+                {"id": "star", "checks": ["model_3d_visible", "gameplay_effect_matches"]}
+            ],
+            "settlement_ids": ["basic_tank_ko"],
+        }
+        self.status = {
+            "schema": "tanks3d-release-status-v1",
+            "requirements": "docs/release-requirements/macos-alpha-v2.json",
+            "release": {"artifact": {"path": "candidate.zip", "sha256": CANDIDATE_SHA256}},
+            "gameplay": [result_row("movement", mode) for mode in self.profile["modes"]],
+            "bases": [result_row("usa", mode) for mode in self.profile["modes"]],
+            "pickups": [result_row("star", mode) for mode in self.profile["modes"]],
+            "settlement": [result_row("basic_tank_ko")],
+            "evidence": [
+                {
+                    "id": evidence_id,
+                    "status": "NOT_RUN",
+                    "artifacts": [],
+                    "reviewer": "",
+                    "reviewed_at_utc": None,
+                    "interactive": {
+                        "candidate_sha256": "",
+                        "tester": "",
+                        "machine": "",
+                        "tested_at_utc": None,
+                        "signature": "",
+                        "coverage_refs": {},
+                    },
+                    "notes": "Evidence not collected.",
+                }
+                for evidence_id in compiler.EVIDENCE_IDS
+            ],
+            "untouched_marker": {"value": "must remain byte-for-byte unchanged"},
+        }
+        write_json(self.requirements_path, self.profile)
+        write_json(self.status_path, self.status)
+        self.original_status = self.status_path.read_bytes()
+
+    def close(self):
+        self.temporary.cleanup()
+
+    def init_plan(self):
+        result = compiler.main(
+            [
+                "init-plan",
+                "--requirements",
+                str(self.requirements_path),
+                "--output",
+                str(self.manifest_path),
+            ]
+        )
+        self.testcase.assertEqual(result, 0)
+        return json.loads(self.manifest_path.read_text(encoding="utf-8"))
+
+    def valid_manifest(self):
+        manifest = self.init_plan()
+        manifest.update(
+            {
+                "candidate_sha256": CANDIDATE_SHA256,
+                "tester": "Alice Tester",
+                "machine": "Test Mac arm64",
+                "tester_signature": "Alice Tester",
+                "reviewer": "Bob Reviewer",
+                "reviewer_signature": "Bob Reviewer",
+                "started_at_utc": "2026-08-08T10:00:00Z",
+                "completed_at_utc": "2026-08-08T11:00:00Z",
+                "reviewed_at_utc": "2026-08-08T12:00:00Z",
+                "review_notes": "Interactive observations and captures reviewed.",
+            }
+        )
+        for index, observation in enumerate(manifest["observations"]):
+            observation["result"] = "PASS"
+            observation["observed_at_utc"] = "2026-08-08T10:{:02d}:00Z".format(index + 1)
+            observation["checks_confirmed"] = list(observation["required_checks"])
+            observation["notes"] = "Explicitly exercised {}.".format(observation["coverage_token"])
+        for group in manifest["supporting_artifacts"]:
+            artifact_path = self.root / "captures" / (group["evidence_id"] + ".png")
+            write_png(artifact_path)
+            group["artifacts"] = [
+                {
+                    "path": artifact_path.relative_to(self.root).as_posix(),
+                    "kind": "png",
+                }
+            ]
+        write_json(self.manifest_path, manifest)
+        return manifest
+
+    def compile(self):
+        return compiler.main(
+            [
+                "compile",
+                "--project-root",
+                str(self.root),
+                "--status",
+                self.status_path.relative_to(self.root).as_posix(),
+                "--manifest",
+                self.manifest_path.relative_to(self.root).as_posix(),
+                "--output-dir",
+                self.output_dir.relative_to(self.root).as_posix(),
+            ]
+        )
+
+    def assert_rejected_without_mutation(self):
+        self.testcase.assertEqual(self.compile(), 1)
+        self.testcase.assertFalse(self.output_dir.exists())
+        self.testcase.assertEqual(self.status_path.read_bytes(), self.original_status)
+
+
+class InteractiveEvidenceCompilerTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = CompilerFixture(self)
+
+    def tearDown(self):
+        self.fixture.close()
+
+    def test_init_plan_is_all_not_run_and_never_claims_checks(self):
+        manifest = self.fixture.init_plan()
+        self.assertEqual(manifest["schema"], compiler.OBSERVATION_MANIFEST_SCHEMA)
+        self.assertEqual(manifest["event_log_schema"], compiler.EVENT_LOG_SCHEMA)
+        self.assertEqual(manifest["event_log_producer"], compiler.EVENT_LOG_PRODUCER)
+        self.assertTrue(manifest["observations"])
+        self.assertTrue(all(item["result"] == "NOT_RUN" for item in manifest["observations"]))
+        self.assertTrue(all(item["checks_confirmed"] == [] for item in manifest["observations"]))
+        self.assertTrue(all(item["observed_at_utc"] is None for item in manifest["observations"]))
+        before = self.fixture.manifest_path.read_bytes()
+        self.assertEqual(
+            compiler.main(
+                [
+                    "init-plan",
+                    "--requirements",
+                    str(self.fixture.requirements_path),
+                    "--output",
+                    str(self.fixture.manifest_path),
+                ]
+            ),
+            1,
+        )
+        self.assertEqual(self.fixture.manifest_path.read_bytes(), before)
+
+    def test_success_compiles_bound_pack_and_keeps_original_status_unchanged(self):
+        self.fixture.valid_manifest()
+        self.assertEqual(self.fixture.compile(), 0)
+        self.assertEqual(self.fixture.status_path.read_bytes(), self.fixture.original_status)
+        expected = {"observation-manifest.json", "status.next.json"}
+        for evidence_id in compiler.EVIDENCE_IDS:
+            expected.add(evidence_id + "-events.json")
+            expected.add(evidence_id + "-session.json")
+        self.assertEqual({path.name for path in self.fixture.output_dir.iterdir()}, expected)
+
+        copied_manifest = (self.fixture.output_dir / "observation-manifest.json").read_bytes()
+        manifest_digest = compiler.sha256_bytes(copied_manifest)
+        event_log = json.loads(
+            (self.fixture.output_dir / "one_player_gameplay-events.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(event_log["schema"], compiler.EVENT_LOG_SCHEMA)
+        self.assertEqual(event_log["producer"], compiler.EVENT_LOG_PRODUCER)
+        self.assertEqual(
+            event_log[compiler.OBSERVATION_MANIFEST_SHA256_KEY], manifest_digest
+        )
+        self.assertEqual(event_log["candidate_sha256"], CANDIDATE_SHA256)
+        self.assertTrue(all(event["result"] == "PASS" for event in event_log["events"]))
+
+        next_status = json.loads(
+            (self.fixture.output_dir / "status.next.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(next_status["untouched_marker"], self.fixture.status["untouched_marker"])
+        for section in ("gameplay", "bases", "pickups", "settlement"):
+            self.assertTrue(all(row["status"] == "PASS" for row in next_status[section]))
+        self.assertTrue(
+            all(item["status"] == "PASS" for item in next_status["evidence"])
+        )
+
+    def test_not_run_observation_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["observations"][0]["result"] = "NOT_RUN"
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_pass_without_explicit_checks_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["observations"][0]["checks_confirmed"] = []
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_missing_coverage_token_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["observations"].pop()
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_candidate_mismatch_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["candidate_sha256"] = "b" * 64
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_non_chronological_observation_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["observations"][0]["observed_at_utc"] = "2026-08-08T09:59:59Z"
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_future_timestamp_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        manifest["reviewed_at_utc"] = future.strftime("%Y-%m-%dT%H:%M:%SZ")
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_placeholder_identity_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["tester"] = "TBD"
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_blocking_review_notes_are_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["review_notes"] = "Independent review is pending."
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_blocking_observation_notes_are_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["observations"][0]["notes"] = "This check was not tested."
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_same_reviewer_and_tester_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        manifest["reviewer"] = "  ALICE TESTER  "
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_symlinked_supporting_artifact_is_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        first = manifest["supporting_artifacts"][0]["artifacts"][0]
+        original = self.fixture.root / first["path"]
+        target = self.fixture.root / "real-capture.png"
+        target.write_bytes(original.read_bytes())
+        original.unlink()
+        os.symlink(str(target), str(original))
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_invalid_png_and_small_recording_are_rejected(self):
+        manifest = self.fixture.valid_manifest()
+        first = manifest["supporting_artifacts"][0]["artifacts"][0]
+        (self.fixture.root / first["path"]).write_bytes(b"not a PNG")
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+        other = CompilerFixture(self)
+        self.addCleanup(other.close)
+        manifest = other.valid_manifest()
+        recording = other.root / "captures" / "too-small.mp4"
+        recording.write_bytes(b"0" * (compiler.MINIMUM_RECORDING_BYTES - 1))
+        manifest["supporting_artifacts"][0]["artifacts"] = [
+            {
+                "path": recording.relative_to(other.root).as_posix(),
+                "kind": "recording",
+            }
+        ]
+        write_json(other.manifest_path, manifest)
+        other.assert_rejected_without_mutation()
+
+    def test_supporting_and_existing_recordings_are_streamed(self):
+        manifest = self.fixture.valid_manifest()
+        for index, group in enumerate(manifest["supporting_artifacts"]):
+            recording = self.fixture.root / "captures" / "support-{}.mp4".format(index)
+            recording.write_bytes(
+                bytes((index + 1,)) * compiler.MINIMUM_RECORDING_BYTES
+            )
+            group["artifacts"] = [
+                {
+                    "path": recording.relative_to(self.fixture.root).as_posix(),
+                    "kind": "recording",
+                }
+            ]
+
+        existing = self.fixture.root / "captures" / "existing.mp4"
+        existing.write_bytes(b"e" * compiler.MINIMUM_RECORDING_BYTES)
+        self.fixture.status["evidence"][0]["artifacts"] = [
+            {
+                "path": existing.relative_to(self.fixture.root).as_posix(),
+                "sha256": compiler.sha256_bytes(existing.read_bytes()),
+                "kind": "recording",
+            }
+        ]
+        write_json(self.fixture.status_path, self.fixture.status)
+        self.fixture.original_status = self.fixture.status_path.read_bytes()
+        write_json(self.fixture.manifest_path, manifest)
+
+        original_reader = compiler.read_regular_file
+
+        def reject_buffered_recording(path, label):
+            if Path(path).suffix == ".mp4":
+                raise AssertionError("recordings must not use the buffering reader")
+            return original_reader(path, label)
+
+        with mock.patch.object(
+            compiler, "read_regular_file", side_effect=reject_buffered_recording
+        ):
+            self.assertEqual(self.fixture.compile(), 0)
+        self.assertEqual(
+            self.fixture.status_path.read_bytes(), self.fixture.original_status
+        )
+
+    def test_existing_output_directory_is_never_overwritten(self):
+        self.fixture.valid_manifest()
+        self.fixture.output_dir.mkdir()
+        sentinel = self.fixture.output_dir / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        self.assertEqual(self.fixture.compile(), 1)
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+        self.assertEqual({path.name for path in self.fixture.output_dir.iterdir()}, {"keep.txt"})
+        self.assertEqual(self.fixture.status_path.read_bytes(), self.fixture.original_status)
+
+    def test_output_directory_symlink_is_never_followed(self):
+        self.fixture.valid_manifest()
+        target = self.fixture.root / "symlink-target"
+        target.mkdir()
+        sentinel = target / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        os.symlink(str(target), str(self.fixture.output_dir))
+        self.assertEqual(self.fixture.compile(), 1)
+        self.assertTrue(self.fixture.output_dir.is_symlink())
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+        self.assertEqual({path.name for path in target.iterdir()}, {"keep.txt"})
+        self.assertEqual(self.fixture.status_path.read_bytes(), self.fixture.original_status)
+
+    def test_partial_pack_write_is_removed_through_the_open_directory(self):
+        self.fixture.valid_manifest()
+        original_write = compiler.os.write
+        calls = 0
+
+        def partial_then_fail(descriptor, data):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return original_write(descriptor, data[:10])
+            raise OSError("forced pack write failure")
+
+        with mock.patch.object(compiler.os, "write", side_effect=partial_then_fail):
+            self.assertEqual(self.fixture.compile(), 1)
+        self.assertGreaterEqual(calls, 2)
+        self.assertFalse(os.path.lexists(str(self.fixture.output_dir)))
+        self.assertEqual(
+            self.fixture.status_path.read_bytes(), self.fixture.original_status
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

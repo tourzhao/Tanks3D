@@ -80,11 +80,14 @@ deployment target and rebuild through `RAYLIB_PREFIX`.
 
 ## Human release gate
 
-Copy and complete the [Alpha QA report template](ALPHA_QA_REPORT_TEMPLATE.md),
-then prepare the public notes from the
-[release notes template](RELEASE_NOTES_TEMPLATE.md). Blank or `NOT RUN` fields,
-missing evidence, and an absent source commit or release tag are blockers, not
-passing results.
+The [Alpha QA report template](ALPHA_QA_REPORT_TEMPLATE.md) and
+[release notes template](RELEASE_NOTES_TEMPLATE.md) are completeness
+references for v2; do **not** copy either one into `docs/releases/<tag>*`
+before initialization. The one-shot initializer below owns those versioned
+paths and refuses every overwrite. Run it first, then edit the generated
+candidate-specific QA report and release page using the templates as
+worksheets. Blank or `NOT RUN` fields, missing evidence, and an absent source
+commit or release tag are blockers, not passing results.
 
 The frozen Alpha 3 status remains at
 `docs/releases/v0.1.0-alpha.3-status.json` under the legacy v1 profile and may
@@ -118,6 +121,22 @@ guess ownership or delete them automatically.
 Commit and inspect all generated files before the clean-worktree evidence check;
 the tagged verifier intentionally rejects a dirty tree.
 
+### Pre-release HTTPS staging
+
+Clean-Mac quarantine QA necessarily downloads the candidate before final
+approval. Upload the **already attested, byte-for-byte candidate ZIP** to a
+private draft release or another access-controlled HTTPS staging location that
+preserves its exact filename. This upload is QA staging, not an approved public
+release: do not announce it, mark the release approved, or replace the asset
+after testing. The URL must be safe to record in evidence, without credentials
+or reusable secrets embedded in it. If no such staging location is available,
+the Clean-Mac gate remains `BLOCKED`.
+
+Record the staging URL and independently recomputed SHA-256. Final publication
+must reuse that exact ZIP. If a draft release is promoted, do not re-upload or
+recompress the asset; if the final host differs, upload the same file and
+recompute its public download SHA-256 before announcing the release.
+
 Run the contract and evidence checks with:
 
 ```sh
@@ -131,7 +150,7 @@ bad candidate, stale hashes, wrong evidence classes, or invalid claims. Each
 interactive evidence block must identify the candidate SHA-256, tester, Mac,
 UTC test time, typed signature, and coverage references. Live gameplay also
 requires candidate-bound `tanks3d-interactive-session-v1` and
-`tanks3d-gameplay-event-log-v1` JSON artifacts with per-category results and
+`tanks3d-gameplay-event-log-v2` JSON artifacts with per-category results and
 supporting hashes; a screenshot or free-form report is insufficient. Clean-Mac
 and Gatekeeper commands use `tanks3d-command-log-v1`. Under v2, acquire the
 exact HTTPS asset with Safari so the download receives genuine quarantine
@@ -153,13 +172,70 @@ second windows and checks >=50 average FPS, >=30 1% low FPS, <=256 MiB
 physical-footprint growth, >=80% active-gameplay time, >=95% focused-window
 time, and at least one candidate-reported cleared stage. It also cross-checks
 the recorded stage count and player-mode summary. A consistently hashed
-artifact may support multiple categories only when its structured record names
-each one.
+artifact may support multiple categories only when its structured schema names
+each one. The live-gameplay compiler is stricter for supporting captures: its
+five category groups must use distinct repository paths, even when the files
+were exported from one longer recording.
+
+### Live-gameplay observation compiler
+
+After initializing the candidate-specific status, create the observation plan:
+
+```sh
+make init-alpha-v2-interactive-plan DIST_CHANNEL=alpha.N
+```
+
+The no-overwrite plan contains all 67 gameplay, national-base, pickup, and
+settlement observations as `NOT_RUN`. Fill the candidate SHA, tester/machine,
+session interval, signatures, reviewer, and review fields once at manifest
+level. For every observation row, enter only its explicit result, observation
+time, exact `checks_confirmed`, and notes; do not add keys. Add one or more real
+PNG/recording paths to each of the five category-level
+`supporting_artifacts` groups. There is no bulk-PASS option. Any missing,
+reordered, or non-PASS row makes compilation fail. PNG files must decode as
+valid PNGs; each recording must contain at least 64 KiB. Placeholder identities,
+future timestamps, and notes that say a PASS was blocked, skipped, pending, or
+not exercised are rejected during compilation.
+
+Place final supporting captures in a persistent candidate evidence directory
+before compiling, then choose a new output directory there. For example:
+
+```sh
+mkdir -p docs/assets/releases/v0.1.0-alpha.N/evidence
+make compile-alpha-v2-interactive-evidence DIST_CHANNEL=alpha.N \
+  ALPHA_INTERACTIVE_QA_OUTPUT_DIR="$PWD/docs/assets/releases/v0.1.0-alpha.N/evidence/interactive"
+```
+
+The compiler creates one canonical manifest, five v2 event logs, five session
+reports, and `status.next.json` without changing the source status or replacing
+any file. The event producer is honestly identified as the project QA compiler,
+and every event log binds the canonical observation-manifest SHA-256.
+
+The tagged verifier requires a clean worktree. Review the new pack first, then
+commit the pack and every referenced supporting capture as a draft evidence
+commit. From that clean commit, verify the generated status explicitly:
+
+```sh
+make check-alpha-release-evidence DIST_CHANNEL=alpha.N \
+  RELEASE_STATUS_FILE="$PWD/docs/assets/releases/v0.1.0-alpha.N/evidence/interactive/status.next.json"
+```
+
+Only after this blocked-status check passes should you deliberately copy
+`status.next.json` over `docs/releases/v0.1.0-alpha.N-status.json`, update the
+candidate documents, and commit that promotion. Re-run the canonical evidence
+check from a clean worktree. The compiler does not update release prose,
+document hashes, known issues, audio, or approvals.
+
+This compiler covers the five live-play categories only. Main-menu/published-
+control evidence and the source-free Safari acquisition/five-command records
+still require their own accountable collection workflow; keep those gates
+`NOT_RUN`/`BLOCKED` rather than copying synthetic fixtures or hand-authoring a
+false PASS.
 
 Treat source-free launch QA and performance QA as separate gates. The Clean-Mac
-machine downloads only the published ZIP in Safari and must have no source
-checkout or Homebrew raylib. Before the quarantined app's first Finder launch,
-retain and inspect the downloaded ZIP, then expand it with Finder/Archive
+machine downloads only the staged candidate ZIP in Safari and must have no
+source checkout or Homebrew raylib. Before the quarantined app's first Finder
+launch, retain and inspect the downloaded ZIP, then expand it with Finder/Archive
 Utility rather than Terminal tools so app-quarantine propagation is part of the
 test. If Safari expands it automatically, record that path. If macOS offers it
 after a blocked launch, test **System Settings > Privacy & Security > Open
@@ -188,6 +264,23 @@ the candidate ZIP before extraction, so a concurrent replacement cannot alter
 the executed bundle. Add all four generated files to the
 `extended_session_metrics` evidence before final verification.
 
+`build/release-evidence/<tag>/` is an ignored local intake directory, not a
+persistent audit location. Before any evidence category becomes `PASS`, copy
+every referenced JSON, log, report, recording, and performance file into
+`docs/assets/releases/<tag>/evidence/` without overwriting an existing file.
+Update the artifact paths and SHA-256 values in the status JSON, then commit
+those files with the versioned report and page. The seven publication PNGs are
+already copied into `docs/assets/releases/<tag>/` by the initializer.
+
+All committed evidence must be safe for public distribution: exclude secrets
+and obtain consent for recorded tester/machine information. If an artifact
+cannot be committed because of privacy or size, the Alpha remains `BLOCKED`
+until the release contract supports and verifies a separately published,
+immutable evidence bundle. Do not leave a final status pointing only at ignored
+local files. Publish the committed evidence alongside the final status and
+requirements profile so the audit record remains resolvable after a fresh
+clone.
+
 This gate proves candidate identity, record integrity, chronology, and internal
 consistency; it cannot cryptographically prove that a human performed a test.
 The named tester and evidence reviewer must therefore be different people, as
@@ -199,7 +292,9 @@ After completing QA, update the release page and QA report to their canonical
 records, and leave the worktree clean. The QA report's canonical 13-row
 `Release gate summary` must contain only `PASS`. Reviews must follow the actual
 test times; known-issue review follows evidence review, then QA approval, then
-release-owner approval. Public upload is allowed only after:
+release-owner approval. The pre-release staging upload above is the sole
+exception; final publication, promotion, and announcement are allowed only
+after:
 
 ```sh
 make verify-alpha-release-ready DIST_CHANNEL=alpha.N
@@ -243,7 +338,8 @@ opens a window and intentionally remains outside CI and candidate gates.
   plus replacement-manifest verification.
 - Add release screenshots, concise notes, known limitations, and all five files
   from the verified candidate directory to the GitHub release. Also publish the
-  final status JSON and its fixed requirements profile as audit records.
+  final status JSON, its fixed requirements profile, and the persistent evidence
+  files referenced by that status as audit records.
 - Publish only an archive produced on `arm64`. The current CI job validates the
   native architecture of `macos-latest` but does not upload its generated ZIP;
   pin an Apple Silicon runner before turning CI output into release artifacts.

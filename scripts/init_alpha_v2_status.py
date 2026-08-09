@@ -30,7 +30,7 @@ REQUIREMENTS_PATH = Path("docs/release-requirements/macos-alpha-v2.json")
 REQUIREMENTS_SCHEMA = "tanks3d-release-requirements-v2"
 REQUIREMENTS_PROFILE = "macos-alpha-v2"
 CANONICAL_REQUIREMENTS_DIGEST = (
-    "7a0f5eaac3e8ec0bc4726cc7084a16e34f548735381c397f3c152a503d2cabf9"
+    "aa1a207ca7ce8de7ce8ab79f3f644ecd2ff4698f6d461fd1ab0003374dce4b55"
 )
 SCREENSHOT_NAMES = (
     "one-player.png",
@@ -593,10 +593,17 @@ def validate_requirements(root: Path) -> Mapping[str, Any]:
         "base_checks",
         "settlement_ids",
         "published_control_checks",
+        "advanced_settings_checks",
         "clean_mac_detail_keys",
         "gatekeeper_detail_keys",
         "extended_session_detail_keys",
         "interactive_evidence_keys",
+        "interactive_observation_manifest_keys",
+        "interactive_observation_keys",
+        "interactive_observation_evidence_ids",
+        "interactive_supporting_artifact_group_keys",
+        "interactive_supporting_artifact_keys",
+        "gameplay_event_log_keys",
         "evidence_ids",
         "document_gate_rows",
         "approval_roles",
@@ -607,6 +614,16 @@ def validate_requirements(root: Path) -> Mapping[str, Any]:
         raise InitError("requirements modes are not canonical")
     if profile["approval_roles"] != ["qa_lead", "release_owner"]:
         raise InitError("requirements approval roles are not canonical")
+    expected_interactive_contract = {
+        "interactive_observation_manifest_schema": (
+            "tanks3d-alpha-v2-interactive-observation-manifest-v1"
+        ),
+        "gameplay_event_log_schema": "tanks3d-gameplay-event-log-v2",
+        "gameplay_event_log_producer": "Tanks3D Alpha QA Evidence Compiler",
+    }
+    for key, expected in expected_interactive_contract.items():
+        if profile.get(key) != expected:
+            raise InitError("requirements {} is not canonical".format(key))
     pickup_requirements = profile.get("pickup_requirements")
     if not isinstance(pickup_requirements, list) or not pickup_requirements:
         raise InitError("requirements.pickup_requirements must be a non-empty array")
@@ -916,7 +933,7 @@ def render_qa_report(
     lines.extend(
         [
             "",
-            "Published control bindings: **NOT RUN — BLOCKED**.",
+            "Published control bindings and advanced settings: **NOT RUN — BLOCKED**.",
             "",
             "## Clean Mac, Gatekeeper, and extended session",
             "",
@@ -1034,7 +1051,10 @@ def build_status(
         "settlement": settlement,
         "published_controls": {
             **matrix_record("published_controls_match"),
-            "notes": "Published controls have not been verified against this candidate.",
+            "notes": (
+                "Published controls and advanced settings have not been verified "
+                "against this candidate."
+            ),
         },
         "clean_mac": blocked_gate(
             profile["clean_mac_detail_keys"],

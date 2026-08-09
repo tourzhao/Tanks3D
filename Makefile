@@ -99,6 +99,10 @@ RELEASE_STATUS_VERIFY_SCRIPT := scripts/verify_release_status.py
 RELEASE_STATUS_TEST := tests/test_release_status_verifier.py
 ALPHA_V2_STATUS_INIT_SCRIPT := scripts/init_alpha_v2_status.py
 ALPHA_V2_STATUS_INIT_TEST := tests/test_alpha_v2_status_initializer.py
+ALPHA_V2_INTERACTIVE_COMPILER := \
+	scripts/compile_alpha_v2_interactive_evidence.py
+ALPHA_V2_INTERACTIVE_COMPILER_TEST := \
+	tests/test_alpha_v2_interactive_evidence_compiler.py
 RELEASE_PERFORMANCE_QA_RUNNER := scripts/run_release_performance_qa.py
 RELEASE_PERFORMANCE_QA_RUNNER_TEST := \
 	tests/test_release_performance_runner.py
@@ -230,6 +234,12 @@ RELEASE_PERFORMANCE_QA_OUTPUT_DIR ?= \
 	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/performance)
 ALPHA_RELEASE_SCREENSHOT_INPUT_DIR ?= \
 	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/screenshots)
+ALPHA_INTERACTIVE_QA_DIR ?= \
+	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/interactive)
+ALPHA_INTERACTIVE_QA_PLAN ?= \
+	$(ALPHA_INTERACTIVE_QA_DIR)/observation-plan.json
+ALPHA_INTERACTIVE_QA_OUTPUT_DIR ?= \
+	$(ALPHA_INTERACTIVE_QA_DIR)/compiled
 DIST_COMPILE_FLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
 	-mmacosx-version-min=$(DIST_MACOS_MIN) $(DIST_IDENTITY_FLAGS)
 DIST_LINK_FLAGS := -mmacosx-version-min=$(DIST_MACOS_MIN) \
@@ -408,7 +418,8 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	check-dist-prereqs test-dist dist test-alpha-candidate \
 	verify-alpha-candidate verify-tagged-alpha-candidate alpha-candidate \
 	test-release-status check-alpha-release-evidence \
-	init-alpha-v2-status verify-alpha-release-ready
+	init-alpha-v2-status init-alpha-v2-interactive-plan \
+	compile-alpha-v2-interactive-evidence verify-alpha-release-ready
 
 all: $(TARGET) $(APP_EXECUTABLE)
 
@@ -553,11 +564,15 @@ test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(RELEASE_REQUIREMENTS_PROFILE_V2) \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST) \
 		$(ALPHA_V2_STATUS_INIT_SCRIPT) $(ALPHA_V2_STATUS_INIT_TEST) \
+		$(ALPHA_V2_INTERACTIVE_COMPILER) \
+		$(ALPHA_V2_INTERACTIVE_COMPILER_TEST) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error $(RELEASE_STATUS_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(ALPHA_V2_STATUS_INIT_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(ALPHA_V2_INTERACTIVE_COMPILER_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 
@@ -588,6 +603,27 @@ init-alpha-v2-status: test-release-status $(ALPHA_V2_STATUS_INIT_SCRIPT) \
 		--project-root "$(abspath .)" \
 		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
 		--screenshot-input-dir "$(ALPHA_RELEASE_SCREENSHOT_INPUT_DIR)"
+
+# Create an explicit all-NOT_RUN observation plan. The compiler never infers a
+# human outcome and refuses to replace either this plan or a compiled pack.
+init-alpha-v2-interactive-plan: test-release-status \
+		$(ALPHA_V2_INTERACTIVE_COMPILER) \
+		$(RELEASE_REQUIREMENTS_PROFILE_V2)
+	install -d -m 700 "$(ALPHA_INTERACTIVE_QA_DIR)"
+	python3 -B $(ALPHA_V2_INTERACTIVE_COMPILER) init-plan \
+		--requirements "$(abspath $(RELEASE_REQUIREMENTS_PROFILE_V2))" \
+		--output "$(ALPHA_INTERACTIVE_QA_PLAN)"
+
+# Compile only a fully completed plan into a new pack and status.next.json.
+# The canonical status and release documents are deliberately left unchanged.
+compile-alpha-v2-interactive-evidence: test-release-status \
+		$(ALPHA_V2_INTERACTIVE_COMPILER) $(RELEASE_STATUS_FILE) \
+		$(ALPHA_INTERACTIVE_QA_PLAN)
+	python3 -B $(ALPHA_V2_INTERACTIVE_COMPILER) compile \
+		--project-root "$(abspath .)" \
+		--status "$(abspath $(RELEASE_STATUS_FILE))" \
+		--manifest "$(ALPHA_INTERACTIVE_QA_PLAN)" \
+		--output-dir "$(ALPHA_INTERACTIVE_QA_OUTPUT_DIR)"
 
 check-alpha-release-evidence: test-release-status \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_FILE)

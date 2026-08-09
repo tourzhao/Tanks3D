@@ -1,9 +1,12 @@
 # Alpha QA Report
 
-> **Template state: BLOCKED.** Copy this file to a versioned report before use.
-> Blank cells, deleted required rows, `TBD`, `NOT RUN`, missing evidence, or an
-> unexplained `N/A` never mean PASS. Publish only after every required gate has
-> an explicit result and the final approval is signed.
+> **Template state: BLOCKED.** For a v2 candidate, do not copy this file into
+> `docs/releases/<tag>-qa.md`: `make init-alpha-v2-status` creates that path and
+> refuses to overwrite it. Run the initializer first, then use this document as
+> a completeness worksheet while editing the generated candidate-specific
+> report. Blank cells, deleted required rows, `TBD`, `NOT RUN`, missing evidence,
+> or an unexplained `N/A` never mean PASS. Publish only after every required gate
+> has an explicit result and the final approval is signed.
 
 > **Overall Alpha gate: BLOCKED.**
 
@@ -16,6 +19,8 @@
 | Planned release date (`YYYY-MM-DD`) | NOT RECORDED — BLOCKED |
 | Candidate directory (`build/release/<tag>`) | NOT RECORDED — BLOCKED |
 | Artifact filename | NOT RECORDED — BLOCKED |
+| Draft/pre-release HTTPS staging URL | NOT RECORDED — BLOCKED |
+| Staging access/publication state | NOT RECORDED — BLOCKED |
 | Published `.sha256` filename | NOT RECORDED — BLOCKED |
 | Independently recomputed SHA-256 | NOT RECORDED — BLOCKED |
 | Candidate `attestation.txt` | NOT ATTACHED — BLOCKED |
@@ -30,15 +35,28 @@ artifact. If either is unavailable, stop: the Alpha is **BLOCKED**. Verify the
 downloaded files, not a similarly named local build:
 
 ```sh
-shasum -a 256 -c <artifact>.zip.sha256
+shasum -a 256 <artifact>.zip
 make verify-tagged-alpha-candidate DIST_CHANNEL=<alpha.N>
 make check-alpha-release-evidence DIST_CHANNEL=<alpha.N>
 ```
+
+Compare the direct `shasum` output with the published sidecar. This exact
+three-argument checksum form is also the first command required in the
+Clean-Mac command log; do not substitute `shasum -c` there.
 
 The evidence command permits honest blockers and is not approval. After this
 report, its release page, evidence, known-issue review, audio decision, and both
 approvals are final and committed, the no-exception release-ready target with
 `DIST_CHANNEL=<alpha.N>` must pass from a clean worktree.
+
+Clean-Mac QA happens before final publication, so first upload the already
+attested ZIP to a private draft release or access-controlled HTTPS staging
+location that preserves its exact filename and bytes. This is a QA input, not
+an approved release. Do not announce it, replace it after testing, or put
+credentials/reusable secrets in the recorded URL. If no suitable staging URL
+exists, leave the Clean-Mac and overall gates `BLOCKED`. Final publication must
+reuse the tested ZIP; record and compare the final public download SHA-256
+before announcement.
 
 ## Clean-Mac Environment
 
@@ -60,9 +78,10 @@ and must not depend on the source checkout or Homebrew raylib.
 | Meets filename minimum macOS version | NOT VERIFIED — BLOCKED |
 | Source checkout absent / Homebrew raylib unused | NOT VERIFIED — BLOCKED |
 
-Download the exact HTTPS release asset with Safari and record `Safari` as the
-download client. This is intentional: command-line `curl` does not create the
-`com.apple.quarantine` attribute needed for a genuine downloaded-artifact test.
+Download the exact staged candidate asset over HTTPS with Safari and record
+`Safari` as the download client. This is intentional: command-line `curl` does
+not create the `com.apple.quarantine` attribute needed for a genuine
+downloaded-artifact test.
 Do not add quarantine metadata manually. Attach a hashed
 `tanks3d-browser-acquisition-v1` record with the candidate SHA, tester, machine,
 exact client/URL/filename, interval, ZIP quarantine agent, and typed signature.
@@ -138,6 +157,29 @@ startup smoke test is insufficient.
 | Music/audio cues and volume behavior | NOT RUN | NOT RUN | |
 | Complete stage without crash, hang, or soft lock | NOT RUN | NOT RUN | |
 
+## Advanced Settings
+
+Exercise the actual menu and start gameplay with the selected values; a menu
+screenshot alone is insufficient.
+
+| Check | One player | Two players | Evidence / notes |
+| --- | --- | --- | --- |
+| Default HP is 3 and `R` restores all defaults | NOT RUN | NOT RUN | |
+| Player HP covers 1 through 6 in steps of 1 | NOT RUN | NOT RUN | |
+| Enemy speed covers -30% through +30% in steps of 5% | NOT RUN | NOT RUN | |
+| Fire frequency covers -30% through +30% in steps of 5% | NOT RUN | NOT RUN | |
+| Spawn pace covers -30% through +30% in steps of 5% | NOT RUN | NOT RUN | |
+| Selected HP and enemy tuning take effect after start/restart | NOT RUN | NOT RUN | |
+| HP 1 visibly disables Bandage and normal HP restores eligibility | NOT RUN | NOT RUN | |
+| `Esc` returns without losing the selected values | NOT RUN | NOT RUN | |
+
+The v2 profile binds these eight checks through
+`advanced_settings_checks`; a `published_controls` PASS must confirm them in
+addition to every binding below. Do not treat
+`main_menu_and_advanced_settings` as covered by a menu image. The live-gameplay
+compiler does not create this main-menu/control attestation, so keep it blocked
+until its separate interactive session and supporting capture are complete.
+
 ## Published Controls
 
 Exercise every binding printed in the release page: menu arrows/`WASD`,
@@ -179,6 +221,21 @@ effect. `Bandage` must also be checked for its spawn restrictions.
 | Bandage absent at full HP | NOT RUN | NOT RUN | |
 | Bandage disabled when maximum HP is 1 | NOT RUN | NOT RUN | |
 | Pickup lifetime is 12.5 seconds | NOT RUN | NOT RUN | |
+
+## Settlement Report
+
+Complete and review a classified report produced by live play. The showcase is
+useful for a publication image but does not replace the live settlement check.
+
+| Required settlement result | Result | Evidence / notes |
+| --- | --- | --- |
+| Basic-tank K.O. row | NOT RUN | |
+| Fast-tank K.O. row | NOT RUN | |
+| Power-tank K.O. row | NOT RUN | |
+| Armor-tank K.O. row | NOT RUN | |
+| K.O. total equals the four classified rows | NOT RUN | |
+| Score/points match the live tally | NOT RUN | |
+| Grenade destructions remain excluded from classified K.O. rows | NOT RUN | |
 
 ## Extended-Session Performance
 
@@ -236,12 +293,35 @@ Required screenshots or recordings:
 | Actual Gatekeeper dialog/launch path | NOT RECORDED | NO |
 | Extended-session metrics | NOT RECORDED | NO |
 
-Interactive PASS evidence must include hashed
-`tanks3d-interactive-session-v1` and `tanks3d-gameplay-event-log-v1` JSON
-artifacts. They bind the candidate SHA, tester, machine, test interval, each
-coverage token, result, review time, and supporting artifact hashes. A static
-screenshot, arbitrary video, or free-form one-line report cannot substitute for
-the signed event record. The tester and reviewer must be different people.
+Every dynamic PASS category needs a hashed `tanks3d-interactive-session-v1`
+artifact. One-player, two-player, national-base, pickup, and settlement
+categories also need their exact `tanks3d-gameplay-event-log-v2`; Gatekeeper
+needs the browser-acquisition and five-command records; the extended session
+needs its generated telemetry and receipt. These records bind the candidate
+SHA, tester, machine, intervals, coverage tokens, result, review time, and
+supporting artifact hashes. A static screenshot, arbitrary video, or free-form
+one-line report cannot substitute for the required structured records. The
+tester and reviewer must be different people.
+
+For the five live-play categories, run
+`make init-alpha-v2-interactive-plan DIST_CHANNEL=alpha.N`, explicitly complete
+all 67 observations, and then run
+`make compile-alpha-v2-interactive-evidence DIST_CHANNEL=alpha.N` with a new
+persistent `ALPHA_INTERACTIVE_QA_OUTPUT_DIR`. The compiler has no bulk-PASS
+option, never changes the source status, and emits a reviewable
+`status.next.json`, one manifest, and candidate-bound v2 event/session records.
+The event logs identify `Tanks3D Alpha QA Evidence Compiler` as their producer
+and bind the exact manifest hash. Main-menu/published-control, Safari
+acquisition, and five-command collection are outside this compiler; do not use
+test fixtures or hand-change those gates to PASS.
+
+Treat `build/release-evidence/<tag>/` as a temporary, ignored intake directory.
+Before marking evidence `PASS`, copy every referenced artifact into
+`docs/assets/releases/<tag>/evidence/`, update its status path and SHA-256, and
+commit it with the versioned report. Do not publish secrets; obtain consent for
+tester/machine data. If privacy or size prevents committing an artifact, remain
+`BLOCKED` until the verifier supports an immutable external evidence bundle.
+The final published status must not point only to ignored local files.
 
 ## Inherited 22-Sound Decision
 
@@ -295,12 +375,14 @@ candidate before selecting either option.
 ## Final Approval
 
 - [ ] Artifact filename, SHA-256, commit, and tag are mutually traceable.
+- [ ] The staged Clean-Mac ZIP and final public ZIP are byte-for-byte identical.
 - [ ] Candidate attestation, build configuration, and gate log verify unchanged.
 - [ ] Automated gates passed for this exact commit and artifact.
 - [ ] Clean-Mac, Gatekeeper, gameplay, base, pickup, and extended-session gates
       have explicit passing conclusions.
 - [ ] All failures are fixed or disclosed as approved known issues.
 - [ ] Screenshots and final release notes reference this exact artifact.
+- [ ] Every status-referenced evidence file is committed and publishable.
 - [ ] The inherited-sound decision is singular, evidenced, and signed.
 
 | Approval | Name | Signature | Date/time | Decision |

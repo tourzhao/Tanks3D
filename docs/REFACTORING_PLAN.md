@@ -1117,3 +1117,22 @@ port hosts. Legacy v1 keeps its six-command contract only for blocked historical
 records. Forty-one release-verifier, fifteen v2-initializer, and fifteen
 performance-runner tests now cover the Python release gate; the 13/9/5 candidate
 rejection suites and both candidate success paths remain green.
+
+The forty-ninth increment closes the automatable live-gameplay evidence gap
+without changing gameplay, maps, or assets. An all-`NOT_RUN` v2 plan expands the
+canonical profile into 67 ordered gameplay, base, pickup, and settlement
+observations; compilation requires explicit PASS results, exact checks, bounded
+UTC times, non-blocking notes, five distinct media groups, and independent
+tester/reviewer identities. Valid PNGs and >=64 KiB recordings are bound to the
+candidate through one canonical manifest, five event logs, and five interactive
+sessions. Large recordings are streamed rather than retained in memory, inputs
+are rechecked for TOCTOU changes, and dirfd/inode-bound no-replace output safely
+rolls back partial writes. The verifier rejects undersized recordings, duplicate
+publication pixels, contradictory PASS/audio prose, producer or manifest drift,
+and observation/status/event disagreement; eight advanced-settings checks are
+now explicit in the v2 published-control contract. A real compiler-to-verifier
+test prevents schema drift. Forty-nine release-verifier, fifteen v2-initializer,
+eighteen evidence-compiler, and fifteen performance-runner tests pass; the
+13/9/5 candidate rejection suites and both success paths remain green. Separate
+published-control and source-free Safari collectors, plus human QA and approval,
+remain release work.

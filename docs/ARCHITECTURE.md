@@ -862,6 +862,16 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   or silently reinterpret the release tag. A separate machine-readable status
   gate binds manual evidence and approvals to that candidate. Interactive,
   command and gameplay-event records use strict JSON formats. The v2
+  live-gameplay evidence path starts from an all-`NOT_RUN` observation plan;
+  its standard-library compiler accepts only 67 explicitly passed rows with
+  exact checks, non-blocking notes, bounded timestamps, valid captures, and
+  independent reviewer identity. Recordings are hashed as streams, and input
+  identity is rechecked before a dirfd/inode-bound no-replace publication. It
+  writes a new status snapshot plus five session/event pairs without modifying
+  the source status or overwriting evidence. V2 event logs identify the QA
+  compiler—not the game binary—as their producer and bind the canonical
+  observation-manifest hash. Published-control PASS also requires the eight
+  fixed advanced-settings checks. The v2
   clean-Mac contract uses a real Safari HTTPS acquisition so quarantine is
   observed rather than synthesized, binds that acquisition's identity and
   interval in a structured record, then records the five post-download

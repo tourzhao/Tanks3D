@@ -131,6 +131,16 @@ PUBLISHED_CONTROL_CHECKS = [
     "n_b_stage_navigation",
     "q_or_escape_exits_from_setup",
 ]
+ADVANCED_SETTINGS_CHECKS = [
+    "default_hp_3_and_reset_restores_defaults",
+    "player_hp_range_1_to_6_step_1",
+    "enemy_speed_range_minus_30_to_plus_30_step_5",
+    "fire_frequency_range_minus_30_to_plus_30_step_5",
+    "spawn_pace_range_minus_30_to_plus_30_step_5",
+    "selected_tuning_applies_after_start_and_restart",
+    "hp_1_disables_bandage_and_normal_hp_restores_it",
+    "escape_preserves_selected_values",
+]
 INTERACTIVE_EVIDENCE_KEYS = [
     "candidate_sha256",
     "tester",
@@ -294,6 +304,19 @@ GAMEPLAY_EVENT_LOG_KEYS = [
     "completed_at_utc",
     "events",
 ]
+GAMEPLAY_EVENT_LOG_V2_SCHEMA = "tanks3d-gameplay-event-log-v2"
+GAMEPLAY_EVENT_LOG_V2_PRODUCER = "Tanks3D Alpha QA Evidence Compiler"
+GAMEPLAY_EVENT_LOG_V2_KEYS = [
+    "schema",
+    "producer",
+    "observation_manifest_sha256",
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "started_at_utc",
+    "completed_at_utc",
+    "events",
+]
 GAMEPLAY_EVENT_KEYS = [
     "sequence",
     "timestamp_utc",
@@ -301,6 +324,45 @@ GAMEPLAY_EVENT_KEYS = [
     "coverage_token",
     "result",
 ]
+OBSERVATION_MANIFEST_SCHEMA = (
+    "tanks3d-alpha-v2-interactive-observation-manifest-v1"
+)
+OBSERVATION_MANIFEST_KEYS = [
+    "schema",
+    "requirements_profile",
+    "event_log_schema",
+    "event_log_producer",
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "tester_signature",
+    "reviewer",
+    "reviewer_signature",
+    "started_at_utc",
+    "completed_at_utc",
+    "reviewed_at_utc",
+    "review_notes",
+    "supporting_artifacts",
+    "observations",
+]
+OBSERVATION_KEYS = [
+    "coverage_token",
+    "evidence_id",
+    "required_checks",
+    "result",
+    "observed_at_utc",
+    "checks_confirmed",
+    "notes",
+]
+OBSERVATION_EVIDENCE_IDS = [
+    "one_player_gameplay",
+    "two_player_gameplay",
+    "national_bases",
+    "pickup_and_minimap",
+    "settlement_report",
+]
+SUPPORTING_ARTIFACT_GROUP_KEYS = ["evidence_id", "artifacts"]
+SUPPORTING_ARTIFACT_KEYS = ["path", "kind"]
 COMMAND_LOG_SCHEMA = "tanks3d-command-log-v1"
 COMMAND_LOG_KEYS = ["schema", "candidate_sha256", "machine", "commands"]
 COMMAND_RESULT_KEYS = [
@@ -511,6 +573,16 @@ CANONICAL_REQUIREMENTS_V2.update(
     {
         "schema": "tanks3d-release-requirements-v2",
         "profile": "macos-alpha-v2",
+        "advanced_settings_checks": ADVANCED_SETTINGS_CHECKS,
+        "interactive_observation_manifest_schema": OBSERVATION_MANIFEST_SCHEMA,
+        "interactive_observation_manifest_keys": OBSERVATION_MANIFEST_KEYS,
+        "interactive_observation_keys": OBSERVATION_KEYS,
+        "interactive_observation_evidence_ids": OBSERVATION_EVIDENCE_IDS,
+        "interactive_supporting_artifact_group_keys": SUPPORTING_ARTIFACT_GROUP_KEYS,
+        "interactive_supporting_artifact_keys": SUPPORTING_ARTIFACT_KEYS,
+        "gameplay_event_log_schema": GAMEPLAY_EVENT_LOG_V2_SCHEMA,
+        "gameplay_event_log_producer": GAMEPLAY_EVENT_LOG_V2_PRODUCER,
+        "gameplay_event_log_keys": GAMEPLAY_EVENT_LOG_V2_KEYS,
         "clean_mac_download_client": V2_CLEAN_MAC_DOWNLOAD_CLIENT,
         "browser_acquisition_schema": BROWSER_ACQUISITION_SCHEMA,
         "browser_acquisition_keys": BROWSER_ACQUISITION_KEYS,
@@ -648,6 +720,7 @@ DNS_LABEL_RE = re.compile(
 )
 PNG_KINDS = {"png"}
 ARTIFACT_KINDS = {"png", "log", "recording", "report"}
+MINIMUM_RECORDING_BYTES = 64 * 1024
 
 
 def _reject_duplicate_pairs(pairs: Sequence[Tuple[str, Any]]) -> Dict[str, Any]:
@@ -781,16 +854,33 @@ def reject_blocking_language(value: Any, context: str) -> None:
         "not run",
         "not recorded",
         "not checked",
+        "not tested",
+        "not exercised",
         "not interactive",
         "not a live",
+        "skipped",
+        "pending",
         "showcase only",
         "rendering evidence only",
     )
     for phrase in forbidden:
-        if phrase in text:
+        if re.search(r"(?<!\w){}(?!\w)".format(re.escape(phrase)), text):
             raise VerificationError(
                 "{} contradicts PASS with {!r}".format(context, phrase)
             )
+
+
+def reject_audio_acceptance_conflict(value: Any, context: str) -> None:
+    text = require_string(value, context).strip().lower()
+    conflicts = (
+        r"\b(?:do|does|did|will)\s+not\s+accept\b",
+        r"\b(?:cannot|can't|won't)\s+accept\b",
+        r"\b(?:reject|rejects|rejected|decline|declines|declined)\s+"
+        r"(?:this\s+)?(?:release|candidate|audio|risk|decision)\b",
+        r"\b(?:release|candidate|audio|risk)\s+(?:is|was)\s+not\s+accepted\b",
+    )
+    if any(re.search(pattern, text) for pattern in conflicts):
+        raise VerificationError("{} contradicts the ACCEPT decision".format(context))
 
 
 def sha256_file(path: Path) -> str:
@@ -967,7 +1057,57 @@ def decode_png_stream(compressed: bytes, context: str, maximum_size: int) -> byt
     return decoded
 
 
-def verify_png(path: Path, context: str, require_release_size: bool = False) -> None:
+def paeth_predictor(left: int, above: int, upper_left: int) -> int:
+    estimate = left + above - upper_left
+    left_distance = abs(estimate - left)
+    above_distance = abs(estimate - above)
+    upper_left_distance = abs(estimate - upper_left)
+    if left_distance <= above_distance and left_distance <= upper_left_distance:
+        return left
+    if above_distance <= upper_left_distance:
+        return above
+    return upper_left
+
+
+def normalized_rgba_digest(
+    decoded: bytes, width: int, height: int, context: str
+) -> str:
+    row_bytes = width * 4
+    pixels = bytearray()
+    previous = bytearray(row_bytes)
+    offset = 0
+    for _ in range(height):
+        filter_type = decoded[offset]
+        offset += 1
+        current = bytearray(decoded[offset : offset + row_bytes])
+        offset += row_bytes
+        if filter_type > 4:
+            raise VerificationError(
+                "{} has an unsupported PNG row filter".format(context)
+            )
+        for index in range(row_bytes):
+            left = current[index - 4] if index >= 4 else 0
+            above = previous[index]
+            upper_left = previous[index - 4] if index >= 4 else 0
+            if filter_type == 1:
+                current[index] = (current[index] + left) & 0xFF
+            elif filter_type == 2:
+                current[index] = (current[index] + above) & 0xFF
+            elif filter_type == 3:
+                current[index] = (current[index] + ((left + above) // 2)) & 0xFF
+            elif filter_type == 4:
+                current[index] = (
+                    current[index]
+                    + paeth_predictor(left, above, upper_left)
+                ) & 0xFF
+        pixels.extend(current)
+        previous = current
+    return hashlib.sha256(bytes(pixels)).hexdigest()
+
+
+def verify_png(
+    path: Path, context: str, require_release_size: bool = False
+) -> Optional[str]:
     try:
         data = path.read_bytes()
     except OSError as exc:
@@ -1039,13 +1179,10 @@ def verify_png(path: Path, context: str, require_release_size: bool = False) -> 
                     context, expected_size, len(decoded)
                 )
             )
-        for row in range(height):
-            if decoded[row * (row_bytes + 1)] > 4:
-                raise VerificationError(
-                    "{} has an unsupported PNG row filter".format(context)
-                )
+        return normalized_rgba_digest(decoded, width, height, context)
     else:
         decode_png_stream(b"".join(image_data), context, 64 * 1024 * 1024)
+    return None
 
 
 def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, str, Path]:
@@ -1061,6 +1198,12 @@ def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, s
         raise VerificationError("{} hash mismatch".format(context))
     if kind in PNG_KINDS:
         verify_png(path, context)
+    elif kind == "recording" and path.stat().st_size < MINIMUM_RECORDING_BYTES:
+        raise VerificationError(
+            "{} recording must be at least {} bytes".format(
+                context, MINIMUM_RECORDING_BYTES
+            )
+        )
     return (
         require_string(artifact["path"], "{}.path".format(context)),
         digest,
@@ -1452,6 +1595,267 @@ def dynamic_evidence_tokens(status: Mapping[str, Any]) -> Dict[str, Set[str]]:
     return tokens
 
 
+def observation_token_plan() -> List[Dict[str, Any]]:
+    plan: List[Dict[str, Any]] = []
+
+    def add(
+        section: str,
+        item_id: str,
+        mode: Optional[str],
+        evidence_id: str,
+        checks: Sequence[str],
+    ) -> None:
+        token = "{}:{}".format(section, item_id)
+        if mode is not None:
+            token += ":{}".format(mode)
+        plan.append(
+            {
+                "section": section,
+                "id": item_id,
+                "mode": mode,
+                "coverage_token": token,
+                "evidence_id": evidence_id,
+                "required_checks": list(checks),
+            }
+        )
+
+    for gameplay_id in GAMEPLAY_IDS:
+        for mode in MODES:
+            add(
+                "gameplay",
+                gameplay_id,
+                mode,
+                (
+                    "one_player_gameplay"
+                    if mode == "one_player"
+                    else "two_player_gameplay"
+                ),
+                [gameplay_id],
+            )
+    for base_id in BASE_IDS:
+        for mode in MODES:
+            add("base", base_id, mode, "national_bases", BASE_CHECKS)
+    for pickup in PICKUP_REQUIREMENTS:
+        for mode in MODES:
+            add(
+                "pickup",
+                pickup["id"],
+                mode,
+                "pickup_and_minimap",
+                pickup["checks"],
+            )
+    for settlement_id in SETTLEMENT_IDS:
+        add(
+            "settlement",
+            settlement_id,
+            None,
+            "settlement_report",
+            [settlement_id],
+        )
+    return plan
+
+
+def observation_status_rows(status: Mapping[str, Any]) -> Dict[str, Mapping[str, Any]]:
+    rows: Dict[str, Mapping[str, Any]] = {}
+    definitions = (
+        ("gameplay", "gameplay", lambda row: "gameplay:{}:{}".format(row["id"], row["mode"])),
+        ("bases", "base", lambda row: "base:{}:{}".format(row["id"], row["mode"])),
+        ("pickups", "pickup", lambda row: "pickup:{}:{}".format(row["id"], row["mode"])),
+        ("settlement", "settlement", lambda row: "settlement:{}".format(row["id"])),
+    )
+    for status_key, _, token_builder in definitions:
+        for raw_row in status[status_key]:
+            row = require_object(raw_row, "status.{} observation row".format(status_key))
+            token = token_builder(row)
+            if token in rows:
+                raise VerificationError("status contains duplicate observation token {!r}".format(token))
+            rows[token] = row
+    return rows
+
+
+def validate_observation_manifest(
+    value: Mapping[str, Any],
+    context: str,
+    candidate_sha256: str,
+    evidence_map: Mapping[str, Mapping[str, Any]],
+    artifact_map: Mapping[str, Tuple[str, str, str, Path]],
+    status: Optional[Mapping[str, Any]] = None,
+    evidence: Optional[Mapping[str, Any]] = None,
+    interactive: Optional[Mapping[str, Any]] = None,
+    session: Optional[Mapping[str, Any]] = None,
+) -> List[Mapping[str, Any]]:
+    require_exact_keys(value, set(OBSERVATION_MANIFEST_KEYS), context)
+    expected_constants = {
+        "schema": OBSERVATION_MANIFEST_SCHEMA,
+        "requirements_profile": "macos-alpha-v2",
+        "event_log_schema": GAMEPLAY_EVENT_LOG_V2_SCHEMA,
+        "event_log_producer": GAMEPLAY_EVENT_LOG_V2_PRODUCER,
+    }
+    for key, expected in expected_constants.items():
+        if value[key] != expected:
+            raise VerificationError("{}.{} does not match the Alpha-v2 compiler contract".format(context, key))
+    if require_sha256(value["candidate_sha256"], context + ".candidate_sha256") != candidate_sha256:
+        raise VerificationError("{} candidate does not match the release artifact".format(context))
+
+    tester = require_nonplaceholder(value["tester"], context + ".tester")
+    reviewer = require_nonplaceholder(value["reviewer"], context + ".reviewer")
+    for key in (
+        "machine",
+        "tester_signature",
+        "reviewer_signature",
+        "review_notes",
+    ):
+        require_nonplaceholder(value[key], "{}.{}".format(context, key))
+    reject_blocking_language(value["review_notes"], context + ".review_notes")
+    if tester.strip().casefold() == reviewer.strip().casefold():
+        raise VerificationError("{} tester and reviewer must be different people".format(context))
+
+    started_text = require_timestamp(value["started_at_utc"], context + ".started_at_utc")
+    completed_text = require_timestamp(value["completed_at_utc"], context + ".completed_at_utc")
+    reviewed_text = require_timestamp(value["reviewed_at_utc"], context + ".reviewed_at_utc")
+    started = timestamp_value(started_text)
+    completed = timestamp_value(completed_text)
+    reviewed = timestamp_value(reviewed_text)
+    if not started <= completed <= reviewed:
+        raise VerificationError("{} timestamps are not chronological".format(context))
+
+    if interactive is not None:
+        identity_fields = {
+            "candidate_sha256": "candidate_sha256",
+            "tester": "tester",
+            "machine": "machine",
+            "tester_signature": "signature",
+            "completed_at_utc": "tested_at_utc",
+        }
+        for manifest_key, interactive_key in identity_fields.items():
+            if value[manifest_key] != interactive[interactive_key]:
+                raise VerificationError(
+                    "{}.{} does not match interactive evidence".format(
+                        context, manifest_key
+                    )
+                )
+    if evidence is not None:
+        if value["reviewer"] != evidence["reviewer"]:
+            raise VerificationError("{}.reviewer does not match evidence review".format(context))
+        if value["reviewed_at_utc"] != evidence["reviewed_at_utc"]:
+            raise VerificationError("{}.reviewed_at_utc does not match evidence review".format(context))
+        if value["review_notes"] != evidence["notes"]:
+            raise VerificationError("{}.review_notes does not match evidence notes".format(context))
+    if session is not None:
+        if (
+            value["started_at_utc"] != session["started_at_utc"]
+            or value["completed_at_utc"] != session["completed_at_utc"]
+        ):
+            raise VerificationError(
+                "{} interval does not match its interactive session".format(context)
+            )
+
+    support_groups = require_array(
+        value["supporting_artifacts"], context + ".supporting_artifacts"
+    )
+    if len(support_groups) != len(OBSERVATION_EVIDENCE_IDS):
+        raise VerificationError(
+            "{}.supporting_artifacts must contain the five canonical categories".format(context)
+        )
+    support_paths: Set[str] = set()
+    for index, (raw_group, expected_id) in enumerate(
+        zip(support_groups, OBSERVATION_EVIDENCE_IDS)
+    ):
+        group_context = "{}.supporting_artifacts[{}]".format(context, index)
+        group = require_object(raw_group, group_context)
+        require_exact_keys(group, set(SUPPORTING_ARTIFACT_GROUP_KEYS), group_context)
+        if group["evidence_id"] != expected_id:
+            raise VerificationError("{} category order is not canonical".format(group_context))
+        artifacts = require_array(group["artifacts"], group_context + ".artifacts")
+        if not artifacts:
+            raise VerificationError("{} must not be empty".format(group_context))
+        attached = {
+            (item["path"], item["kind"])
+            for item in evidence_map[expected_id]["artifacts"]
+        }
+        for artifact_index, raw_artifact in enumerate(artifacts):
+            artifact_context = "{}.artifacts[{}]".format(group_context, artifact_index)
+            artifact = require_object(raw_artifact, artifact_context)
+            require_exact_keys(artifact, set(SUPPORTING_ARTIFACT_KEYS), artifact_context)
+            path = require_nonplaceholder(artifact["path"], artifact_context + ".path")
+            relative = Path(path)
+            if (
+                "\\" in path
+                or relative.is_absolute()
+                or any(part in {"", ".", ".."} for part in relative.parts)
+                or relative.as_posix() != path
+            ):
+                raise VerificationError(
+                    "{}.path must be a normalized repository-relative path".format(
+                        artifact_context
+                    )
+                )
+            kind = require_string(artifact["kind"], artifact_context + ".kind")
+            if kind not in {"png", "recording"}:
+                raise VerificationError("{}.kind must be png or recording".format(artifact_context))
+            if path in support_paths:
+                raise VerificationError("{} duplicates supporting artifact path {!r}".format(context, path))
+            support_paths.add(path)
+            if status is not None:
+                normalized = artifact_map.get(path)
+                if normalized is None or normalized[2] != kind or (path, kind) not in attached:
+                    raise VerificationError(
+                        "{} is not attached to evidence.{} with matching metadata".format(
+                            artifact_context, expected_id
+                        )
+                    )
+
+    expected_plan = observation_token_plan()
+    raw_observations = require_array(value["observations"], context + ".observations")
+    if len(raw_observations) != len(expected_plan):
+        raise VerificationError("{} observations do not exactly match the token plan".format(context))
+    status_rows = observation_status_rows(status) if status is not None else {}
+    observations: List[Mapping[str, Any]] = []
+    for index, (raw_observation, expected) in enumerate(
+        zip(raw_observations, expected_plan)
+    ):
+        observation_context = "{}.observations[{}]".format(context, index)
+        observation = require_object(raw_observation, observation_context)
+        require_exact_keys(observation, set(OBSERVATION_KEYS), observation_context)
+        for key in ("coverage_token", "evidence_id", "required_checks"):
+            if observation[key] != expected[key]:
+                raise VerificationError(
+                    "{} does not match the canonical token plan".format(
+                        observation_context
+                    )
+                )
+        if observation["result"] != "PASS":
+            raise VerificationError("{}.result must be PASS".format(observation_context))
+        observed_text = require_timestamp(
+            observation["observed_at_utc"], observation_context + ".observed_at_utc"
+        )
+        observed = timestamp_value(observed_text)
+        if not started <= observed <= completed:
+            raise VerificationError("{} lies outside the observation session".format(observation_context))
+        checks = validate_string_array(
+            observation["checks_confirmed"], observation_context + ".checks_confirmed"
+        )
+        if checks != expected["required_checks"]:
+            raise VerificationError("{} checks_confirmed are not exact".format(observation_context))
+        require_nonplaceholder(observation["notes"], observation_context + ".notes")
+        reject_blocking_language(observation["notes"], observation_context + ".notes")
+        if status is not None:
+            row = status_rows[expected["coverage_token"]]
+            if (
+                row["status"] != observation["result"]
+                or row["tester"] != value["tester"]
+                or row["tested_at_utc"] != value["completed_at_utc"]
+                or row["evidence_ids"] != [expected["evidence_id"]]
+                or row["checks_confirmed"] != observation["checks_confirmed"]
+                or row["notes"] != observation["notes"]
+            ):
+                raise VerificationError(
+                    "{} contradicts its release-status row".format(observation_context)
+                )
+        observations.append(observation)
+    return observations
+
+
 def validate_gameplay_event_log(
     value: Mapping[str, Any],
     context: str,
@@ -1494,35 +1898,191 @@ def validate_gameplay_event_log(
         raise VerificationError("{} event coverage is not exact".format(context))
 
 
+def validate_v2_gameplay_event_log(
+    value: Mapping[str, Any],
+    context: str,
+    evidence_id: str,
+    candidate_sha256: str,
+    manifest: Mapping[str, Any],
+    manifest_sha256: str,
+    observations: Sequence[Mapping[str, Any]],
+    interactive: Optional[Mapping[str, Any]] = None,
+    expected_tokens: Optional[Set[str]] = None,
+) -> None:
+    require_exact_keys(value, set(GAMEPLAY_EVENT_LOG_V2_KEYS), context)
+    if value["schema"] != GAMEPLAY_EVENT_LOG_V2_SCHEMA:
+        raise VerificationError("{} does not use the Alpha-v2 event-log schema".format(context))
+    if value["producer"] != GAMEPLAY_EVENT_LOG_V2_PRODUCER:
+        raise VerificationError("{} was not produced by the Alpha-v2 evidence compiler".format(context))
+    if require_sha256(
+        value["observation_manifest_sha256"],
+        context + ".observation_manifest_sha256",
+    ) != manifest_sha256:
+        raise VerificationError(
+            "{} observation_manifest_sha256 does not match the attached manifest file".format(
+                context
+            )
+        )
+    if require_sha256(value["candidate_sha256"], context + ".candidate_sha256") != candidate_sha256:
+        raise VerificationError("{} candidate does not match the release artifact".format(context))
+    for key in ("tester", "machine", "started_at_utc", "completed_at_utc"):
+        if value[key] != manifest[key]:
+            raise VerificationError("{}.{} does not match the observation manifest".format(context, key))
+    if interactive is not None:
+        for key in ("candidate_sha256", "tester", "machine"):
+            if value[key] != interactive[key]:
+                raise VerificationError("{}.{} does not match interactive evidence".format(context, key))
+
+    started = timestamp_value(
+        require_timestamp(value["started_at_utc"], context + ".started_at_utc")
+    )
+    completed = timestamp_value(
+        require_timestamp(value["completed_at_utc"], context + ".completed_at_utc")
+    )
+    if completed < started:
+        raise VerificationError("{} ends before it starts".format(context))
+    expected_observations = [
+        observation
+        for observation in observations
+        if observation["evidence_id"] == evidence_id
+    ]
+    events = require_array(value["events"], context + ".events")
+    if len(events) != len(expected_observations):
+        raise VerificationError("{} event coverage is not exact".format(context))
+    seen: Set[str] = set()
+    for index, (raw_event, observation) in enumerate(
+        zip(events, expected_observations)
+    ):
+        event_context = "{}.events[{}]".format(context, index)
+        event = require_object(raw_event, event_context)
+        require_exact_keys(event, set(GAMEPLAY_EVENT_KEYS), event_context)
+        if event["sequence"] != index + 1:
+            raise VerificationError("{}.sequence must be contiguous from 1".format(event_context))
+        event_time = timestamp_value(
+            require_timestamp(event["timestamp_utc"], event_context + ".timestamp_utc")
+        )
+        if not started <= event_time <= completed:
+            raise VerificationError("{} lies outside the event-log session".format(event_context))
+        if (
+            event["timestamp_utc"] != observation["observed_at_utc"]
+            or event["category_id"] != observation["evidence_id"]
+            or event["coverage_token"] != observation["coverage_token"]
+            or event["result"] != observation["result"]
+        ):
+            raise VerificationError("{} contradicts its observation manifest entry".format(event_context))
+        token = require_nonplaceholder(
+            event["coverage_token"], event_context + ".coverage_token"
+        )
+        if token in seen:
+            raise VerificationError("{} duplicates coverage token {!r}".format(context, token))
+        seen.add(token)
+        if interactive is not None and interactive["coverage_refs"].get(token) != "event:{}".format(index + 1):
+            raise VerificationError("{} is not bound to its event sequence".format(event_context))
+    if expected_tokens is not None and seen != expected_tokens:
+        raise VerificationError("{} event coverage is not exact".format(context))
+
+
 def validate_structured_interactive_evidence(
     status: Mapping[str, Any],
     evidence_map: Mapping[str, Mapping[str, Any]],
     artifact_map: Mapping[str, Tuple[str, str, str, Path]],
     candidate_sha256: str,
+    requirements_profile: str,
 ) -> None:
     token_map = dynamic_evidence_tokens(status)
-    gameplay_categories = {
-        "one_player_gameplay",
-        "two_player_gameplay",
-        "national_bases",
-        "pickup_and_minimap",
-        "settlement_report",
-    }
+    gameplay_categories = set(OBSERVATION_EVIDENCE_IDS)
+    manifest_binding: Optional[Tuple[str, str]] = None
     for evidence_id, expected_tokens in token_map.items():
-        if not expected_tokens:
+        needs_v2_draft_lint = (
+            requirements_profile == "macos-alpha-v2"
+            and evidence_id in gameplay_categories
+        )
+        if not expected_tokens and not needs_v2_draft_lint:
             continue
         evidence = evidence_map[evidence_id]
-        interactive = require_object(evidence["interactive"], "interactive evidence")
-        if interactive["tester"].strip().casefold() == evidence["reviewer"].strip().casefold():
-            raise VerificationError(
-                "interactive evidence tester and reviewer must be different people"
-            )
-        structured = []
+        structured: List[
+            Tuple[Tuple[str, str, str, Path], Mapping[str, Any]]
+        ] = []
         for artifact in evidence["artifacts"]:
             normalized = artifact_map[artifact["path"]]
             parsed = load_structured_artifact(normalized[3], "evidence artifact " + normalized[0])
             if parsed is not None:
                 structured.append((normalized, parsed))
+            if needs_v2_draft_lint:
+                basename = Path(normalized[0]).name
+                expected_schema = None
+                if basename == "observation-manifest.json":
+                    expected_schema = OBSERVATION_MANIFEST_SCHEMA
+                elif basename.endswith("-events.json"):
+                    expected_schema = GAMEPLAY_EVENT_LOG_V2_SCHEMA
+                if expected_schema is not None and (
+                    parsed is None or parsed.get("schema") != expected_schema
+                ):
+                    raise VerificationError(
+                        "evidence artifact {} does not contain the expected Alpha-v2 schema".format(
+                            normalized[0]
+                        )
+                    )
+
+        if needs_v2_draft_lint:
+            manifests = [
+                item
+                for item in structured
+                if item[1].get("schema") == OBSERVATION_MANIFEST_SCHEMA
+            ]
+            v2_event_logs = [
+                item
+                for item in structured
+                if item[1].get("schema") == GAMEPLAY_EVENT_LOG_V2_SCHEMA
+            ]
+            if any(item[0][2] != "report" for item in manifests):
+                raise VerificationError("Alpha-v2 observation manifest must be a report artifact")
+            if any(item[0][2] != "log" for item in v2_event_logs):
+                raise VerificationError("Alpha-v2 gameplay event log must be a log artifact")
+            if not expected_tokens and (manifests or v2_event_logs):
+                if len(manifests) > 1:
+                    raise VerificationError(
+                        "evidence.{} may attach at most one Alpha-v2 observation manifest".format(
+                            evidence_id
+                        )
+                    )
+                if len(v2_event_logs) > 1:
+                    raise VerificationError(
+                        "evidence.{} may attach at most one Alpha-v2 gameplay event log".format(
+                            evidence_id
+                        )
+                    )
+                if v2_event_logs and len(manifests) != 1:
+                    raise VerificationError(
+                        "Alpha-v2 gameplay event log requires its observation manifest"
+                    )
+                if manifests:
+                    manifest_artifact, manifest = manifests[0]
+                    observations = validate_observation_manifest(
+                        manifest,
+                        "Alpha-v2 observation manifest",
+                        candidate_sha256,
+                        evidence_map,
+                        artifact_map,
+                    )
+                    if v2_event_logs:
+                        validate_v2_gameplay_event_log(
+                            v2_event_logs[0][1],
+                            "Alpha-v2 gameplay event log",
+                            evidence_id,
+                            candidate_sha256,
+                            manifest,
+                            manifest_artifact[1],
+                            observations,
+                        )
+        if not expected_tokens:
+            continue
+
+        interactive = require_object(evidence["interactive"], "interactive evidence")
+        if interactive["tester"].strip().casefold() == evidence["reviewer"].strip().casefold():
+            raise VerificationError(
+                "interactive evidence tester and reviewer must be different people"
+            )
         sessions = [item for item in structured if item[1].get("schema") == INTERACTIVE_SESSION_SCHEMA]
         if len(sessions) != 1:
             raise VerificationError(
@@ -1564,7 +2124,7 @@ def validate_structured_interactive_evidence(
         ]
         if hashes != expected_hashes or not hashes:
             raise VerificationError("interactive session artifact hashes are not exact")
-        if evidence_id in gameplay_categories:
+        if evidence_id in gameplay_categories and requirements_profile == "macos-alpha-v1":
             event_logs = [item for item in structured if item[1].get("schema") == GAMEPLAY_EVENT_LOG_SCHEMA]
             if len(event_logs) != 1:
                 raise VerificationError(
@@ -1586,6 +2146,71 @@ def validate_structured_interactive_evidence(
                 evidence_id,
                 interactive,
                 expected_tokens,
+            )
+        elif evidence_id in gameplay_categories:
+            manifests = [
+                item
+                for item in structured
+                if item[1].get("schema") == OBSERVATION_MANIFEST_SCHEMA
+            ]
+            event_logs = [
+                item
+                for item in structured
+                if item[1].get("schema") == GAMEPLAY_EVENT_LOG_V2_SCHEMA
+            ]
+            if len(manifests) != 1:
+                raise VerificationError(
+                    "evidence.{} requires exactly one Alpha-v2 observation manifest report".format(
+                        evidence_id
+                    )
+                )
+            if len(event_logs) != 1:
+                raise VerificationError(
+                    "evidence.{} requires exactly one Alpha-v2 compiler event log".format(
+                        evidence_id
+                    )
+                )
+            manifest_artifact, manifest = manifests[0]
+            binding = (manifest_artifact[0], manifest_artifact[1])
+            if manifest_binding is None:
+                manifest_binding = binding
+            elif manifest_binding != binding:
+                raise VerificationError(
+                    "all Alpha-v2 gameplay evidence must share one observation manifest file"
+                )
+            observations = validate_observation_manifest(
+                manifest,
+                "Alpha-v2 observation manifest",
+                candidate_sha256,
+                evidence_map,
+                artifact_map,
+                status=status,
+                evidence=evidence,
+                interactive=interactive,
+                session=session,
+            )
+            event_log = event_logs[0][1]
+            if (
+                event_log.get("started_at_utc") != session["started_at_utc"]
+                or event_log.get("completed_at_utc") != session["completed_at_utc"]
+            ):
+                raise VerificationError(
+                    "gameplay event log interval does not match its interactive session"
+                )
+            validate_v2_gameplay_event_log(
+                event_log,
+                "Alpha-v2 gameplay event log",
+                evidence_id,
+                candidate_sha256,
+                manifest,
+                manifest_artifact[1],
+                observations,
+                interactive=interactive,
+                expected_tokens={
+                    observation["coverage_token"]
+                    for observation in observations
+                    if observation["evidence_id"] == evidence_id
+                },
             )
 
 
@@ -3193,17 +3818,29 @@ def validate_documents(
                     evidence_id, ", ".join(sorted(expected_names))
                 )
             )
+    release_pixel_digests: Dict[str, str] = {}
     for name in screenshot_names:
         repository_path = "docs/assets/releases/{}/{}".format(tag, name)
         reference = "../assets/releases/{}/{}".format(tag, name)
         if repository_path not in screenshot_artifacts:
             raise VerificationError("release evidence is missing {}".format(repository_path))
         digest = screenshot_artifacts[repository_path][1]
-        verify_png(
+        pixel_digest = verify_png(
             screenshot_artifacts[repository_path][3],
             "release evidence {}".format(name),
             require_release_size=True,
         )
+        if pixel_digest is None:
+            raise VerificationError(
+                "release evidence {} has no normalized pixel digest".format(name)
+            )
+        previous_name = release_pixel_digests.get(pixel_digest)
+        if previous_name is not None:
+            raise VerificationError(
+                "release screenshots must show seven distinct images; {} and {} "
+                "have identical pixels".format(previous_name, name)
+            )
+        release_pixel_digests[pixel_digest] = name
         if reference not in page_text or reference not in qa_text:
             raise VerificationError("release documents do not both reference {}".format(name))
         if digest not in qa_text:
@@ -3437,6 +4074,8 @@ def validate_audio(
             "for an explicit risk decision or add a new trusted-signature profile"
         )
     require_nonplaceholder(rationale, "status.audio.rationale")
+    reject_blocking_language(rationale, "status.audio.rationale")
+    reject_audio_acceptance_conflict(rationale, "status.audio.rationale")
     require_nonplaceholder(owner, "status.audio.owner")
     require_nonplaceholder(authority, "status.audio.authority")
     require_nonplaceholder(signature, "status.audio.signature")
@@ -3710,7 +4349,8 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         "status.published_controls",
         "published_controls_match",
         None,
-        PUBLISHED_CONTROL_CHECKS,
+        PUBLISHED_CONTROL_CHECKS
+        + (ADVANCED_SETTINGS_CHECKS if requirements_profile == "macos-alpha-v2" else []),
         [
             "main_menu_and_advanced_settings",
             "one_player_gameplay",
@@ -3751,7 +4391,11 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
     )
     validate_interactive_coverage_matrix(status, evidence_map, file_refs["artifact"][1])
     validate_structured_interactive_evidence(
-        status, evidence_map, artifact_map, file_refs["artifact"][1]
+        status,
+        evidence_map,
+        artifact_map,
+        file_refs["artifact"][1],
+        requirements_profile,
     )
     validate_clean_mac_command_log(
         status,
