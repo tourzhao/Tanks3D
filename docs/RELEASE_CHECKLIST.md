@@ -194,8 +194,14 @@ candidate-generated `tanks3d-performance-log-v2` raw integer windows plus a
 `tanks3d-performance-qa-receipt-v1`. The receipt binds the tagged ZIP, embedded
 source identity, extracted executable hash, random nonce, exact argv,
 START/COMPLETE markers, exit status, and telemetry/stdout/stderr hashes. The
-verifier recomputes weighted average and 1% low FPS from continuous 0.75–1.25
-second windows and checks >=50 average FPS, >=30 1% low FPS, <=256 MiB
+v2 profile fixes maximum evidence sizes at 64 KiB for the receipt, 32 MiB for
+telemetry, 16 MiB for stdout, and zero bytes for stderr. Those limits are
+enforced before hashing, so updating every recorded SHA-256 cannot admit an
+oversized artifact or a warning-bearing successful run. As a verifier-wide
+safety ceiling, log, report, and PNG evidence is limited to 32 MiB and recordings
+to 95 MB before hashing. The verifier recomputes
+weighted average and 1% low FPS from continuous 0.75–1.25 second windows and
+checks >=50 average FPS, >=30 1% low FPS, <=256 MiB
 physical-footprint growth, >=80% active-gameplay time, >=95% focused-window
 time, and at least one candidate-reported cleared stage. It also cross-checks
 the recorded stage count and player-mode summary. A consistently hashed
@@ -406,14 +412,22 @@ the candidate ZIP before extraction, so a concurrent replacement cannot alter
 the executed bundle. Before creating any evidence file, it checks the private
 snapshot's exact capability JSON with a five-second timeout and verifies the
 source identity; the long process also has a duration-plus-120-second watchdog
-with terminate/kill cleanup. Before publishing the receipt, the runner and final
-verifier use `scripts/release_performance_contract.py` to enforce the same exact
-raw-v2 keys, identity, nested UTC interval, continuous sample coverage, and
-cross-field semantics. The runner rejects telemetry over 32 MiB and rechecks
-that the receipt hashes the bytes it validated. A receipt attests provenance
+with process-group terminate/kill cleanup. Its capability probe and long session
+drain stdout and stderr concurrently with online byte limits. The candidate
+receives a 32 MiB regular-file hard limit for telemetry, and a watchdog reports
+that violation promptly. Any stderr byte, output overflow, capture error, or
+unreaped process aborts the run without a receipt. Before publishing the
+receipt, `SIGTERM` or `SIGHUP` received during bounded capture is converted into
+process-group cleanup; `Ctrl-C` follows the same cleanup path before its
+interrupt is re-raised. The runner and final verifier use
+`scripts/release_performance_contract.py` to enforce the same exact raw-v2 keys,
+identity, nested UTC interval, continuous sample coverage, cross-field
+semantics, and artifact ceilings. The verifier repeats stable no-follow reads
+and rejects refreshed hashes for nonempty stderr. A receipt attests provenance
 and structural integrity, not performance acceptance; only the final verifier
 applies the fixed Alpha thresholds. Add all four generated files to the
-`extended_session_metrics` evidence before final verification.
+`extended_session_metrics` evidence before final verification; the stderr file
+must be empty.
 
 `build/release-evidence/<tag>/` is an ignored local intake directory, not a
 persistent audit location. Before any evidence category becomes `PASS`, copy

@@ -1781,6 +1781,32 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             "requirements.clean_mac_download_client does not match",
         )
 
+        for mutation, expected in (
+            ("missing", "invalid keys (missing stderr)"),
+            ("extra", "invalid keys (unexpected diagnostic)"),
+            ("weakened", ".stderr does not match the canonical profile"),
+        ):
+            with self.subTest(performance_limits=mutation):
+                fixture = self.new_fixture()
+                fixture.status["requirements"] = (
+                    "docs/release-requirements/macos-alpha-v2.json"
+                )
+                fixture.write_status()
+                path = fixture.root / fixture.status["requirements"]
+                requirements = json.loads(path.read_text(encoding="utf-8"))
+                limits = requirements["performance_artifact_maximum_bytes"]
+                if mutation == "missing":
+                    limits.pop("stderr")
+                elif mutation == "extra":
+                    limits["diagnostic"] = 1
+                else:
+                    limits["stderr"] = 1024
+                path.write_text(json.dumps(requirements), encoding="utf-8")
+                self.assert_failed(
+                    fixture.run(allow_blocked=True),
+                    expected,
+                )
+
     def test_candidate_hash_and_attestation_identity_are_rejected(self):
         fixture = self.new_fixture()
         artifact = fixture.root / fixture.status["release"]["artifact"]["path"]
@@ -2155,7 +2181,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.refresh_evidence_manifest(evidence)
         fixture.write_status()
         self.assert_failed(
-            fixture.run(), "recording must be no larger than {} bytes".format(
+            fixture.run(), "exceeds its {}-byte release limit".format(
                 MAXIMUM_RECORDING_BYTES
             )
         )
@@ -3882,6 +3908,59 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.refresh_artifact(evidence, artifact)
         fixture.write_status()
         self.assert_failed(fixture.run(), "exactly one ordered matching START/COMPLETE")
+
+    def test_v2_performance_artifact_limits_run_before_hashing(self):
+        limits = {
+            "performance-qa-receipt.json": 64 * 1024,
+            "performance-log-v2.json": 32 * 1024 * 1024,
+            "performance-stdout.log": 16 * 1024 * 1024,
+            "performance-stderr.log": 0,
+        }
+        for filename, maximum in limits.items():
+            with self.subTest(filename=filename):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                _, _, path = fixture.performance_artifact(filename)
+                with path.open("wb") as stream:
+                    stream.truncate(maximum + 1)
+                fixture.write_status()
+                result = fixture.run()
+                self.assert_failed(
+                    result,
+                    "exceeds its {}-byte release limit".format(maximum),
+                )
+                self.assertNotIn("hash mismatch", result.stderr)
+
+    def test_v2_resigned_nonempty_stderr_is_still_rejected(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence, artifact, path = fixture.performance_artifact(
+            "performance-stderr.log"
+        )
+        path.write_bytes(b"warning hidden behind refreshed hashes\n")
+        fixture.refresh_artifact(evidence, artifact)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(),
+            "exceeds its 0-byte release limit",
+        )
+
+    def test_renamed_large_performance_log_is_bounded_before_hashing(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "extended_session_metrics"
+        )
+        path = fixture.root / "evidence/renamed-performance-output.log"
+        with path.open("wb") as stream:
+            stream.truncate(32 * 1024 * 1024 + 1)
+        fixture.append_evidence_artifact(evidence, path, kind="log")
+        fixture.write_status()
+        result = fixture.run()
+        self.assert_failed(result, "exceeds its 33554432-byte release limit")
+        self.assertNotIn("hash mismatch", result.stderr)
 
     def test_both_ready_documents_reject_contradictory_gate_status(self):
         contradictions = [

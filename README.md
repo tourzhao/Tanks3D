@@ -168,11 +168,18 @@ a two-minute grace period and refuses to replace an existing evidence
 directory. Before signing the receipt, it applies the same shared raw-v2
 contract as the final verifier: exact keys and identity, nested UTC times,
 continuous 0.75–1.25 second samples, valid state/focus/stage relationships, and
-complete duration coverage. Telemetry over 32 MiB or bytes changed between
-validation and receipt hashing are rejected. The receipt proves evidence
-integrity; the final verifier still decides whether the run meets the fixed
-30-minute, FPS, memory, gameplay, focus, and cleared-stage thresholds. For the
-inherited 22-sound set, the profile
+complete duration coverage. The capability probe and long process use
+concurrently drained byte pipes rather than unbounded capture. The v2 profile
+caps the receipt at 64 KiB, telemetry at 32 MiB, stdout at 16 MiB, and stderr at
+zero bytes; the child also receives a 32 MiB regular-file hard limit. Overflow,
+nonempty stderr, bytes changed between validation and receipt hashing, or a
+process that cannot be reaped leaves no receipt. The final verifier applies the
+same limits before hashing and independently requires empty stderr, even when
+all evidence hashes were refreshed. Once bounded capture supervision begins,
+`SIGTERM`/`SIGHUP` cancellation terminates the candidate process group and reaps
+its leader. The receipt proves evidence integrity; the final verifier still
+decides whether the run meets the fixed 30-minute, FPS, memory, gameplay, focus,
+and cleared-stage thresholds. For the inherited 22-sound set, the profile
 accepts only the release owner's explicit `ACCEPT` risk decision; `CONFIRM`
 needs a future profile with an externally trusted cryptographic rights-holder
 signature.

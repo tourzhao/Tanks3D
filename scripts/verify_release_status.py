@@ -661,6 +661,13 @@ PERFORMANCE_V2_FILENAMES = {
     "stdout": "performance-stdout.log",
     "stderr": "performance-stderr.log",
 }
+PERFORMANCE_V2_ARTIFACT_MAXIMUM_BYTES = dict(
+    performance_contract.PERFORMANCE_ARTIFACT_MAXIMUM_BYTES
+)
+PERFORMANCE_V2_LIMITS_BY_FILENAME = {
+    PERFORMANCE_V2_FILENAMES[role]: maximum
+    for role, maximum in PERFORMANCE_V2_ARTIFACT_MAXIMUM_BYTES.items()
+}
 PERFORMANCE_V2_START_MARKER = performance_contract.PERFORMANCE_V2_START_MARKER
 PERFORMANCE_V2_COMPLETE_MARKER = performance_contract.PERFORMANCE_V2_COMPLETE_MARKER
 CURRENT_V2_PERFORMANCE_BUILD_CONFIG = {
@@ -811,6 +818,9 @@ CANONICAL_REQUIREMENTS_V2.update(
         "performance_memory_unit": PERFORMANCE_V2_MEMORY_UNIT,
         "performance_executable_member": PERFORMANCE_V2_EXECUTABLE_MEMBER,
         "performance_filenames": PERFORMANCE_V2_FILENAMES,
+        "performance_artifact_maximum_bytes": (
+            PERFORMANCE_V2_ARTIFACT_MAXIMUM_BYTES
+        ),
         "performance_stdout_markers": {
             "start": PERFORMANCE_V2_START_MARKER,
             "complete": PERFORMANCE_V2_COMPLETE_MARKER,
@@ -929,6 +939,8 @@ CLEAN_MAC_PLIST_DOCTYPE = (
     b'"http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
 )
 MAXIMUM_CLEAN_MAC_PLIST_BYTES = 4 * 1024 * 1024
+MAXIMUM_TEXT_EVIDENCE_BYTES = 32 * 1024 * 1024
+MAXIMUM_PNG_EVIDENCE_BYTES = 32 * 1024 * 1024
 LEGACY_NUMERIC_HOST_RE = re.compile(
     r"^(?:0[xX][0-9A-Fa-f]+|[0-9]+)(?:\.(?:0[xX][0-9A-Fa-f]+|[0-9]+))*$"
 )
@@ -1144,7 +1156,10 @@ def open_repository_directory_no_follow(root: Path, path: Path, context: str) ->
 
 
 def read_regular_file_no_follow(
-    path: Path, context: str, directory_fd: Optional[int] = None
+    path: Path,
+    context: str,
+    directory_fd: Optional[int] = None,
+    maximum_bytes: Optional[int] = None,
 ) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     no_follow = getattr(os, "O_NOFOLLOW", None)
@@ -1160,11 +1175,25 @@ def read_regular_file_no_follow(
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
             raise VerificationError("{} must be a regular file".format(context))
+        if maximum_bytes is not None and before.st_size > maximum_bytes:
+            raise VerificationError(
+                "{} exceeds its {}-byte release limit".format(
+                    context, maximum_bytes
+                )
+            )
         chunks = []
+        total_bytes = 0
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
             if not chunk:
                 break
+            total_bytes += len(chunk)
+            if maximum_bytes is not None and total_bytes > maximum_bytes:
+                raise VerificationError(
+                    "{} exceeds its {}-byte release limit".format(
+                        context, maximum_bytes
+                    )
+                )
             chunks.append(chunk)
         after = os.fstat(descriptor)
         identity_before = (
@@ -1189,6 +1218,68 @@ def read_regular_file_no_follow(
         raise
     except OSError as exc:
         raise VerificationError("cannot read {}: {}".format(context, exc))
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def sha256_regular_file_no_follow(
+    path: Path,
+    context: str,
+    maximum_bytes: int,
+) -> str:
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise VerificationError("O_NOFOLLOW is required to hash {}".format(context))
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags | no_follow)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise VerificationError("{} must be a regular file".format(context))
+        if before.st_size > maximum_bytes:
+            raise VerificationError(
+                "{} exceeds its {}-byte release limit".format(
+                    context, maximum_bytes
+                )
+            )
+        digest = hashlib.sha256()
+        total_bytes = 0
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > maximum_bytes:
+                raise VerificationError(
+                    "{} exceeds its {}-byte release limit".format(
+                        context, maximum_bytes
+                    )
+                )
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+        identity_after = (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        )
+        if identity_before != identity_after or total_bytes != after.st_size:
+            raise VerificationError("{} changed while it was hashed".format(context))
+        return digest.hexdigest()
+    except VerificationError:
+        raise
+    except OSError as exc:
+        raise VerificationError("cannot hash {}: {}".format(context, exc))
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -1403,15 +1494,29 @@ def verify_png(
     return None
 
 
-def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, str, Path]:
+def validate_artifact(
+    root: Path,
+    value: Any,
+    context: str,
+    maximum_bytes: Optional[int] = None,
+) -> Tuple[str, str, str, Path]:
     artifact = require_object(value, context)
     require_exact_keys(artifact, EVIDENCE_ARTIFACT_KEYS, context)
     kind = require_string(artifact["kind"], "{}.kind".format(context))
     if kind not in ARTIFACT_KINDS:
         raise VerificationError("{}.kind is unsupported".format(context))
+    if maximum_bytes is None and kind in {"log", "report"}:
+        maximum_bytes = MAXIMUM_TEXT_EVIDENCE_BYTES
+    elif maximum_bytes is None and kind == "recording":
+        maximum_bytes = MAXIMUM_RECORDING_BYTES
+    elif maximum_bytes is None and kind in PNG_KINDS:
+        maximum_bytes = MAXIMUM_PNG_EVIDENCE_BYTES
     path = resolve_repository_file(root, artifact["path"], "{}.path".format(context))
     digest = require_sha256(artifact["sha256"], "{}.sha256".format(context))
-    actual = sha256_file(path)
+    if maximum_bytes is None:
+        actual = sha256_file(path)
+    else:
+        actual = sha256_regular_file_no_follow(path, context, maximum_bytes)
     if actual != digest:
         raise VerificationError("{} hash mismatch".format(context))
     if kind in PNG_KINDS:
@@ -1438,16 +1543,25 @@ def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, s
     )
 
 
-def load_structured_artifact(path: Path, context: str) -> Optional[Mapping[str, Any]]:
+def load_structured_artifact(
+    path: Path,
+    context: str,
+    maximum_bytes: int = MAXIMUM_TEXT_EVIDENCE_BYTES,
+    expected_sha256: Optional[str] = None,
+) -> Optional[Mapping[str, Any]]:
     """Return a JSON object for structured evidence, or None for binary/text evidence."""
     if path.suffix.lower() != ".json":
         return None
-    try:
-        if path.stat().st_size > 32 * 1024 * 1024:
-            raise VerificationError("{} is unexpectedly large".format(context))
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise VerificationError("cannot read {}: {}".format(context, exc))
+    raw = read_regular_file_no_follow(
+        path,
+        context,
+        maximum_bytes=maximum_bytes,
+    )
+    if (
+        expected_sha256 is not None
+        and hashlib.sha256(raw).hexdigest() != expected_sha256
+    ):
+        raise VerificationError("{} changed after evidence validation".format(context))
     stripped = raw.lstrip()
     if not stripped.startswith(b"{"):
         return None
@@ -1871,7 +1985,10 @@ def validate_interactive_evidence(value: Any, context: str) -> None:
 
 
 def validate_evidence(
-    root: Path, values: Any, blockers: List[str]
+    root: Path,
+    values: Any,
+    blockers: List[str],
+    requirements_profile: str,
 ) -> Tuple[
     Dict[str, Mapping[str, Any]],
     Dict[str, Tuple[str, str, str, Path]],
@@ -1920,7 +2037,21 @@ def validate_evidence(
                 )
         for artifact_index, artifact in enumerate(artifacts):
             artifact_context = "{}.artifacts[{}]".format(context, artifact_index)
-            normalized = validate_artifact(root, artifact, artifact_context)
+            maximum_bytes = None
+            if (
+                requirements_profile == "macos-alpha-v2"
+                and evidence_id == "extended_session_metrics"
+                and isinstance(artifact, dict)
+                and isinstance(artifact.get("path"), str)
+            ):
+                filename = Path(artifact["path"]).name
+                maximum_bytes = PERFORMANCE_V2_LIMITS_BY_FILENAME.get(filename)
+            normalized = validate_artifact(
+                root,
+                artifact,
+                artifact_context,
+                maximum_bytes=maximum_bytes,
+            )
             path = normalized[0]
             resolved_path = normalized[3]
             previous = resolved_artifacts.get(resolved_path)
@@ -2651,7 +2782,11 @@ def validate_structured_interactive_evidence(
         ] = []
         for artifact in evidence["artifacts"]:
             normalized = artifact_map[artifact["path"]]
-            parsed = load_structured_artifact(normalized[3], "evidence artifact " + normalized[0])
+            parsed = load_structured_artifact(
+                normalized[3],
+                "evidence artifact " + normalized[0],
+                expected_sha256=normalized[1],
+            )
             if parsed is not None:
                 structured.append((normalized, parsed))
             if needs_v2_draft_lint:
@@ -2924,7 +3059,11 @@ def structured_artifacts_for_evidence(
     result = []
     for artifact in evidence["artifacts"]:
         normalized = artifact_map[artifact["path"]]
-        parsed = load_structured_artifact(normalized[3], "evidence artifact " + normalized[0])
+        parsed = load_structured_artifact(
+            normalized[3],
+            "evidence artifact " + normalized[0],
+            expected_sha256=normalized[1],
+        )
         if parsed is not None:
             result.append(parsed)
     return result
@@ -3000,7 +3139,9 @@ def validate_clean_mac_command_log(
         for artifact in evidence_map["gatekeeper_launch"]["artifacts"]:
             normalized = artifact_map[artifact["path"]]
             parsed = load_structured_artifact(
-                normalized[3], "evidence artifact " + normalized[0]
+                normalized[3],
+                "evidence artifact " + normalized[0],
+                expected_sha256=normalized[1],
             )
             if (
                 parsed is not None
@@ -3158,13 +3299,17 @@ def validate_clean_mac_command_log(
         validate_clean_mac_recording(
             artifact_map[files["media"]["path"]][3]
         )
+        browser_artifact = artifact_map[files["browser_acquisition"]["path"]]
+        command_artifact = artifact_map[files["command_log"]["path"]]
         browser_from_receipt = load_structured_artifact(
-            artifact_map[files["browser_acquisition"]["path"]][3],
+            browser_artifact[3],
             "clean-Mac compiler receipt browser acquisition",
+            expected_sha256=browser_artifact[1],
         )
         command_from_receipt = load_structured_artifact(
-            artifact_map[files["command_log"]["path"]][3],
+            command_artifact[3],
             "clean-Mac compiler receipt command log",
+            expected_sha256=command_artifact[1],
         )
         if browser_from_receipt != acquisition or command_from_receipt != log:
             raise VerificationError(
@@ -3753,7 +3898,12 @@ def validate_performance_log_v2(
             )
         artifacts_by_name[filename] = normalized
         parsed = load_structured_artifact(
-            normalized[3], "evidence artifact " + normalized[0]
+            normalized[3],
+            "evidence artifact " + normalized[0],
+            maximum_bytes=PERFORMANCE_V2_LIMITS_BY_FILENAME.get(
+                filename, MAXIMUM_TEXT_EVIDENCE_BYTES
+            ),
+            expected_sha256=normalized[1],
         )
         if parsed is not None:
             structured.append((normalized, parsed))
@@ -3793,7 +3943,7 @@ def validate_performance_log_v2(
         "log",
         artifacts_by_name,
     )
-    validate_performance_receipt_reference(
+    stderr_artifact = validate_performance_receipt_reference(
         receipt,
         "stderr",
         PERFORMANCE_V2_FILENAMES["stderr"],
@@ -3801,13 +3951,6 @@ def validate_performance_log_v2(
         artifacts_by_name,
     )
 
-    log = load_structured_artifact(
-        telemetry_artifact[3], "candidate performance telemetry"
-    )
-    if log is None or log.get("schema") != PERFORMANCE_LOG_V2_SCHEMA:
-        raise VerificationError(
-            "performance QA receipt does not reference one v2 telemetry log"
-        )
     matching_logs = [
         item
         for item in structured
@@ -3817,6 +3960,7 @@ def validate_performance_log_v2(
         raise VerificationError(
             "extended-session PASS requires exactly one receipt-bound v2 telemetry log"
         )
+    log = matching_logs[0][1]
 
     if receipt["schema"] != PERFORMANCE_QA_RECEIPT_SCHEMA:
         raise VerificationError("performance QA receipt schema is not canonical")
@@ -3941,11 +4085,25 @@ def validate_performance_log_v2(
             "performance QA receipt duration flag is outside the release range"
         )
 
+    stdout_data = read_regular_file_no_follow(
+        stdout_artifact[3],
+        "performance stdout",
+        maximum_bytes=PERFORMANCE_V2_ARTIFACT_MAXIMUM_BYTES["stdout"],
+    )
+    if hashlib.sha256(stdout_data).hexdigest() != stdout_artifact[1]:
+        raise VerificationError("performance stdout changed after evidence validation")
+    stderr_data = read_regular_file_no_follow(
+        stderr_artifact[3],
+        "performance stderr",
+        maximum_bytes=PERFORMANCE_V2_ARTIFACT_MAXIMUM_BYTES["stderr"],
+    )
+    if hashlib.sha256(stderr_data).hexdigest() != stderr_artifact[1]:
+        raise VerificationError("performance stderr changed after evidence validation")
+    if stderr_data:
+        raise VerificationError("performance stderr must be empty")
     try:
-        if stdout_artifact[3].stat().st_size > 16 * 1024 * 1024:
-            raise VerificationError("performance stdout exceeds the safety limit")
-        stdout_text = stdout_artifact[3].read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+        stdout_text = stdout_data.decode("utf-8")
+    except UnicodeError as exc:
         raise VerificationError("cannot read performance stdout: {}".format(exc))
     sessions = [
         value
@@ -5174,7 +5332,12 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
     blockers: List[str] = []
     release, file_refs, candidate_dir = validate_release(root, status["release"])
     report = validate_report(status["report"], blockers)
-    evidence_map, artifact_map = validate_evidence(root, status["evidence"], blockers)
+    evidence_map, artifact_map = validate_evidence(
+        root,
+        status["evidence"],
+        blockers,
+        requirements_profile,
+    )
 
     gameplay_definitions = [
         (

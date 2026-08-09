@@ -918,8 +918,13 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   no-resource capability JSON that runs the production parser and recorder
   self-check. The distribution verifier checks that exact packaged-Mach-O
   handshake, while the performance runner repeats it on its private ZIP
-  snapshot before the long session and bounds that session with a
-  duration-plus-grace watchdog. Candidate attestation v3 proves that the
+  snapshot before the long session. Both probe and session use concurrently
+  drained, bounded pipes; the session adds a duration-plus-grace watchdog, a
+  child-only 32 MiB regular-file limit, process-group cleanup, and trapped
+  `SIGTERM`/`SIGHUP` cancellation during supervised capture. Non-daemon pipe
+  readers are explicitly stopped if an escaped descendant retains a descriptor.
+  The shared v2 artifact contract fixes receipt/telemetry/stdout/stderr ceilings
+  at 64 KiB/32 MiB/16 MiB/0 bytes. Candidate attestation v3 proves that the
   attested tag's strict verifier enforced the current capability contract; all
   `macos-alpha-v2` records require v3 even while blocked. Compatible candidates
   then record genuine frame/RSS windows plus active-gameplay, focused-window,
@@ -928,9 +933,12 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   private ZIP snapshot and extracts only that immutable input. A shared,
   I/O-free contract module validates exact raw-v2 keys, identity, timestamps,
   sample continuity, and state semantics in both the runner and final verifier;
-  the runner also binds its receipt hash to the bytes it validated. Fixed Alpha
-  performance thresholds, status cross-checks, and ordered human approvals stay
-  in the final verifier and cannot be redefined after a run. Legacy v1 records
+  the runner also binds its receipt hash to the bytes it validated. The final
+  verifier performs stable no-follow, size-bounded hashing before structured
+  parsing and rejects nonempty stderr even after a complete evidence re-sign.
+  Fixed Alpha performance thresholds, status cross-checks, and ordered human
+  approvals stay in the final verifier and cannot be redefined after a run.
+  Legacy v1 records
   remain readable only while blocked; `--allow-blocked` never grants
   publication approval.
 

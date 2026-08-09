@@ -303,7 +303,10 @@ complete at least one stage. Attach the generated v2 telemetry, QA receipt,
 stdout, and stderr files. The verifier derives FPS, memory, gameplay/focus
 coverage, player mode, and cleared-stage count from raw integer counters and
 candidate game events; hand-written summaries or legacy v1 samples do not
-pass.
+pass. The receipt, telemetry, and stdout limits are respectively 64 KiB,
+32 MiB, and 16 MiB. Successful stderr must be exactly empty. The runner aborts
+on overflow or stderr output, and the verifier checks those constraints before
+accepting hashes.
 
 | Required field | Recorded value |
 | --- | --- |

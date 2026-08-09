@@ -261,6 +261,15 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         self.assertIn(fixture.qa_report.name, page)
         requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
         self.assertEqual(
+            requirements["performance_artifact_maximum_bytes"],
+            {
+                "receipt": 64 * 1024,
+                "telemetry": 32 * 1024 * 1024,
+                "stdout": 16 * 1024 * 1024,
+                "stderr": 0,
+            },
+        )
+        self.assertEqual(
             requirements["clean_mac_evidence_ids"], ["gatekeeper_launch"]
         )
         self.assertEqual(

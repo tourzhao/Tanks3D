@@ -764,6 +764,12 @@
     "stdout": "performance-stdout.log",
     "stderr": "performance-stderr.log"
   },
+  "performance_artifact_maximum_bytes": {
+    "receipt": 65536,
+    "telemetry": 33554432,
+    "stdout": 16777216,
+    "stderr": 0
+  },
   "performance_stdout_markers": {
     "start": "TANKS3D_PERFORMANCE_START",
     "complete": "TANKS3D_PERFORMANCE_COMPLETE"

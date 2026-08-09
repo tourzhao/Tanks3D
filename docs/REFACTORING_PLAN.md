@@ -1283,3 +1283,26 @@ full/unit/session/asset, ASan/UBSan, coverage, Alpha-4 distribution, and Alpha
 candidate-tooling gates pass. A real Apple M3 Pro GPU smoke captured a 1280x720
 PNG and logged `RGBA16F HDR view target ready` without the fallback warning.
 No real candidate, tag, push, or publication was created.
+
+The fifty-seventh increment closes the performance-evidence output and process-
+lifecycle gap without changing gameplay, maps, assets, rendering, or telemetry
+semantics. The shared v2 profile now fixes receipt/telemetry/stdout/stderr
+ceilings at 64 KiB/32 MiB/16 MiB/0 bytes. The capability probe and long session
+concurrently drain bounded pipes; the session also applies a child file-size
+limit, rejects any stderr byte, and publishes no receipt after overflow or an
+unreaped process. Main-thread supervision owns process-group signaling and
+reaping, handles timeout and terminal cancellation during supervised capture,
+drains buffered bytes after leader exit, sends a best-effort kill to remaining
+same-group descendants, and gives escaped-pipe readers a bounded non-daemon
+shutdown. The final verifier checks every canonical limit
+before hashing through stable no-follow reads, streams large digests, and still
+rejects nonempty stderr after a complete evidence re-sign. Sixty-three final-
+verifier, seventeen v2-initializer, and forty-five performance-runner tests pass,
+including byte-boundary, refreshed-hash, simultaneous-flood, signal, interrupt,
+thread-start, escaped-descendant, and unreaped-process regressions. The full
+release-status, warning-as-error `make test`, Alpha-4 distribution, and Alpha
+candidate-tooling gates pass; candidate tooling covers 18 build rejections, 14
+strict-verifier rejections, five tagged-verifier rejections, and two success
+paths. The C++ suite/check and coverage ledgers remain unchanged because no
+production C++ changed. No real candidate, tag, push, or publication was
+created.

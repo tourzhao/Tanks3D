@@ -4,6 +4,7 @@
 import copy
 import datetime
 import hashlib
+import io
 import importlib.util
 import json
 import os
@@ -13,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 import zipfile
@@ -48,7 +50,13 @@ def digest(path):
 
 class FakeProcess:
     def __init__(
-        self, exit_code=0, pid=4242, hangs=False, ignores_terminate=False
+        self,
+        stdout_bytes=b"",
+        stderr_bytes=b"",
+        exit_code=0,
+        pid=4242,
+        hangs=False,
+        ignores_terminate=False,
     ):
         self.pid = pid
         self._exit_code = exit_code
@@ -56,7 +64,22 @@ class FakeProcess:
         self.ignores_terminate = ignores_terminate
         self.terminated = False
         self.killed = False
+        self.poll_calls = 0
         self.wait_timeouts = []
+        self.stdout = io.BytesIO(stdout_bytes)
+        self.stderr = io.BytesIO(stderr_bytes)
+
+    def poll(self):
+        self.poll_calls += 1
+        if self.hangs and not self.killed and (
+            not self.terminated or self.ignores_terminate
+        ):
+            return None
+        if self.terminated and not self.ignores_terminate:
+            return -15
+        if self.killed:
+            return -9
+        return self._exit_code
 
     def wait(self, timeout=None):
         self.wait_timeouts.append(timeout)
@@ -94,6 +117,8 @@ class RunnerFixture:
         self.process_ignores_terminate = False
         self.capability_mode = "valid"
         self.marker_mode = "valid"
+        self.stdout_padding = b""
+        self.stderr_output = b""
         self.telemetry_mode = "valid"
         self.telemetry_mutator = None
         self.receipt_race = False
@@ -108,6 +133,7 @@ class RunnerFixture:
         self.verifier_input = None
         self.last_executable = None
         self.last_process = None
+        self.last_capability_process = None
         self._write_verifier()
         self._write_candidate()
 
@@ -302,9 +328,63 @@ class RunnerFixture:
             "samples": samples,
         }
 
-    def fake_popen(self, argv, stdout, stderr, cwd, close_fds):
-        del cwd, close_fds
+    def fake_popen(
+        self,
+        argv,
+        stdout,
+        stderr,
+        cwd,
+        close_fds,
+        bufsize,
+        start_new_session,
+        preexec_fn=None,
+    ):
+        del cwd
+        if stdout != subprocess.PIPE or stderr != subprocess.PIPE:
+            raise AssertionError("candidate output was not captured through pipes")
+        if not close_fds or bufsize != 0 or not start_new_session:
+            raise AssertionError("candidate process isolation flags are incomplete")
         self.calls.append(list(argv))
+        if len(argv) == 2 and argv[1] == RUNNER.CAPABILITY_ARGUMENT:
+            if preexec_fn is not None:
+                raise AssertionError("capability probe unexpectedly changed file limits")
+            capability = json.loads(CAPABILITY_GOLDEN.read_text(encoding="utf-8"))
+            capability["source_commit"] = SOURCE_COMMIT
+            capability["source_tag"] = SOURCE_TAG
+            if self.capability_mode == "wrong_schema":
+                capability["schema"] = "tanks3d-release-performance-capabilities-v0"
+            elif self.capability_mode == "wrong_identity":
+                capability["source_commit"] = "0" * 40
+            elif self.capability_mode == "extra_key":
+                capability["unexpected"] = True
+            if self.capability_mode == "duplicate_key":
+                capability_stdout = b'{"schema":"first","schema":"second"}\n'
+            elif self.capability_mode == "invalid_utf8":
+                capability_stdout = b"\xff\n"
+            elif self.capability_mode == "oversized_stdout":
+                capability_stdout = b"x" * (RUNNER.CAPABILITY_MAX_OUTPUT_BYTES + 1)
+            else:
+                capability_stdout = (
+                    json.dumps(capability, indent=2, sort_keys=False) + "\n"
+                ).encode("utf-8")
+            capability_stderr = (
+                b"x" * (RUNNER.CAPABILITY_MAX_OUTPUT_BYTES + 1)
+                if self.capability_mode == "oversized_stderr"
+                else (
+                    b"unexpected capability diagnostic\n"
+                    if self.capability_mode == "stderr"
+                    else b""
+                )
+            )
+            self.last_capability_process = FakeProcess(
+                stdout_bytes=capability_stdout,
+                stderr_bytes=capability_stderr,
+                exit_code=2 if self.capability_mode == "nonzero" else 0,
+                hangs=self.capability_mode == "timeout",
+            )
+            return self.last_capability_process
+        if preexec_fn is not RUNNER.limit_candidate_output_file_size:
+            raise AssertionError("performance run lacks its child file-size hard limit")
         nonce = self.argument(argv, "--release-session-nonce=")
         telemetry_path = Path(self.argument(argv, "--release-performance-log="))
         candidate_sha = self.argument(argv, "--release-candidate-sha256=")
@@ -312,37 +392,34 @@ class RunnerFixture:
             self.argument(argv, "--release-performance-duration-seconds=")
         )
         if self.marker_mode == "valid":
-            stdout.write(
-                (
-                    "{} {}\n{} {}\n".format(
-                        RUNNER.START_MARKER,
-                        nonce,
-                        RUNNER.COMPLETE_MARKER,
-                        nonce,
-                    )
-                ).encode("utf-8")
-            )
+            stdout_bytes = (
+                "{} {}\n{} {}\n".format(
+                    RUNNER.START_MARKER,
+                    nonce,
+                    RUNNER.COMPLETE_MARKER,
+                    nonce,
+                )
+            ).encode("utf-8") + self.stdout_padding
         elif self.marker_mode == "missing_complete":
-            stdout.write("{} {}\n".format(RUNNER.START_MARKER, nonce).encode("utf-8"))
+            stdout_bytes = "{} {}\n".format(
+                RUNNER.START_MARKER, nonce
+            ).encode("utf-8")
         elif self.marker_mode == "wrong_nonce":
-            stdout.write(
-                "{} wrong\n{} wrong\n".format(
-                    RUNNER.START_MARKER, RUNNER.COMPLETE_MARKER
-                ).encode("utf-8")
-            )
+            stdout_bytes = "{} wrong\n{} wrong\n".format(
+                RUNNER.START_MARKER, RUNNER.COMPLETE_MARKER
+            ).encode("utf-8")
         elif self.marker_mode == "extra_foreign":
-            stdout.write(
-                (
-                    "{} {}\n{} foreign\n{} {}\n".format(
-                        RUNNER.START_MARKER,
-                        nonce,
-                        RUNNER.START_MARKER,
-                        RUNNER.COMPLETE_MARKER,
-                        nonce,
-                    )
-                ).encode("utf-8")
-            )
-        stderr.write(b"fixture candidate stderr\n")
+            stdout_bytes = (
+                "{} {}\n{} foreign\n{} {}\n".format(
+                    RUNNER.START_MARKER,
+                    nonce,
+                    RUNNER.START_MARKER,
+                    RUNNER.COMPLETE_MARKER,
+                    nonce,
+                )
+            ).encode("utf-8")
+        else:
+            raise AssertionError("unsupported marker mode {!r}".format(self.marker_mode))
 
         telemetry = self.valid_telemetry(candidate_sha, nonce, duration_seconds)
         if self.telemetry_mode == "wrong_candidate":
@@ -357,6 +434,9 @@ class RunnerFixture:
                 '"schema":"duplicate"}\n',
                 encoding="utf-8",
             )
+        elif self.telemetry_mode == "oversized":
+            with telemetry_path.open("wb") as stream:
+                stream.truncate(RUNNER.MAX_TELEMETRY_BYTES + 1)
         elif self.telemetry_mode != "missing":
             telemetry_path.write_text(json.dumps(telemetry) + "\n", encoding="utf-8")
         if self.receipt_race:
@@ -364,7 +444,9 @@ class RunnerFixture:
                 "sentinel receipt must survive\n", encoding="utf-8"
             )
         self.last_process = FakeProcess(
-            self.process_returncode,
+            stdout_bytes=stdout_bytes,
+            stderr_bytes=self.stderr_output,
+            exit_code=self.process_returncode,
             hangs=self.process_hangs,
             ignores_terminate=self.process_ignores_terminate,
         )
@@ -468,6 +550,14 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             requirements["performance_memory_unit"],
             contract.PERFORMANCE_V2_MEMORY_UNIT,
         )
+        self.assertEqual(
+            requirements["performance_artifact_maximum_bytes"],
+            contract.PERFORMANCE_ARTIFACT_MAXIMUM_BYTES,
+        )
+        self.assertEqual(RUNNER.MAX_RECEIPT_BYTES, 64 * 1024)
+        self.assertEqual(RUNNER.MAX_TELEMETRY_BYTES, 32 * 1024 * 1024)
+        self.assertEqual(RUNNER.MAX_MARKER_LOG_BYTES, 16 * 1024 * 1024)
+        self.assertEqual(RUNNER.MAX_STDERR_BYTES, 0)
         thresholds = requirements["performance_thresholds"]
         self.assertEqual(
             thresholds["target_interval_us"],
@@ -760,8 +850,32 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         self.assertFalse(fixture.last_executable.exists())
         self.assertEqual(
             fixture.last_process.wait_timeouts,
-            [RUNNER.DEFAULT_DURATION_SECONDS + RUNNER.PROCESS_TIMEOUT_GRACE_SECONDS],
+            [],
         )
+        self.assertGreaterEqual(fixture.last_process.poll_calls, 1)
+
+    def test_receipt_publisher_accepts_its_exact_size_and_rejects_one_less(self):
+        fixture = self.new_fixture()
+        receipt_path = fixture.run(duration=2)
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        encoded = (
+            json.dumps(receipt, indent=2, sort_keys=False) + "\n"
+        ).encode("utf-8")
+        self.assertLessEqual(len(encoded), RUNNER.MAX_RECEIPT_BYTES)
+
+        receipt_path.unlink()
+        with mock.patch.object(RUNNER, "MAX_RECEIPT_BYTES", len(encoded)):
+            RUNNER.publish_json_no_replace(receipt_path, receipt)
+        self.assertEqual(receipt_path.read_bytes(), encoded)
+
+        receipt_path.unlink()
+        with mock.patch.object(RUNNER, "MAX_RECEIPT_BYTES", len(encoded) - 1):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError,
+                "receipt exceeds its release limit",
+            ):
+                RUNNER.publish_json_no_replace(receipt_path, receipt)
+        self.assertFalse(receipt_path.exists())
 
     def test_archive_replacement_after_snapshot_cannot_change_extracted_bytes(self):
         fixture = self.new_fixture()
@@ -944,6 +1058,8 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             ("extra_key", "does not match"),
             ("duplicate_key", "duplicate JSON key"),
             ("invalid_utf8", "not UTF-8"),
+            ("oversized_stdout", "65536-byte release limit"),
+            ("oversized_stderr", "65536-byte release limit"),
         )
         for mode, fragment in cases:
             with self.subTest(mode=mode):
@@ -953,26 +1069,485 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
                 self.assertIsNone(fixture.last_process)
                 self.assertEqual(list(fixture.output.iterdir()), [])
 
+    def test_preexec_subprocess_error_is_normalized_without_a_receipt(self):
+        fixture = self.new_fixture()
+
+        def fail_long_process(argv, **kwargs):
+            if len(argv) == 2 and argv[1] == RUNNER.CAPABILITY_ARGUMENT:
+                return fixture.fake_popen(argv, **kwargs)
+            raise subprocess.SubprocessError("fixture preexec failure")
+
+        with mock.patch.object(
+            RUNNER.subprocess,
+            "run",
+            side_effect=fixture.fake_run,
+        ), mock.patch.object(
+            RUNNER.subprocess,
+            "Popen",
+            side_effect=fail_long_process,
+        ), mock.patch.object(
+            RUNNER.secrets,
+            "token_hex",
+            return_value=NONCE,
+        ), mock.patch.object(
+            RUNNER,
+            "utc_now",
+            side_effect=[STARTED, COMPLETED],
+        ):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError,
+                "cannot launch extracted candidate: fixture preexec failure",
+            ):
+                RUNNER.run_performance_qa(
+                    fixture.root,
+                    fixture.candidate,
+                    fixture.output,
+                    2,
+                )
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
     def test_long_run_timeout_terminates_process_and_never_publishes_receipt(self):
         fixture = self.new_fixture()
         fixture.process_hangs = True
-        self.assert_runner_error(fixture, "exceeded its 122-second timeout")
+        with mock.patch.object(RUNNER, "PROCESS_TIMEOUT_GRACE_SECONDS", -2):
+            self.assert_runner_error(fixture, "exceeded its 0-second timeout")
         self.assertIsNotNone(fixture.last_process)
         self.assertTrue(fixture.last_process.terminated)
         self.assertFalse(fixture.last_process.killed)
-        self.assertEqual(fixture.last_process.wait_timeouts, [122, 5])
+        self.assertEqual(fixture.last_process.wait_timeouts, [5])
         self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
 
     def test_long_run_timeout_kills_process_that_ignores_termination(self):
         fixture = self.new_fixture()
         fixture.process_hangs = True
         fixture.process_ignores_terminate = True
-        self.assert_runner_error(fixture, "exceeded its 122-second timeout")
+        with mock.patch.object(RUNNER, "PROCESS_TIMEOUT_GRACE_SECONDS", -2):
+            self.assert_runner_error(fixture, "exceeded its 0-second timeout")
         self.assertIsNotNone(fixture.last_process)
         self.assertTrue(fixture.last_process.terminated)
         self.assertTrue(fixture.last_process.killed)
-        self.assertEqual(fixture.last_process.wait_timeouts, [122, 5, 5])
+        self.assertEqual(fixture.last_process.wait_timeouts, [5, 5])
         self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_stdout_capture_accepts_the_exact_limit_and_rejects_limit_plus_one(self):
+        marker_bytes = (
+            "{} {}\n{} {}\n".format(
+                RUNNER.START_MARKER,
+                NONCE,
+                RUNNER.COMPLETE_MARKER,
+                NONCE,
+            )
+        ).encode("utf-8")
+        padding = b"diagnostic-padding"
+        exact_limit = len(marker_bytes) + len(padding)
+
+        fixture = self.new_fixture()
+        fixture.stdout_padding = padding
+        with mock.patch.object(RUNNER, "MAX_MARKER_LOG_BYTES", exact_limit):
+            fixture.run(duration=2)
+        self.assertEqual(
+            (fixture.output / RUNNER.STDOUT_FILENAME).stat().st_size,
+            exact_limit,
+        )
+
+        fixture = self.new_fixture()
+        fixture.stdout_padding = padding
+        with mock.patch.object(RUNNER, "MAX_MARKER_LOG_BYTES", exact_limit - 1):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError,
+                "candidate stdout exceeds its {}-byte release limit".format(
+                    exact_limit - 1
+                ),
+            ):
+                fixture.run(duration=2)
+        self.assertIsNotNone(fixture.last_process.poll())
+        self.assertEqual(
+            (fixture.output / RUNNER.STDOUT_FILENAME).stat().st_size,
+            exact_limit - 1,
+        )
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_any_performance_stderr_kills_the_run_without_a_receipt(self):
+        fixture = self.new_fixture()
+        fixture.stderr_output = b"unexpected renderer warning\n"
+        with self.assertRaisesRegex(
+            RUNNER.RunnerError,
+            "candidate stderr exceeds its 0-byte release limit",
+        ):
+            fixture.run(duration=2)
+        self.assertIsNotNone(fixture.last_process.poll())
+        self.assertEqual(
+            (fixture.output / RUNNER.STDERR_FILENAME).stat().st_size,
+            0,
+        )
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_telemetry_watchdog_kills_an_oversized_candidate_log(self):
+        fixture = self.new_fixture()
+        fixture.telemetry_mode = "oversized"
+        with self.assertRaisesRegex(
+            RUNNER.RunnerError,
+            "candidate telemetry exceeds its 33554432-byte release limit",
+        ):
+            fixture.run(duration=2)
+        self.assertIsNotNone(fixture.last_process.poll())
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_child_file_limit_prevents_a_single_oversized_telemetry_write(self):
+        with tempfile.TemporaryDirectory(
+            prefix="tanks3d-performance-file-limit-test-"
+        ) as temporary_name:
+            path = Path(temporary_name) / "oversized.log"
+            program = "from pathlib import Path; Path({!r}).write_bytes(b'x' * 4096)".format(
+                str(path)
+            )
+            with mock.patch.object(RUNNER, "MAX_TELEMETRY_BYTES", 1024):
+                process = subprocess.Popen(
+                    [sys.executable, "-c", program],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    close_fds=True,
+                    start_new_session=True,
+                    preexec_fn=RUNNER.limit_candidate_output_file_size,
+                )
+            process.communicate(timeout=5)
+            self.assertNotEqual(process.returncode, 0)
+            self.assertTrue(path.is_file())
+            self.assertLessEqual(path.stat().st_size, 1024)
+
+    def test_simultaneous_stdout_and_stderr_floods_are_bounded_and_reaped(self):
+        program = (
+            "import os\n"
+            "chunk = b'x' * 4096\n"
+            "while True:\n"
+            "    os.write(1, chunk)\n"
+            "    os.write(2, chunk)\n"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-c", program],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            bufsize=0,
+            start_new_session=True,
+        )
+        started = time.monotonic()
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError,
+                r"candidate (?:stdout|stderr) exceeds its 8192-byte release limit",
+            ):
+                RUNNER.capture_bounded_process_output(
+                    process,
+                    stdout,
+                    stderr,
+                    10,
+                    "fixture flood timed out",
+                    8192,
+                    8192,
+                )
+            self.assertLessEqual(stdout.tell(), 8192)
+            self.assertLessEqual(stderr.tell(), 8192)
+        self.assertIsNotNone(process.poll())
+        self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_normal_exit_kills_any_remaining_private_process_group(self):
+        process = FakeProcess()
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            with mock.patch.object(RUNNER, "POPEN_CLASS", FakeProcess), mock.patch.object(
+                RUNNER.os, "killpg"
+            ) as killpg:
+                exit_code = RUNNER.capture_bounded_process_output(
+                    process,
+                    stdout,
+                    stderr,
+                    10,
+                    "fixture timed out",
+                    1024,
+                    1024,
+                )
+        self.assertEqual(exit_code, 0)
+        killpg.assert_called_with(process.pid, RUNNER.signal.SIGKILL)
+
+    def test_output_write_failure_aborts_and_reaps_the_candidate(self):
+        class FailingDestination(io.BytesIO):
+            def write(self, _data):
+                raise OSError("fixture disk failure")
+
+        process = FakeProcess(stdout_bytes=b"output", hangs=True)
+        stdout = FailingDestination()
+        stderr = io.BytesIO()
+        with self.assertRaisesRegex(
+            RUNNER.RunnerError,
+            "cannot capture candidate stdout: fixture disk failure",
+        ):
+            RUNNER.capture_bounded_process_output(
+                process,
+                stdout,
+                stderr,
+                30,
+                "fixture timed out",
+                1024,
+                1024,
+            )
+        self.assertTrue(process.killed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+
+    def test_keyboard_interrupt_reaps_process_and_joins_capture_threads(self):
+        process = FakeProcess(hangs=True)
+        original_poll = process.poll
+        interrupted = False
+
+        def interrupt_once():
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                raise KeyboardInterrupt()
+            return original_poll()
+
+        process.poll = interrupt_once
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            with self.assertRaises(KeyboardInterrupt):
+                RUNNER.capture_bounded_process_output(
+                    process,
+                    stdout,
+                    stderr,
+                    30,
+                    "fixture timed out",
+                    1024,
+                    1024,
+                )
+        self.assertTrue(process.killed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+        self.assertFalse(
+            any(
+                thread.is_alive()
+                and thread.name.startswith("tanks3d-performance-")
+                for thread in RUNNER.threading.enumerate()
+            )
+        )
+
+    def test_second_capture_thread_start_failure_reaps_first_thread_and_process(self):
+        process = FakeProcess(hangs=True)
+        original_start = RUNNER.threading.Thread.start
+        starts = 0
+
+        def fail_second_start(thread):
+            nonlocal starts
+            starts += 1
+            if starts == 2:
+                raise RuntimeError("fixture thread start failure")
+            return original_start(thread)
+
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            with mock.patch.object(
+                RUNNER.threading.Thread,
+                "start",
+                new=fail_second_start,
+            ):
+                with self.assertRaisesRegex(
+                    RUNNER.RunnerError,
+                    "cannot start candidate output capture: fixture thread start failure",
+                ):
+                    RUNNER.capture_bounded_process_output(
+                        process,
+                        stdout,
+                        stderr,
+                        30,
+                        "fixture timed out",
+                        1024,
+                        1024,
+                    )
+        self.assertTrue(process.killed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+        self.assertFalse(
+            any(
+                thread.is_alive()
+                and thread.name.startswith("tanks3d-performance-")
+                for thread in RUNNER.threading.enumerate()
+            )
+        )
+
+    def test_cleanup_failure_is_visible_with_the_primary_runner_error(self):
+        class CloseFailingPipe(io.BytesIO):
+            failed_once = False
+
+            def close(self):
+                if not self.failed_once:
+                    self.failed_once = True
+                    raise OSError("fixture pipe close failure")
+                return super().close()
+
+        process = FakeProcess(hangs=True)
+        process.stdout = CloseFailingPipe()
+        original_start = RUNNER.threading.Thread.start
+        starts = 0
+
+        def fail_second_start(thread):
+            nonlocal starts
+            starts += 1
+            if starts == 2:
+                raise RuntimeError("fixture thread start failure")
+            return original_start(thread)
+
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            with mock.patch.object(
+                RUNNER.threading.Thread,
+                "start",
+                new=fail_second_start,
+            ):
+                with self.assertRaisesRegex(
+                    RUNNER.RunnerError,
+                    "cannot start candidate output capture: fixture thread start failure; "
+                    "candidate cleanup also failed: cannot close candidate output pipes: "
+                    "fixture pipe close failure",
+                ):
+                    RUNNER.capture_bounded_process_output(
+                        process,
+                        stdout,
+                        stderr,
+                        30,
+                        "fixture timed out",
+                        1024,
+                        1024,
+                    )
+        self.assertTrue(process.killed)
+        process.stdout.close()
+
+    def test_unreaped_candidate_is_an_explicit_bounded_failure(self):
+        process = FakeProcess(hangs=True, ignores_terminate=True)
+        started = time.monotonic()
+        with mock.patch.object(RUNNER, "signal_performance_process"):
+            with self.assertRaisesRegex(
+                RUNNER.RunnerError,
+                "could not be reaped after SIGKILL",
+            ):
+                RUNNER.stop_and_reap_process(process, force=True)
+        self.assertEqual(process.wait_timeouts, [5, 5])
+        self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_sigterm_cancellation_reaps_process_and_restores_handler(self):
+        process = FakeProcess(hangs=True)
+        previous_handler = RUNNER.signal.getsignal(RUNNER.signal.SIGTERM)
+        real_event = RUNNER.threading.Event
+        event_index = 0
+
+        class GuardedEvent:
+            def __init__(self):
+                nonlocal event_index
+                self.index = event_index
+                event_index += 1
+                self.inner = real_event()
+
+            def set(self):
+                if self.index == 1 and RUNNER.threading.current_thread() is RUNNER.threading.main_thread():
+                    raise AssertionError(
+                        "signal handler attempted to lock the supervisor Event"
+                    )
+                return self.inner.set()
+
+            def clear(self):
+                return self.inner.clear()
+
+            def is_set(self):
+                return self.inner.is_set()
+
+            def wait(self, timeout=None):
+                return self.inner.wait(timeout)
+
+        def send_sigterm():
+            time.sleep(0.05)
+            os.kill(os.getpid(), RUNNER.signal.SIGTERM)
+
+        sender = RUNNER.threading.Thread(target=send_sigterm)
+        sender.start()
+        try:
+            with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+                with mock.patch.object(RUNNER.threading, "Event", GuardedEvent):
+                    with self.assertRaisesRegex(
+                        RUNNER.RunnerError,
+                        "interrupted by SIGTERM",
+                    ):
+                        RUNNER.capture_bounded_process_output(
+                            process,
+                            stdout,
+                            stderr,
+                            30,
+                            "fixture timed out",
+                            1024,
+                            1024,
+                        )
+        finally:
+            sender.join(2)
+        self.assertFalse(sender.is_alive())
+        self.assertTrue(process.terminated)
+        self.assertEqual(
+            RUNNER.signal.getsignal(RUNNER.signal.SIGTERM),
+            previous_handler,
+        )
+
+    def test_escaped_descendant_pipe_cannot_strand_non_daemon_readers(self):
+        with tempfile.TemporaryDirectory(
+            prefix="tanks3d-performance-descendant-test-"
+        ) as temporary_name:
+            child_pid_path = Path(temporary_name) / "child.pid"
+            child_program = "import time; time.sleep(30)"
+            parent_program = (
+                "from pathlib import Path\n"
+                "import subprocess, sys\n"
+                "child = subprocess.Popen([sys.executable, '-c', {!r}], "
+                "start_new_session=True)\n"
+                "Path({!r}).write_text(str(child.pid), encoding='utf-8')\n"
+            ).format(child_program, str(child_pid_path))
+            process = subprocess.Popen(
+                [sys.executable, "-c", parent_program],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                close_fds=True,
+                bufsize=0,
+                start_new_session=True,
+            )
+            child_pid = None
+            started = time.monotonic()
+            try:
+                with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+                    with mock.patch.object(
+                        RUNNER,
+                        "PROCESS_PIPE_DRAIN_GRACE_SECONDS",
+                        0.2,
+                    ):
+                        with self.assertRaisesRegex(
+                            RUNNER.RunnerError,
+                            "candidate output pipes did not reach EOF",
+                        ):
+                            RUNNER.capture_bounded_process_output(
+                                process,
+                                stdout,
+                                stderr,
+                                10,
+                                "fixture timed out",
+                                1024,
+                                1024,
+                            )
+                self.assertLess(time.monotonic() - started, 2.0)
+                self.assertFalse(
+                    any(
+                        thread.is_alive()
+                        and thread.name.startswith("tanks3d-performance-")
+                        for thread in RUNNER.threading.enumerate()
+                    )
+                )
+            finally:
+                if child_pid_path.is_file():
+                    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+                if child_pid is not None:
+                    try:
+                        os.kill(child_pid, RUNNER.signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
 
     def test_verifier_receipt_must_be_exact_and_match_the_captured_candidate(self):
         cases = (
