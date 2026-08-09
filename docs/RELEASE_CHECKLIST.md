@@ -161,8 +161,9 @@ quarantine agent, tester, machine, typed signature, and interval to the
 candidate. Its URL uses a public multi-label ASCII DNS host and standard HTTPS
 port; reserved/test domains, IP/numeric forms, and malformed host labels are
 rejected. The command log then records checksum, ZIP quarantine, app
-quarantine, `codesign`, and `spctl` as five canonical, non-overlapping command
-intervals. The containing interactive session begins before acquisition, which
+quarantine, `codesign`, and `spctl` through their fixed macOS absolute paths as
+five canonical, non-overlapping command intervals. The containing interactive
+session begins before acquisition, which
 must complete before checksum. Performance uses
 candidate-generated `tanks3d-performance-log-v2` raw integer windows plus a
 `tanks3d-performance-qa-receipt-v1`. The receipt binds the tagged ZIP, embedded
@@ -178,7 +179,9 @@ each one. The interactive compiler is stricter for supporting captures: its six
 category groups must use distinct repository paths, even when files were
 exported from one longer source recording. Main-menu, one-player, and two-player
 evidence must each attach its own recording of at least 64 KiB; none may reuse a
-path or substitute a still image for that recording.
+path or substitute a still image for that recording. Every recording must be no
+larger than 95 MB so the required evidence commit remains below ordinary
+GitHub Git's 100 MiB single-file rejection threshold.
 
 ### Interactive observation compiler
 
@@ -197,7 +200,7 @@ time, exact `checks_confirmed`, and notes; do not add keys. Add one or more real
 PNG/recording paths to each of the six category-level
 `supporting_artifacts` groups. There is no bulk-PASS option. Any missing,
 reordered, or non-PASS row makes compilation fail. PNG files must decode as
-valid PNGs; each recording must contain at least 64 KiB. Placeholder identities,
+valid PNGs; each recording must contain 64 KiB–95 MB. Placeholder identities,
 future timestamps, and notes that say a PASS was blocked, skipped, pending, or
 not exercised are rejected during compilation.
 
@@ -251,25 +254,110 @@ check from a clean worktree. The compiler does not update release prose,
 document hashes, known issues, audio, or approvals.
 
 This compiler covers main-menu/published-control evidence and the five live-play
-categories. The source-free Safari acquisition and five-command records remain
-outside it; keep those gates `NOT_RUN`/`BLOCKED` rather than copying synthetic
-fixtures or hand-authoring a false PASS.
+categories. Safari acquisition and Gatekeeper use a separate two-machine
+collector/compiler workflow; never copy synthetic fixtures or hand-author a
+PASS.
 
-Treat source-free launch QA and performance QA as separate gates. The Clean-Mac
-machine downloads only the staged candidate ZIP in Safari and must have no
-source checkout or Homebrew raylib. Before the quarantined app's first Finder
-launch, retain and inspect the downloaded ZIP, then expand it with Finder/Archive
-Utility rather than Terminal tools so app-quarantine propagation is part of the
-test. If Safari expands it automatically, record that path. If macOS offers it
-after a blocked launch, test **System Settings > Privacy & Security > Open
-Anyway**, authenticate, and confirm **Open** without disabling Gatekeeper or
-deleting extended attributes. The named
-performance-QA Mac may have a clean tagged checkout and Python, but the runner
+On the release workstation, prepare a new source-free kit from the already
+attested candidate and its exact staging URL:
+
+```sh
+make prepare-alpha-v2-clean-mac-qa-kit DIST_CHANNEL=alpha.N \
+  CLEAN_MAC_DOWNLOAD_URL='<recordable HTTPS URL ending in the candidate filename>'
+```
+
+The default output is
+`build/release-evidence/<tag>/clean-mac-kit/`. It must not already exist. The
+transfer kit contains only `START_HERE.command`, `clean-mac-plan.plist`,
+`README.txt`, and `kit-manifest.json`; it contains no source checkout and no
+candidate ZIP. Verify its manifest before transfer.
+The preparer re-reads all four published files and verifies their expected
+manifest bytes before it succeeds; transfer the four-file directory intact.
+Give that kit to a fresh Apple Silicon Mac. Do not clone the repository or
+install/run `make`, Python, Homebrew, or raylib there.
+
+Before starting, arrange a continuous system recording or external-camera
+recording that can show the Safari download, Finder extraction, first launch,
+actual Gatekeeper dialogs and launch path, and the main menu. Then follow the
+kit README and run the collector from Terminal with a brand-new destination:
+
+```sh
+/bin/zsh -f /path/to/clean-mac-kit/START_HERE.command \
+  /path/to/new-clean-mac-intake
+```
+
+The destination's real parent must already exist, while the final directory
+must not. The collector refuses replacement. A successful output contains
+exactly `clean-mac-plan.plist`, `clean-mac-intake.plist`, `where-froms.hex`,
+`checksum.stdout`, `checksum.stderr`, `zip-quarantine.stdout`,
+`zip-quarantine.stderr`, `app-quarantine.stdout`, `app-quarantine.stderr`,
+`codesign.stdout`, `codesign.stderr`, `spctl.stdout`, `spctl.stderr`, and the
+final empty `COMPLETE` marker. A `COMPLETE` marker means collection finished,
+not that the gate passed. The directory is mode `0700` and its files are mode
+`0600`; preserve those files as one unit. Keep the downloaded ZIP. Use Safari
+for the real HTTPS download and Finder/Archive Utility for extraction so
+quarantine propagation is tested. If Safari expands the ZIP automatically,
+record that path and still retain and inspect the ZIP. Never add, rewrite, or
+delete quarantine attributes.
+
+Launch the app from Finder. If macOS offers it after a blocked launch, test
+**System Settings > Privacy & Security > Open Anyway**, authenticate, and
+confirm **Open**. This must be a human action: do not automate Finder, System
+Settings, authentication, or the dialog. A nonzero `spctl` result is allowed
+for this ad-hoc-signed Alpha, but it must be recorded exactly and the documented
+narrow launch path must genuinely reach the main menu without changing the app
+signature or quarantine metadata.
+
+Return the untouched raw intake directory and capture to the release
+workstation. A reviewer other than the tester compiles a new persistent pack:
+
+```sh
+make compile-alpha-v2-clean-mac-evidence DIST_CHANNEL=alpha.N \
+  CLEAN_MAC_INTAKE_DIR=/absolute/path/to/raw-intake \
+  CLEAN_MAC_MEDIA=/absolute/path/to/gatekeeper-capture.mov \
+  CLEAN_MAC_REVIEWER='Reviewer Name' \
+  CLEAN_MAC_REVIEWER_SIGNATURE='Reviewer Name' \
+  CLEAN_MAC_REVIEWED_AT_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  CLEAN_MAC_REVIEW_NOTES='Safari, Finder, dialog, and main menu reviewed.' \
+  CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED=yes
+```
+
+Set `CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED=yes` only after comparing the
+actual dialog and launch path with the candidate's release-note wording.
+Run the compiler immediately after that review so the generated UTC value
+follows the recorded session completion time.
+
+By default this creates
+`docs/assets/releases/<tag>/evidence/clean-mac-compiled/`. It refuses existing
+output and rejects test-mode or incomplete intake. The pack contains
+`clean-mac-plan.plist`, `clean-mac-intake.plist`, `where-froms.hex`,
+the same ten command `.stdout`/`.stderr` transcripts,
+`browser-acquisition.json`, `command-log.json`,
+`clean-mac-compiler-receipt.json`, `gatekeeper-launch-session.json`, the copied
+`gatekeeper-launch-recording.<ext>`, and `status.next.json`. A static PNG is not
+valid launch-path media: use a 64 KiB–95 MB MOV, MP4, or M4V file with a
+structurally valid ISO-BMFF container, positive duration, video track, and
+sample table. These are exactly 19 output files;
+the 18 files other than `status.next.json` are attached to
+`gatekeeper_launch` evidence. It does not replace the canonical status. Review
+the media and generated records, commit them, and from the resulting clean
+worktree run:
+
+```sh
+make check-alpha-release-evidence DIST_CHANNEL=alpha.N \
+  RELEASE_STATUS_FILE="$PWD/docs/assets/releases/<tag>/evidence/clean-mac-compiled/status.next.json"
+```
+
+This `--allow-blocked` path checks honest integration while unrelated gates may
+remain blocked. Promote `status.next.json` deliberately only after review; do
+not treat compilation or a successful allow-blocked check as release approval.
+
+Treat source-free launch QA and performance QA as separate gates. The named
+performance-QA Mac may have a clean tagged checkout and Python, but its runner
 executes only a private, hash-checked snapshot of the static candidate ZIP.
-These may be different Macs. If one physical Mac is used,
-finish and sign the Clean-Mac/Gatekeeper gate before installing or cloning the
-performance tooling; do not claim `source_checkout_absent` for the later
-performance phase.
+These may be different Macs. If one physical Mac is used, finish and sign the
+Clean-Mac/Gatekeeper gate before installing or cloning performance tooling; do
+not claim `source_checkout_absent` for the later performance phase.
 
 Under v2, Clean-Mac status binds only `gatekeeper_launch`; do not attach or reuse
 the `main_menu_and_advanced_settings` control session for that gate. The
@@ -297,6 +385,7 @@ the executed bundle. Add all four generated files to the
 persistent audit location. Before any evidence category becomes `PASS`, copy
 every referenced JSON, log, report, recording, and performance file into
 `docs/assets/releases/<tag>/evidence/` without overwriting an existing file.
+No committed recording may exceed 95 MB.
 Update the artifact paths and SHA-256 values in the status JSON, then commit
 those files with the versioned report and page. The seven publication PNGs are
 already copied into `docs/assets/releases/<tag>/` by the initializer.

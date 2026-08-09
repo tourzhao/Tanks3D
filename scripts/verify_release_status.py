@@ -16,6 +16,7 @@ import json
 import math
 import os
 from pathlib import Path
+import plistlib
 import re
 import shlex
 import stat
@@ -26,6 +27,14 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from urllib.parse import unquote, urlsplit
 import zipfile
 import zlib
+import xml.etree.ElementTree as ET
+
+
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+import validate_media_recording as recording_validator  # noqa: E402
 
 
 class VerificationError(Exception):
@@ -470,6 +479,124 @@ BROWSER_ACQUISITION_KEYS = [
     "zip_quarantine_agent",
     "signature",
 ]
+CLEAN_MAC_PLAN_SCHEMA = "tanks3d-clean-mac-plan-v1"
+CLEAN_MAC_INTAKE_SCHEMA = "tanks3d-clean-mac-intake-v1"
+CLEAN_MAC_PLAN_KEYS = [
+    "schema",
+    "requirements_profile",
+    "candidate_tag",
+    "candidate_filename",
+    "candidate_sha256",
+    "download_url",
+    "minimum_macos_version",
+    "collector_sha256",
+    "prepared_at_utc",
+    "session_nonce",
+]
+CLEAN_MAC_INTAKE_KEYS = [
+    "schema",
+    "plan_sha256",
+    "session_nonce",
+    "collector_sha256",
+    "candidate_filename",
+    "candidate_sha256",
+    "download_url",
+    "tester",
+    "tester_signature",
+    "machine",
+    "machine_details",
+    "session_started_at_utc",
+    "session_completed_at_utc",
+    "acquisition",
+    "commands",
+    "observations",
+    "notes",
+    "complete",
+    "test_mode",
+]
+CLEAN_MAC_MACHINE_DETAIL_KEYS = [
+    "mac_model",
+    "chip",
+    "uname_machine",
+    "ram",
+    "macos_version",
+    "macos_build",
+    "clean_machine_method",
+    "prior_app_absent",
+    "prior_approval_absent",
+    "minimum_macos_met",
+    "source_checkout_absent",
+    "homebrew_raylib_unused",
+]
+CLEAN_MAC_ACQUISITION_KEYS = [
+    "client",
+    "started_at_utc",
+    "completed_at_utc",
+    "zip_quarantine_agent",
+    "quarantine_timestamp_utc",
+    "where_froms_url",
+    "where_froms_sha256",
+]
+CLEAN_MAC_OBSERVATION_KEYS = [
+    "first_finder_launch",
+    "dialog_text",
+    "documented_launch_path",
+    "main_menu_reached",
+    "signature_preserved",
+    "conclusion",
+]
+CLEAN_MAC_COMPILER_RECEIPT_SCHEMA = (
+    "tanks3d-clean-mac-compiler-receipt-v1"
+)
+CLEAN_MAC_COMPILER_RECEIPT_PRODUCER = (
+    "Tanks3D Alpha Clean-Mac Evidence Compiler"
+)
+CLEAN_MAC_COMPILER_RECEIPT_KEYS = [
+    "schema",
+    "producer",
+    "candidate_sha256",
+    "session_nonce",
+    "collector_sha256",
+    "tester",
+    "tester_signature",
+    "reviewer",
+    "reviewer_signature",
+    "reviewed_at_utc",
+    "review_notes",
+    "files",
+]
+CLEAN_MAC_COMPILER_FILE_REFERENCE_KEYS = ["path", "sha256"]
+CLEAN_MAC_COMPILER_FILE_IDS = [
+    "plan",
+    "intake",
+    "where_froms",
+    "checksum_stdout",
+    "checksum_stderr",
+    "zip_quarantine_stdout",
+    "zip_quarantine_stderr",
+    "app_quarantine_stdout",
+    "app_quarantine_stderr",
+    "codesign_stdout",
+    "codesign_stderr",
+    "spctl_stdout",
+    "spctl_stderr",
+    "browser_acquisition",
+    "command_log",
+    "media",
+]
+CLEAN_MAC_SYSTEM_COMMAND_PATHS = {
+    "shasum": "/usr/bin/shasum",
+    "xattr": "/usr/bin/xattr",
+    "codesign": "/usr/bin/codesign",
+    "spctl": "/usr/sbin/spctl",
+}
+CLEAN_MAC_COLLECTOR_SHA256 = (
+    "0cfef08c5a016a7b36a9d46757710ec00aad4faa679dc2bb06e1b8d7dfd70b8d"
+)
+CLEAN_MAC_MEDIA_KIND = "recording"
+CLEAN_MAC_MINIMUM_RECORDING_BYTES = 64 * 1024
+CLEAN_MAC_MAXIMUM_RECORDING_BYTES = 95_000_000
+CLEAN_MAC_RECORDING_EXTENSIONS = [".mov", ".mp4", ".m4v"]
 PERFORMANCE_LOG_SCHEMA = "tanks3d-performance-log-v1"
 PERFORMANCE_LOG_KEYS = [
     "schema",
@@ -655,6 +782,34 @@ CANONICAL_REQUIREMENTS_V2.update(
         "clean_mac_download_client": V2_CLEAN_MAC_DOWNLOAD_CLIENT,
         "browser_acquisition_schema": BROWSER_ACQUISITION_SCHEMA,
         "browser_acquisition_keys": BROWSER_ACQUISITION_KEYS,
+        "clean_mac_plan_schema": CLEAN_MAC_PLAN_SCHEMA,
+        "clean_mac_intake_schema": CLEAN_MAC_INTAKE_SCHEMA,
+        "clean_mac_plan_keys": CLEAN_MAC_PLAN_KEYS,
+        "clean_mac_intake_keys": CLEAN_MAC_INTAKE_KEYS,
+        "clean_mac_machine_detail_keys": CLEAN_MAC_MACHINE_DETAIL_KEYS,
+        "clean_mac_acquisition_keys": CLEAN_MAC_ACQUISITION_KEYS,
+        "clean_mac_observation_keys": CLEAN_MAC_OBSERVATION_KEYS,
+        "clean_mac_compiler_receipt_schema": (
+            CLEAN_MAC_COMPILER_RECEIPT_SCHEMA
+        ),
+        "clean_mac_compiler_receipt_producer": (
+            CLEAN_MAC_COMPILER_RECEIPT_PRODUCER
+        ),
+        "clean_mac_compiler_receipt_keys": CLEAN_MAC_COMPILER_RECEIPT_KEYS,
+        "clean_mac_compiler_file_reference_keys": (
+            CLEAN_MAC_COMPILER_FILE_REFERENCE_KEYS
+        ),
+        "clean_mac_compiler_file_ids": CLEAN_MAC_COMPILER_FILE_IDS,
+        "clean_mac_system_command_paths": CLEAN_MAC_SYSTEM_COMMAND_PATHS,
+        "clean_mac_collector_sha256": CLEAN_MAC_COLLECTOR_SHA256,
+        "clean_mac_media_kind": CLEAN_MAC_MEDIA_KIND,
+        "clean_mac_minimum_recording_bytes": (
+            CLEAN_MAC_MINIMUM_RECORDING_BYTES
+        ),
+        "clean_mac_maximum_recording_bytes": (
+            CLEAN_MAC_MAXIMUM_RECORDING_BYTES
+        ),
+        "clean_mac_recording_extensions": CLEAN_MAC_RECORDING_EXTENSIONS,
         "command_log_command_ids": V2_COMMAND_LOG_COMMAND_IDS,
         "performance_thresholds": PERFORMANCE_THRESHOLDS_V2,
         "performance_log_schema": PERFORMANCE_LOG_V2_SCHEMA,
@@ -781,6 +936,14 @@ ISSUE_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$")
 UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 QUARANTINE_RE = re.compile(r"^[0-9A-Fa-f]{4};[^;\r\n]+;[^;\r\n]+(?:;[^\r\n]*)?$")
+V2_QUARANTINE_RE = re.compile(
+    r"^[0-9A-Fa-f]{4};([0-9A-Fa-f]+);([^;\r\n]+);[^\r\n]*$"
+)
+CLEAN_MAC_PLIST_DOCTYPE = (
+    b'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+    b'"http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+)
+MAXIMUM_CLEAN_MAC_PLIST_BYTES = 4 * 1024 * 1024
 LEGACY_NUMERIC_HOST_RE = re.compile(
     r"^(?:0[xX][0-9A-Fa-f]+|[0-9]+)(?:\.(?:0[xX][0-9A-Fa-f]+|[0-9]+))*$"
 )
@@ -790,6 +953,7 @@ DNS_LABEL_RE = re.compile(
 PNG_KINDS = {"png"}
 ARTIFACT_KINDS = {"png", "log", "recording", "report"}
 MINIMUM_RECORDING_BYTES = 64 * 1024
+MAXIMUM_RECORDING_BYTES = CLEAN_MAC_MAXIMUM_RECORDING_BYTES
 
 
 def _reject_duplicate_pairs(pairs: Sequence[Tuple[str, Any]]) -> Dict[str, Any]:
@@ -1267,12 +1431,20 @@ def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, s
         raise VerificationError("{} hash mismatch".format(context))
     if kind in PNG_KINDS:
         verify_png(path, context)
-    elif kind == "recording" and path.stat().st_size < MINIMUM_RECORDING_BYTES:
-        raise VerificationError(
-            "{} recording must be at least {} bytes".format(
-                context, MINIMUM_RECORDING_BYTES
+    elif kind == "recording":
+        recording_size = path.stat().st_size
+        if recording_size < MINIMUM_RECORDING_BYTES:
+            raise VerificationError(
+                "{} recording must be at least {} bytes".format(
+                    context, MINIMUM_RECORDING_BYTES
+                )
             )
-        )
+        if recording_size > MAXIMUM_RECORDING_BYTES:
+            raise VerificationError(
+                "{} recording must be no larger than {} bytes".format(
+                    context, MAXIMUM_RECORDING_BYTES
+                )
+            )
     return (
         require_string(artifact["path"], "{}.path".format(context)),
         digest,
@@ -1283,6 +1455,8 @@ def validate_artifact(root: Path, value: Any, context: str) -> Tuple[str, str, s
 
 def load_structured_artifact(path: Path, context: str) -> Optional[Mapping[str, Any]]:
     """Return a JSON object for structured evidence, or None for binary/text evidence."""
+    if path.suffix.lower() != ".json":
+        return None
     try:
         if path.stat().st_size > 32 * 1024 * 1024:
             raise VerificationError("{} is unexpectedly large".format(context))
@@ -1297,6 +1471,344 @@ def load_structured_artifact(path: Path, context: str) -> Optional[Mapping[str, 
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise VerificationError("{} is malformed structured JSON: {}".format(context, exc))
     return require_object(value, context)
+
+
+def parse_clean_mac_plist_node(
+    node: ET.Element, context: str, depth: int = 0
+) -> Any:
+    if depth > 16:
+        raise VerificationError("{} is nested too deeply".format(context))
+    if node.attrib or (node.tail is not None and node.tail.strip()):
+        raise VerificationError(
+            "{} contains unsupported XML attributes or text".format(context)
+        )
+    if node.tag == "string":
+        if list(node):
+            raise VerificationError("{} string has child elements".format(context))
+        return node.text or ""
+    if node.tag == "integer":
+        if (
+            list(node)
+            or node.text is None
+            or re.fullmatch(r"-?[0-9]+", node.text) is None
+        ):
+            raise VerificationError("{} has an invalid integer".format(context))
+        return int(node.text)
+    if node.tag in {"true", "false"}:
+        if list(node) or (node.text is not None and node.text.strip()):
+            raise VerificationError("{} has an invalid boolean".format(context))
+        return node.tag == "true"
+    if node.tag == "array":
+        if node.text is not None and node.text.strip():
+            raise VerificationError("{} array has unexpected text".format(context))
+        return [
+            parse_clean_mac_plist_node(
+                child, "{}[{}]".format(context, index), depth + 1
+            )
+            for index, child in enumerate(list(node))
+        ]
+    if node.tag == "dict":
+        if node.text is not None and node.text.strip():
+            raise VerificationError(
+                "{} dictionary has unexpected text".format(context)
+            )
+        children = list(node)
+        if len(children) % 2:
+            raise VerificationError(
+                "{} dictionary is missing a value".format(context)
+            )
+        result: Dict[str, Any] = {}
+        for index in range(0, len(children), 2):
+            key_node = children[index]
+            if key_node.tag != "key" or list(key_node) or key_node.attrib:
+                raise VerificationError(
+                    "{} dictionary has an invalid key".format(context)
+                )
+            key = key_node.text or ""
+            if not key or key in result:
+                raise VerificationError(
+                    "{} dictionary has a duplicate or empty key".format(context)
+                )
+            result[key] = parse_clean_mac_plist_node(
+                children[index + 1],
+                "{}.{}".format(context, key),
+                depth + 1,
+            )
+        return result
+    raise VerificationError(
+        "{} contains unsupported plist element {!r}".format(context, node.tag)
+    )
+
+
+def load_clean_mac_xml_plist(path: Path, context: str) -> Mapping[str, Any]:
+    try:
+        if path.stat().st_size > MAXIMUM_CLEAN_MAC_PLIST_BYTES:
+            raise VerificationError("{} is unexpectedly large".format(context))
+        data = path.read_bytes()
+    except OSError as exc:
+        raise VerificationError("cannot read {}: {}".format(context, exc))
+    if b"<!ENTITY" in data.upper():
+        raise VerificationError("{} contains an XML entity declaration".format(context))
+    if re.findall(br"<!DOCTYPE[^>]*>", data) != [CLEAN_MAC_PLIST_DOCTYPE]:
+        raise VerificationError(
+            "{} does not use the canonical Apple plist declaration".format(context)
+        )
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise VerificationError("{} is not valid XML: {}".format(context, exc))
+    if root.tag != "plist" or root.attrib != {"version": "1.0"}:
+        raise VerificationError("{} does not use plist version 1.0".format(context))
+    if root.text is not None and root.text.strip():
+        raise VerificationError("{} has unexpected root text".format(context))
+    children = list(root)
+    if len(children) != 1:
+        raise VerificationError(
+            "{} must contain exactly one root value".format(context)
+        )
+    return require_object(
+        parse_clean_mac_plist_node(children[0], context), context
+    )
+
+
+def validate_clean_mac_where_froms(path: Path, expected_url: str) -> None:
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            raise VerificationError("clean-Mac where-froms is unexpectedly large")
+        text = path.read_text(encoding="ascii")
+        raw = bytes.fromhex("".join(text.split()))
+        values = plistlib.loads(raw)
+    except (OSError, UnicodeError, ValueError, plistlib.InvalidFileException) as exc:
+        raise VerificationError(
+            "clean-Mac where-froms is not a valid encoded plist: {}".format(exc)
+        )
+    if (
+        not isinstance(values, list)
+        or not values
+        or any(not isinstance(value, str) for value in values)
+        or expected_url not in values
+    ):
+        raise VerificationError(
+            "clean-Mac where-froms does not contain the exact download URL"
+        )
+
+
+def require_clean_mac_affirmative(value: Any, context: str) -> str:
+    text = require_nonplaceholder(value, context).lower()
+    if text not in {"yes", "true", "pass", "verified"}:
+        raise VerificationError(
+            "{} must explicitly record yes/true/PASS/verified".format(context)
+        )
+    return text
+
+
+def validate_clean_mac_raw_records(
+    status: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    files: Mapping[str, Any],
+    artifact_map: Mapping[str, Tuple[str, str, str, Path]],
+    artifact_name: str,
+    artifact_sha256: str,
+    acquisition: Mapping[str, Any],
+    log: Mapping[str, Any],
+    session: Mapping[str, Any],
+    interactive: Mapping[str, Any],
+) -> None:
+    plan = load_clean_mac_xml_plist(
+        artifact_map[files["plan"]["path"]][3], "clean-Mac plan"
+    )
+    intake = load_clean_mac_xml_plist(
+        artifact_map[files["intake"]["path"]][3], "clean-Mac intake"
+    )
+    require_exact_keys(plan, set(CLEAN_MAC_PLAN_KEYS), "clean-Mac plan")
+    require_exact_keys(intake, set(CLEAN_MAC_INTAKE_KEYS), "clean-Mac intake")
+    if (
+        plan["schema"] != CLEAN_MAC_PLAN_SCHEMA
+        or plan["requirements_profile"] != "macos-alpha-v2"
+    ):
+        raise VerificationError("clean-Mac plan schema/profile is not canonical")
+    release = require_object(status["release"], "status.release")
+    clean = require_object(status["clean_mac"]["details"], "status.clean_mac.details")
+    gate = require_object(status["gatekeeper"]["details"], "status.gatekeeper.details")
+    plan_expectations = {
+        "candidate_tag": release["tag"],
+        "candidate_filename": artifact_name,
+        "candidate_sha256": artifact_sha256,
+        "download_url": clean["download_url"],
+        "collector_sha256": CLEAN_MAC_COLLECTOR_SHA256,
+        "session_nonce": receipt["session_nonce"],
+    }
+    for key, expected in plan_expectations.items():
+        if plan[key] != expected:
+            raise VerificationError(
+                "clean-Mac plan {} is not candidate-bound".format(key)
+            )
+    deployment = re.search(r"-macos([0-9]+(?:\.[0-9]+)*)\.zip$", artifact_name)
+    if deployment is None or plan["minimum_macos_version"] != deployment.group(1):
+        raise VerificationError(
+            "clean-Mac plan minimum macOS does not match the candidate"
+        )
+    prepared = timestamp_value(
+        require_timestamp(plan["prepared_at_utc"], "clean-Mac plan.prepared_at_utc")
+    )
+    session_started = timestamp_value(
+        require_timestamp(
+            session["started_at_utc"], "clean-Mac session.started_at_utc"
+        )
+    )
+    if prepared > session_started:
+        raise VerificationError("clean-Mac plan was prepared after the session began")
+
+    if intake["schema"] != CLEAN_MAC_INTAKE_SCHEMA:
+        raise VerificationError("clean-Mac intake schema is not canonical")
+    intake_expectations = {
+        "plan_sha256": files["plan"]["sha256"],
+        "session_nonce": receipt["session_nonce"],
+        "collector_sha256": CLEAN_MAC_COLLECTOR_SHA256,
+        "candidate_filename": artifact_name,
+        "candidate_sha256": artifact_sha256,
+        "download_url": plan["download_url"],
+        "tester": interactive["tester"],
+        "tester_signature": interactive["signature"],
+        "machine": interactive["machine"],
+        "session_started_at_utc": session["started_at_utc"],
+        "session_completed_at_utc": session["completed_at_utc"],
+    }
+    for key, expected in intake_expectations.items():
+        if intake[key] != expected:
+            raise VerificationError(
+                "clean-Mac intake {} does not match its evidence".format(key)
+            )
+    if intake["complete"] is not True or intake["test_mode"] is not False:
+        raise VerificationError(
+            "clean-Mac intake must be complete and must not be test mode"
+        )
+
+    machine_details = require_object(
+        intake["machine_details"], "clean-Mac intake.machine_details"
+    )
+    require_exact_keys(
+        machine_details,
+        set(CLEAN_MAC_MACHINE_DETAIL_KEYS),
+        "clean-Mac intake.machine_details",
+    )
+    for key in CLEAN_MAC_MACHINE_DETAIL_KEYS:
+        value = require_nonplaceholder(
+            machine_details[key], "clean-Mac intake.machine_details.{}".format(key)
+        )
+        if clean[key] != value:
+            raise VerificationError(
+                "clean-Mac machine detail {} contradicts status".format(key)
+            )
+    for key in (
+        "prior_app_absent",
+        "prior_approval_absent",
+        "minimum_macos_met",
+        "source_checkout_absent",
+        "homebrew_raylib_unused",
+    ):
+        require_clean_mac_affirmative(
+            machine_details[key], "clean-Mac intake.machine_details.{}".format(key)
+        )
+
+    raw_acquisition = require_object(
+        intake["acquisition"], "clean-Mac intake.acquisition"
+    )
+    require_exact_keys(
+        raw_acquisition,
+        set(CLEAN_MAC_ACQUISITION_KEYS),
+        "clean-Mac intake.acquisition",
+    )
+    acquisition_expectations = {
+        "client": acquisition["client"],
+        "started_at_utc": acquisition["started_at_utc"],
+        "completed_at_utc": acquisition["completed_at_utc"],
+        "zip_quarantine_agent": acquisition["zip_quarantine_agent"],
+        "where_froms_url": plan["download_url"],
+        "where_froms_sha256": files["where_froms"]["sha256"],
+    }
+    for key, expected in acquisition_expectations.items():
+        if raw_acquisition[key] != expected:
+            raise VerificationError(
+                "clean-Mac intake acquisition {} is not exact".format(key)
+            )
+    require_timestamp(
+        raw_acquisition["quarantine_timestamp_utc"],
+        "clean-Mac intake.acquisition.quarantine_timestamp_utc",
+    )
+    validate_clean_mac_where_froms(
+        artifact_map[files["where_froms"]["path"]][3], plan["download_url"]
+    )
+
+    raw_commands = require_array(intake["commands"], "clean-Mac intake.commands")
+    if raw_commands != log["commands"]:
+        raise VerificationError(
+            "clean-Mac intake commands do not exactly match the command log"
+        )
+    zip_command = require_object(raw_commands[1], "clean-Mac intake.commands[1]")
+    quarantine = V2_QUARANTINE_RE.fullmatch(
+        require_string(zip_command["stdout"], "clean-Mac ZIP quarantine stdout").strip()
+    )
+    if quarantine is None:
+        raise VerificationError("clean-Mac ZIP quarantine output is not canonical")
+    try:
+        quarantine_time = _datetime.datetime.fromtimestamp(
+            int(quarantine.group(1), 16), tz=_datetime.timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, OverflowError, OSError):
+        raise VerificationError("clean-Mac ZIP quarantine timestamp is invalid")
+    if raw_acquisition["quarantine_timestamp_utc"] != quarantine_time:
+        raise VerificationError(
+            "clean-Mac intake quarantine timestamp is not derived from xattr"
+        )
+
+    observations = require_object(
+        intake["observations"], "clean-Mac intake.observations"
+    )
+    require_exact_keys(
+        observations,
+        set(CLEAN_MAC_OBSERVATION_KEYS),
+        "clean-Mac intake.observations",
+    )
+    for key in CLEAN_MAC_OBSERVATION_KEYS:
+        if observations[key] != gate[key]:
+            raise VerificationError(
+                "clean-Mac intake observation {} contradicts status".format(key)
+            )
+    for key in ("first_finder_launch", "dialog_text", "documented_launch_path"):
+        require_nonplaceholder(
+            observations[key], "clean-Mac intake.observations.{}".format(key)
+        )
+        reject_blocking_language(
+            observations[key], "clean-Mac intake.observations.{}".format(key)
+        )
+    require_clean_mac_affirmative(
+        observations["main_menu_reached"],
+        "clean-Mac intake.observations.main_menu_reached",
+    )
+    require_clean_mac_affirmative(
+        observations["signature_preserved"],
+        "clean-Mac intake.observations.signature_preserved",
+    )
+    if observations["conclusion"] != "PASS":
+        raise VerificationError("clean-Mac intake conclusion must be PASS")
+    notes = require_nonplaceholder(intake["notes"], "clean-Mac intake.notes")
+    reject_blocking_language(notes, "clean-Mac intake.notes")
+
+
+def validate_clean_mac_recording(path: Path) -> None:
+    """Require stable structural ISO-BMFF evidence, not padded arbitrary bytes."""
+
+    try:
+        recording_validator.validate_recording(
+            path,
+            CLEAN_MAC_MINIMUM_RECORDING_BYTES,
+            CLEAN_MAC_MAXIMUM_RECORDING_BYTES,
+        )
+    except recording_validator.RecordingValidationError as exc:
+        raise VerificationError(
+            "clean-Mac launch recording is not structurally valid: {}".format(exc)
+        )
 
 
 def require_json_number(value: Any, context: str) -> float:
@@ -2265,7 +2777,27 @@ def validate_structured_interactive_evidence(
             or category["coverage_refs"] != interactive["coverage_refs"]
         ):
             raise VerificationError("interactive session category contradicts release status")
-        hashes = validate_string_array(category["artifact_sha256s"], "interactive session artifact_sha256s")
+        if (
+            requirements_profile == "macos-alpha-v2"
+            and evidence_id == "gatekeeper_launch"
+        ):
+            hashes = [
+                require_sha256(
+                    value,
+                    "interactive session artifact_sha256s[{}]".format(index),
+                )
+                for index, value in enumerate(
+                    require_array(
+                        category["artifact_sha256s"],
+                        "interactive session artifact_sha256s",
+                    )
+                )
+            ]
+        else:
+            hashes = validate_string_array(
+                category["artifact_sha256s"],
+                "interactive session artifact_sha256s",
+            )
         expected_hashes = [
             artifact["sha256"]
             for artifact in evidence["artifacts"]
@@ -2477,6 +3009,182 @@ def validate_clean_mac_command_log(
                 "v2 Clean-Mac PASS requires exactly one structured browser acquisition record"
             )
         acquisition = acquisitions[0]
+        receipt_items: List[
+            Tuple[Tuple[str, str, str, Path], Mapping[str, Any]]
+        ] = []
+        for artifact in evidence_map["gatekeeper_launch"]["artifacts"]:
+            normalized = artifact_map[artifact["path"]]
+            parsed = load_structured_artifact(
+                normalized[3], "evidence artifact " + normalized[0]
+            )
+            if (
+                parsed is not None
+                and parsed.get("schema") == CLEAN_MAC_COMPILER_RECEIPT_SCHEMA
+            ):
+                receipt_items.append((normalized, parsed))
+        if len(receipt_items) != 1:
+            raise VerificationError(
+                "v2 Clean-Mac PASS requires exactly one compiler receipt"
+            )
+        receipt_artifact, receipt = receipt_items[0]
+        if receipt_artifact[2] != "report":
+            raise VerificationError("clean-Mac compiler receipt must be a report artifact")
+        require_exact_keys(
+            receipt,
+            set(CLEAN_MAC_COMPILER_RECEIPT_KEYS),
+            "clean-Mac compiler receipt",
+        )
+        if receipt["producer"] != CLEAN_MAC_COMPILER_RECEIPT_PRODUCER:
+            raise VerificationError("clean-Mac compiler receipt producer is not canonical")
+        if receipt["candidate_sha256"] != artifact_sha256:
+            raise VerificationError("clean-Mac compiler receipt candidate does not match")
+        expected_collector_sha256 = CANONICAL_REQUIREMENTS_V2.get(
+            "clean_mac_collector_sha256"
+        )
+        if (
+            not isinstance(expected_collector_sha256, str)
+            or receipt["collector_sha256"] != expected_collector_sha256
+        ):
+            raise VerificationError(
+                "clean-Mac compiler receipt does not bind the canonical collector"
+            )
+        nonce = require_string(
+            receipt["session_nonce"], "clean-Mac compiler receipt.session_nonce"
+        )
+        if re.fullmatch(r"[0-9a-f]{32}", nonce) is None:
+            raise VerificationError("clean-Mac compiler receipt session nonce is invalid")
+        receipt_identity = {
+            "tester": interactive["tester"],
+            "tester_signature": interactive["signature"],
+            "reviewer": evidence_map["gatekeeper_launch"]["reviewer"],
+            "reviewed_at_utc": evidence_map["gatekeeper_launch"]["reviewed_at_utc"],
+            "review_notes": evidence_map["gatekeeper_launch"]["notes"],
+        }
+        for key, expected in receipt_identity.items():
+            if receipt[key] != expected:
+                raise VerificationError(
+                    "clean-Mac compiler receipt {} does not match evidence".format(
+                        key
+                    )
+                )
+        require_nonplaceholder(
+            receipt["reviewer_signature"],
+            "clean-Mac compiler receipt.reviewer_signature",
+        )
+        if receipt["reviewer_signature"] != receipt["reviewer"]:
+            raise VerificationError(
+                "clean-Mac compiler receipt reviewer signature is not exact"
+            )
+        files = require_object(
+            receipt["files"], "clean-Mac compiler receipt.files"
+        )
+        require_exact_keys(
+            files,
+            set(CLEAN_MAC_COMPILER_FILE_IDS),
+            "clean-Mac compiler receipt.files",
+        )
+        expected_file_kinds = {
+            "plan": "report",
+            "intake": "report",
+            "where_froms": "log",
+            "checksum_stdout": "log",
+            "checksum_stderr": "log",
+            "zip_quarantine_stdout": "log",
+            "zip_quarantine_stderr": "log",
+            "app_quarantine_stdout": "log",
+            "app_quarantine_stderr": "log",
+            "codesign_stdout": "log",
+            "codesign_stderr": "log",
+            "spctl_stdout": "log",
+            "spctl_stderr": "log",
+            "browser_acquisition": "report",
+            "command_log": "log",
+            "media": CLEAN_MAC_MEDIA_KIND,
+        }
+        gatekeeper_artifact_paths = {
+            artifact["path"]
+            for artifact in evidence_map["gatekeeper_launch"]["artifacts"]
+        }
+        seen_receipt_paths: Set[str] = set()
+        for file_id in CLEAN_MAC_COMPILER_FILE_IDS:
+            reference = require_object(
+                files[file_id],
+                "clean-Mac compiler receipt.files.{}".format(file_id),
+            )
+            require_exact_keys(
+                reference,
+                set(CLEAN_MAC_COMPILER_FILE_REFERENCE_KEYS),
+                "clean-Mac compiler receipt.files.{}".format(file_id),
+            )
+            path = require_string(
+                reference["path"],
+                "clean-Mac compiler receipt.files.{}.path".format(file_id),
+            )
+            digest = require_sha256(
+                reference["sha256"],
+                "clean-Mac compiler receipt.files.{}.sha256".format(file_id),
+            )
+            if path in seen_receipt_paths:
+                raise VerificationError("clean-Mac compiler receipt reuses a file path")
+            seen_receipt_paths.add(path)
+            attached = artifact_map.get(path)
+            if (
+                attached is None
+                or attached[1] != digest
+                or path not in gatekeeper_artifact_paths
+            ):
+                raise VerificationError(
+                    "clean-Mac compiler receipt file is not attached to Gatekeeper evidence with its hash"
+                )
+            expected_kind = expected_file_kinds.get(file_id)
+            if expected_kind is not None and attached[2] != expected_kind:
+                raise VerificationError(
+                    "clean-Mac compiler receipt file has the wrong artifact kind"
+                )
+        expected_basenames = {
+            "plan": "clean-mac-plan.plist",
+            "intake": "clean-mac-intake.plist",
+            "where_froms": "where-froms.hex",
+            "checksum_stdout": "checksum.stdout",
+            "checksum_stderr": "checksum.stderr",
+            "zip_quarantine_stdout": "zip-quarantine.stdout",
+            "zip_quarantine_stderr": "zip-quarantine.stderr",
+            "app_quarantine_stdout": "app-quarantine.stdout",
+            "app_quarantine_stderr": "app-quarantine.stderr",
+            "codesign_stdout": "codesign.stdout",
+            "codesign_stderr": "codesign.stderr",
+            "spctl_stdout": "spctl.stdout",
+            "spctl_stderr": "spctl.stderr",
+            "browser_acquisition": "browser-acquisition.json",
+            "command_log": "command-log.json",
+        }
+        for file_id, basename in expected_basenames.items():
+            if Path(files[file_id]["path"]).name != basename:
+                raise VerificationError(
+                    "clean-Mac compiler receipt uses a noncanonical filename"
+                )
+        media_basename = Path(files["media"]["path"]).name
+        if re.fullmatch(
+            r"gatekeeper-launch-recording\.[a-z0-9]{1,8}", media_basename
+        ) is None:
+            raise VerificationError(
+                "clean-Mac compiler receipt uses a noncanonical recording filename"
+            )
+        validate_clean_mac_recording(
+            artifact_map[files["media"]["path"]][3]
+        )
+        browser_from_receipt = load_structured_artifact(
+            artifact_map[files["browser_acquisition"]["path"]][3],
+            "clean-Mac compiler receipt browser acquisition",
+        )
+        command_from_receipt = load_structured_artifact(
+            artifact_map[files["command_log"]["path"]][3],
+            "clean-Mac compiler receipt command log",
+        )
+        if browser_from_receipt != acquisition or command_from_receipt != log:
+            raise VerificationError(
+                "clean-Mac compiler receipt does not reference the validated records"
+            )
     else:
         raise VerificationError("unsupported clean-Mac command-log profile")
     if len(commands) != len(expected_ids):
@@ -2513,6 +3221,48 @@ def validate_clean_mac_command_log(
         previous_completed = completed
         command_map[command["id"]] = dict(command, argv=argv)
 
+    if requirements_profile == "macos-alpha-v2":
+        for command_id in V2_COMMAND_LOG_COMMAND_IDS:
+            for stream in ("stdout", "stderr"):
+                file_id = "{}_{}".format(command_id, stream)
+                transcript_path = artifact_map[files[file_id]["path"]][3]
+                try:
+                    if transcript_path.stat().st_size > 4 * 1024 * 1024:
+                        raise VerificationError(
+                            "clean-Mac raw command transcript is unexpectedly large"
+                        )
+                    raw_text = transcript_path.read_bytes().decode("utf-8")
+                except UnicodeError as exc:
+                    raise VerificationError(
+                        "clean-Mac raw command transcript is not UTF-8: {}".format(
+                            exc
+                        )
+                    )
+                except OSError as exc:
+                    raise VerificationError(
+                        "cannot read clean-Mac raw command transcript: {}".format(
+                            exc
+                        )
+                    )
+                if raw_text != command_map[command_id][stream]:
+                    raise VerificationError(
+                        "clean-Mac raw {}.{} does not match the command log".format(
+                            command_id, stream
+                        )
+                    )
+        validate_clean_mac_raw_records(
+            status,
+            receipt,
+            files,
+            artifact_map,
+            artifact_name,
+            artifact_sha256,
+            acquisition,
+            log,
+            session,
+            interactive,
+        )
+
     clean = status["clean_mac"]["details"]
     gate = status["gatekeeper"]["details"]
     url = clean["download_url"].strip()
@@ -2529,7 +3279,7 @@ def validate_clean_mac_command_log(
         host_is_ascii = True
     except UnicodeEncodeError:
         host_is_ascii = False
-    host = raw_host.rstrip(".")
+    host = raw_host
     dns_labels = host.split(".")
     valid_dns_host = (
         len(host) <= 253
@@ -2557,12 +3307,16 @@ def validate_clean_mac_command_log(
         ".test",
         ".invalid",
         ".localhost",
+        ".local",
+        ".internal",
+        ".lan",
+        ".onion",
     )
     if (
         parsed_url.scheme != "https"
         or not host
         or not host_is_ascii
-        or raw_host.endswith("..")
+        or raw_host.endswith(".")
         or not valid_dns_host
         or parsed_port not in (None, 443)
         or address_literal is not None
@@ -2571,10 +3325,30 @@ def validate_clean_mac_command_log(
         or host.endswith(forbidden_host_suffixes)
         or any(token in host for token in ("fixture", "placeholder"))
         or parsed_url.username is not None
+        or parsed_url.password is not None
+        or parsed_url.query
         or parsed_url.fragment
-        or unquote(Path(parsed_url.path).name) != artifact_name
     ):
         raise VerificationError("status.clean_mac.details.download_url must be a non-test HTTPS candidate URL")
+    encoded_basename = Path(parsed_url.path).name
+    if re.search(r"%(?![0-9A-Fa-f]{2})", encoded_basename):
+        raise VerificationError(
+            "status.clean_mac.details.download_url has malformed percent encoding"
+        )
+    try:
+        decoded_basename = unquote(
+            encoded_basename, encoding="utf-8", errors="strict"
+        )
+    except UnicodeError as exc:
+        raise VerificationError(
+            "status.clean_mac.details.download_url filename is not valid UTF-8: {}".format(
+                exc
+            )
+        )
+    if decoded_basename != artifact_name:
+        raise VerificationError(
+            "status.clean_mac.details.download_url must name the candidate artifact"
+        )
     if clean["download_client"].strip() != expected_client:
         raise VerificationError(
             "status.clean_mac.details.download_client must be {} for the {} acquisition contract".format(
@@ -2637,11 +3411,14 @@ def validate_clean_mac_command_log(
             )
         for prefix in ("zip", "app"):
             quarantine = gate["{}_quarantine_output".format(prefix)].strip()
-            if QUARANTINE_RE.fullmatch(quarantine) is None:
+            quarantine_match = V2_QUARANTINE_RE.fullmatch(quarantine)
+            if quarantine_match is None:
                 raise VerificationError(
-                    "{} quarantine output is not a quarantine record".format(prefix)
+                    "{} quarantine output is not a canonical v2 quarantine record".format(
+                        prefix
+                    )
                 )
-            quarantine_agent = quarantine.split(";", 3)[2]
+            quarantine_agent = quarantine_match.group(2)
             if (
                 prefix == "zip"
                 and quarantine_agent != acquisition["zip_quarantine_agent"]
@@ -2649,12 +3426,54 @@ def validate_clean_mac_command_log(
                 raise VerificationError(
                     "ZIP quarantine agent does not match the Safari acquisition"
                 )
+            if prefix == "app" and quarantine_agent not in {
+                "Safari",
+                "Archive Utility",
+                "Finder",
+            }:
+                raise VerificationError(
+                    "app quarantine agent is not a supported Finder path"
+                )
+            if prefix == "zip":
+                try:
+                    quarantine_time = _datetime.datetime.fromtimestamp(
+                        int(quarantine_match.group(1), 16),
+                        tz=_datetime.timezone.utc,
+                    )
+                except (ValueError, OverflowError, OSError):
+                    raise VerificationError(
+                        "ZIP quarantine timestamp is not a valid epoch value"
+                    )
+                skew = _datetime.timedelta(seconds=5)
+                if not (
+                    acquisition_started - skew
+                    <= quarantine_time
+                    <= acquisition_completed + skew
+                ):
+                    raise VerificationError(
+                        "ZIP quarantine timestamp lies outside the Safari acquisition"
+                    )
     expected_argv = {
-        "checksum": ["shasum", "-a", "256", artifact_name],
-        "zip_quarantine": ["xattr", "-p", "com.apple.quarantine", artifact_name],
-        "app_quarantine": ["xattr", "-p", "com.apple.quarantine", "Tanks3D.app"],
+        "checksum": [
+            CLEAN_MAC_SYSTEM_COMMAND_PATHS["shasum"],
+            "-a",
+            "256",
+            artifact_name,
+        ],
+        "zip_quarantine": [
+            CLEAN_MAC_SYSTEM_COMMAND_PATHS["xattr"],
+            "-p",
+            "com.apple.quarantine",
+            artifact_name,
+        ],
+        "app_quarantine": [
+            CLEAN_MAC_SYSTEM_COMMAND_PATHS["xattr"],
+            "-p",
+            "com.apple.quarantine",
+            "Tanks3D.app",
+        ],
         "codesign": [
-            "codesign",
+            CLEAN_MAC_SYSTEM_COMMAND_PATHS["codesign"],
             "--verify",
             "--deep",
             "--strict",
@@ -2662,7 +3481,7 @@ def validate_clean_mac_command_log(
             "Tanks3D.app",
         ],
         "spctl": [
-            "spctl",
+            CLEAN_MAC_SYSTEM_COMMAND_PATHS["spctl"],
             "--assess",
             "--type",
             "execute",
@@ -2680,7 +3499,35 @@ def validate_clean_mac_command_log(
                 artifact_name,
                 url,
             ],
-            **expected_argv,
+            "checksum": ["shasum", "-a", "256", artifact_name],
+            "zip_quarantine": [
+                "xattr",
+                "-p",
+                "com.apple.quarantine",
+                artifact_name,
+            ],
+            "app_quarantine": [
+                "xattr",
+                "-p",
+                "com.apple.quarantine",
+                "Tanks3D.app",
+            ],
+            "codesign": [
+                "codesign",
+                "--verify",
+                "--deep",
+                "--strict",
+                "--verbose=4",
+                "Tanks3D.app",
+            ],
+            "spctl": [
+                "spctl",
+                "--assess",
+                "--type",
+                "execute",
+                "--verbose=4",
+                "Tanks3D.app",
+            ],
         }
     detail_commands = {
         "checksum": clean["checksum_command"],
@@ -2707,7 +3554,16 @@ def validate_clean_mac_command_log(
         and command_map["download"]["exit_code"] != 0
     ):
         raise VerificationError("download command must exit 0")
-    if artifact_sha256 not in command_map["checksum"]["stdout"] or artifact_name not in command_map["checksum"]["stdout"]:
+    checksum = command_map["checksum"]
+    if requirements_profile == "macos-alpha-v2":
+        if (
+            checksum["stdout"] != "{}  {}\n".format(artifact_sha256, artifact_name)
+            or checksum["stderr"] != ""
+        ):
+            raise VerificationError(
+                "checksum command log does not exactly bind the candidate digest"
+            )
+    elif artifact_sha256 not in checksum["stdout"] or artifact_name not in checksum["stdout"]:
         raise VerificationError("checksum command log does not bind the candidate digest")
     for command_id, output_key, exit_key in (
         ("zip_quarantine", "zip_quarantine_output", "zip_quarantine_exit_code"),
@@ -2722,9 +3578,16 @@ def validate_clean_mac_command_log(
             raise VerificationError("{} output contradicts command log".format(command_id))
     spctl = command_map["spctl"]
     spctl_text = (spctl["stdout"] + "\n" + spctl["stderr"]).lower()
-    expected_word = "accepted" if spctl["exit_code"] == 0 else "rejected"
-    if expected_word not in spctl_text:
-        raise VerificationError("spctl command log does not record its assessment outcome")
+    has_accepted = "accepted" in spctl_text
+    has_rejected = "rejected" in spctl_text
+    if has_accepted == has_rejected:
+        raise VerificationError(
+            "spctl command log must record exactly one assessment outcome"
+        )
+    if (spctl["exit_code"] == 0) != has_accepted:
+        raise VerificationError(
+            "spctl command log outcome contradicts its exit code"
+        )
 
 
 def validate_performance_log_v1(

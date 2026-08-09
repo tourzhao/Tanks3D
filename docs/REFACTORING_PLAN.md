@@ -1152,3 +1152,29 @@ release-verifier, fifteen v2-initializer, twenty-two evidence-compiler, and
 fifteen performance-runner tests pass; the 13/9/5 candidate rejection suites
 and both success paths remain green. Human one-/two-player, audio, 30-minute,
 and clean-Mac execution, plus approval and publication, remain release work.
+
+The fifty-first increment closes the source-free clean-Mac evidence workflow
+without changing gameplay, maps, or assets. The release workstation now creates
+a no-overwrite four-file transfer kit that binds the immutable candidate,
+public Safari URL, canonical collector SHA, fresh nonce, and all-NOT_RUN status.
+On a fresh Apple Silicon Mac, the signed-off shell collector writes exactly 14
+permission-restricted raw files while leaving the candidate out of the kit and
+never synthesizing or removing quarantine metadata. An independent reviewer
+then compiles exactly 19 persistent files: 18 Gatekeeper attachments plus an
+unpromoted `status.next.json`; its receipt binds the canonical 16-file subset.
+The final verifier independently parses the raw XML/binary plists, exact command
+streams, receipt membership, Safari/Finder quarantine agents, timestamps, URL,
+and candidate identity. A shared no-follow ISO-BMFF parser rejects padded-header
+stand-ins and requires a real movie structure with positive duration, media,
+video samples, and complete box boundaries. Public-URL policy is now identical
+across preparer, compiler, and verifier, and all committed recordings have a
+95 MB fail-closed ceiling so the documented ordinary-GitHub workflow cannot
+approve an unpushable evidence file. The command examples generate review UTC
+at execution time rather than embedding a stale date. Fifty-nine release-
+verifier, fifteen v2-initializer, twenty-two interactive-compiler, ten kit-
+preparer, four collector, thirteen clean-Mac-compiler, eleven media-validator,
+and fifteen performance-runner tests pass. The Alpha candidate gate also passes
+13 build rejections, nine strict-verifier rejections, five tagged-verifier
+rejections, and both success paths. Real candidate construction, human
+one-/two-player and audio QA, the 30-minute run, clean-Mac execution, approvals,
+and publication remain deliberately external release work.

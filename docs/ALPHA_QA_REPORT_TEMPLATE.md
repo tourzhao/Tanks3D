@@ -31,8 +31,10 @@
 | Automated gate log or CI run | NOT RECORDED — BLOCKED |
 
 The commit and tag must both exist and identify the exact source used for the
-artifact. If either is unavailable, stop: the Alpha is **BLOCKED**. Verify the
-downloaded files, not a similarly named local build:
+artifact. If either is unavailable, stop: the Alpha is **BLOCKED**. The
+following repository commands run only on the release workstation, never on
+the source-free Clean-Mac tester. Verify the downloaded files, not a similarly
+named local build:
 
 ```sh
 shasum -a 256 <artifact>.zip
@@ -40,9 +42,11 @@ make verify-tagged-alpha-candidate DIST_CHANNEL=<alpha.N>
 make check-alpha-release-evidence DIST_CHANNEL=<alpha.N>
 ```
 
-Compare the direct `shasum` output with the published sidecar. This exact
-three-argument checksum form is also the first command required in the
-Clean-Mac command log; do not substitute `shasum -c` there.
+Compare the direct `shasum` output with the published sidecar. The source-free
+Mac instead runs the standalone kit's `START_HERE.command`; it does not receive
+this checkout or run `make`. The collector executes this exact three-argument
+checksum form through `/usr/bin/shasum` as the first command in its Clean-Mac
+command log; do not substitute `shasum -c` there.
 
 The evidence command permits honest blockers and is not approval. After this
 report, its release page, evidence, known-issue review, audio decision, and both
@@ -77,6 +81,30 @@ and must not depend on the source checkout or Homebrew raylib.
 | Prior app/approval absent | NOT VERIFIED — BLOCKED |
 | Meets filename minimum macOS version | NOT VERIFIED — BLOCKED |
 | Source checkout absent / Homebrew raylib unused | NOT VERIFIED — BLOCKED |
+| QA-kit manifest and transfer method | NOT RECORDED — BLOCKED |
+| Raw intake directory and `COMPLETE` marker | NOT RECORDED — BLOCKED |
+| Continuous capture path and SHA-256 | NOT RECORDED — BLOCKED |
+| Independent reviewer, signature, and UTC review time | NOT RECORDED — BLOCKED |
+| Persistent compiled pack and `status.next.json` | NOT RECORDED — BLOCKED |
+
+The release workstation creates the no-overwrite kit with
+`make prepare-alpha-v2-clean-mac-qa-kit`, an exact
+`CLEAN_MAC_DOWNLOAD_URL`, and the candidate's `DIST_CHANNEL`. The kit contains
+only `START_HERE.command`, `clean-mac-plan.plist`, `README.txt`, and
+`kit-manifest.json`—not the candidate or repository. On the fresh test Mac,
+begin the capture and run:
+
+```sh
+/bin/zsh -f /path/to/clean-mac-kit/START_HERE.command \
+  /path/to/new-clean-mac-intake
+```
+
+Use an absent destination beneath an existing real parent. The collector never
+overwrites evidence and the final `COMPLETE` file records completion, not PASS.
+This Mac must not clone the repository or install/run `make`, Python, Homebrew,
+or raylib. Record the complete Safari-to-main-menu path with system recording
+or an external camera; a static PNG is insufficient. Preserve a 64 KiB–95 MB
+MOV, MP4, or M4V file with a structurally valid ISO-BMFF video container.
 
 Download the exact staged candidate asset over HTTPS with Safari and record
 `Safari` as the download client. This is intentional: command-line `curl` does
@@ -102,11 +130,11 @@ notarization.
 
 | Check | Required evidence | Result |
 | --- | --- | --- |
-| ZIP quarantine | `xattr -p com.apple.quarantine <artifact>.zip` output | NOT RUN |
-| Extracted app quarantine | `xattr -p com.apple.quarantine Tanks3D.app` output | NOT RUN |
-| Signature integrity | `codesign --verify --deep --strict --verbose=4 Tanks3D.app` output and exit code | NOT RUN |
-| Gatekeeper assessment | `spctl --assess --type execute --verbose=4 Tanks3D.app` output and exit code | NOT RUN |
-| First Finder launch | Screenshot and verbatim dialog text | NOT RUN |
+| ZIP quarantine | `/usr/bin/xattr -p com.apple.quarantine <artifact>.zip` output | NOT RUN |
+| Extracted app quarantine | `/usr/bin/xattr -p com.apple.quarantine Tanks3D.app` output | NOT RUN |
+| Signature integrity | `/usr/bin/codesign --verify --deep --strict --verbose=4 Tanks3D.app` output and exit code | NOT RUN |
+| Gatekeeper assessment | `/usr/sbin/spctl --assess --type execute --verbose=4 Tanks3D.app` output and exit code | NOT RUN |
+| First Finder launch | Continuous recording and verbatim dialog text | NOT RUN |
 | Documented launch path | Exact player steps tested from a fresh account | NOT RUN |
 | Successful launch | App reaches the main menu without removing its signature | NOT RUN |
 
@@ -120,6 +148,12 @@ as a shell command. Keep the original ZIP, verify its checksum and quarantine,
 then expand it with Finder/Archive Utility and verify the app's inherited
 quarantine. If Safari expands it automatically, record that fact and still
 retain and inspect the downloaded ZIP. Do not substitute Terminal extraction.
+The collector preserves `clean-mac-plan.plist`, `clean-mac-intake.plist`,
+`where-froms.hex`, the five exact pairs `checksum.{stdout,stderr}`,
+`zip-quarantine.{stdout,stderr}`, `app-quarantine.{stdout,stderr}`,
+`codesign.{stdout,stderr}`, and `spctl.{stdout,stderr}`, followed by the empty
+`COMPLETE` marker. Do not edit, rename, or selectively copy those files before
+review.
 
 For this ad-hoc-signed Alpha, a Gatekeeper rejection is an observed limitation,
 not something to hide. The gate may pass only when the actual behavior and a
@@ -181,7 +215,7 @@ addition to every binding below. Do not treat
 `main_menu_and_advanced_settings` as covered by a menu image. The v2 interactive
 compiler creates this attestation together with the five live-play categories;
 its main-menu, one-player, and two-player categories each require a distinct
-recording of at least 64 KiB.
+recording of 64 KiB–95 MB.
 
 ## Published Controls
 
@@ -332,16 +366,28 @@ persistent `ALPHA_INTERACTIVE_QA_OUTPUT_DIR`. The compiler has no bulk-PASS
 option, never changes the source status, and emits a reviewable
 `status.next.json`, one manifest, and candidate-bound v2 event/session records.
 The event logs identify `Tanks3D Alpha QA Evidence Compiler` as their producer
-and bind the exact manifest hash. Safari acquisition and five-command collection
-remain outside this compiler; do not use test fixtures or hand-change those
-gates to PASS. Under v2, Clean-Mac status references only `gatekeeper_launch`,
-not the controls session; `main_menu_reached` remains a required Gatekeeper
-detail from the quarantined Finder-launch observation.
+and bind the exact manifest hash. Safari acquisition and the five commands use
+the separate source-free collector. Return its untouched raw intake and the
+continuous capture to the release workstation; an independent reviewer then
+runs `make compile-alpha-v2-clean-mac-evidence` with the intake, media, reviewer
+identity/signature/time, review notes, and
+`CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED=yes` only after the observed launch
+path matches the release note. The compiler rejects incomplete or
+test-mode intake, refuses existing output, and writes canonical acquisition,
+command-log, Gatekeeper-session and compiler-receipt records, preserves the ten
+raw command streams, copies the media, and emits `status.next.json` under the
+default persistent `docs/assets/releases/<tag>/evidence/clean-mac-compiled/`.
+It never edits the canonical status. Commit and verify that pack from a clean
+worktree before deliberate promotion; do not use fixtures or hand-change those
+gates to PASS. Under v2, Clean-Mac status references only
+`gatekeeper_launch`, not the controls session; `main_menu_reached` remains a
+required Gatekeeper detail from the quarantined Finder-launch observation.
 
 Treat `build/release-evidence/<tag>/` as a temporary, ignored intake directory.
 Before marking evidence `PASS`, copy every referenced artifact into
 `docs/assets/releases/<tag>/evidence/`, update its status path and SHA-256, and
-commit it with the versioned report. Do not publish secrets; obtain consent for
+commit it with the versioned report. No recording may exceed 95 MB. Do not
+publish secrets; obtain consent for
 tester/machine data. If privacy or size prevents committing an artifact, remain
 `BLOCKED` until the verifier supports an immutable external evidence bundle.
 The final published status must not point only to ignored local files.

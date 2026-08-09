@@ -103,6 +103,21 @@ ALPHA_V2_INTERACTIVE_COMPILER := \
 	scripts/compile_alpha_v2_interactive_evidence.py
 ALPHA_V2_INTERACTIVE_COMPILER_TEST := \
 	tests/test_alpha_v2_interactive_evidence_compiler.py
+ALPHA_V2_CLEAN_MAC_QA_PREPARER := \
+	scripts/prepare_alpha_v2_clean_mac_qa.py
+ALPHA_V2_CLEAN_MAC_QA_PREPARER_TEST := \
+	tests/test_alpha_v2_clean_mac_qa_preparer.py
+ALPHA_V2_CLEAN_MAC_COLLECTOR := \
+	scripts/collect_alpha_v2_clean_mac_qa.sh
+ALPHA_V2_CLEAN_MAC_COLLECTOR_TEST := \
+	tests/test_alpha_v2_clean_mac_collector.sh
+ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER := \
+	scripts/compile_alpha_v2_clean_mac_evidence.py
+ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER_TEST := \
+	tests/test_alpha_v2_clean_mac_evidence_compiler.py
+MEDIA_RECORDING_VALIDATOR := scripts/validate_media_recording.py
+MEDIA_RECORDING_VALIDATOR_TEST := tests/test_media_recording_validator.py
+MEDIA_RECORDING_FIXTURE := tests/media_recording_fixture.py
 RELEASE_PERFORMANCE_QA_RUNNER := scripts/run_release_performance_qa.py
 RELEASE_PERFORMANCE_QA_RUNNER_TEST := \
 	tests/test_release_performance_runner.py
@@ -240,6 +255,18 @@ ALPHA_INTERACTIVE_QA_PLAN ?= \
 	$(ALPHA_INTERACTIVE_QA_DIR)/observation-plan.json
 ALPHA_INTERACTIVE_QA_OUTPUT_DIR ?= \
 	$(ALPHA_INTERACTIVE_QA_DIR)/compiled
+CLEAN_MAC_DOWNLOAD_URL ?=
+CLEAN_MAC_QA_KIT_DIR ?= \
+	$(abspath build/release-evidence/$(ALPHA_CANDIDATE_TAG)/clean-mac-kit)
+CLEAN_MAC_INTAKE_DIR ?=
+CLEAN_MAC_MEDIA ?=
+CLEAN_MAC_REVIEWER ?=
+CLEAN_MAC_REVIEWER_SIGNATURE ?=
+CLEAN_MAC_REVIEWED_AT_UTC ?=
+CLEAN_MAC_REVIEW_NOTES ?=
+CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED ?=
+CLEAN_MAC_EVIDENCE_OUTPUT_DIR ?= \
+	$(abspath docs/assets/releases/$(ALPHA_CANDIDATE_TAG)/evidence/clean-mac-compiled)
 DIST_COMPILE_FLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
 	-mmacosx-version-min=$(DIST_MACOS_MIN) $(DIST_IDENTITY_FLAGS)
 DIST_LINK_FLAGS := -mmacosx-version-min=$(DIST_MACOS_MIN) \
@@ -419,7 +446,9 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	verify-alpha-candidate verify-tagged-alpha-candidate alpha-candidate \
 	test-release-status check-alpha-release-evidence \
 	init-alpha-v2-status init-alpha-v2-interactive-plan \
-	compile-alpha-v2-interactive-evidence verify-alpha-release-ready
+	compile-alpha-v2-interactive-evidence \
+	prepare-alpha-v2-clean-mac-qa-kit \
+	compile-alpha-v2-clean-mac-evidence verify-alpha-release-ready
 
 all: $(TARGET) $(APP_EXECUTABLE)
 
@@ -566,6 +595,15 @@ test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(ALPHA_V2_STATUS_INIT_SCRIPT) $(ALPHA_V2_STATUS_INIT_TEST) \
 		$(ALPHA_V2_INTERACTIVE_COMPILER) \
 		$(ALPHA_V2_INTERACTIVE_COMPILER_TEST) \
+		$(ALPHA_V2_CLEAN_MAC_QA_PREPARER) \
+		$(ALPHA_V2_CLEAN_MAC_QA_PREPARER_TEST) \
+		$(ALPHA_V2_CLEAN_MAC_COLLECTOR) \
+		$(ALPHA_V2_CLEAN_MAC_COLLECTOR_TEST) \
+		$(ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER) \
+		$(ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER_TEST) \
+		$(MEDIA_RECORDING_VALIDATOR) \
+		$(MEDIA_RECORDING_VALIDATOR_TEST) \
+		$(MEDIA_RECORDING_FIXTURE) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error $(RELEASE_STATUS_TEST)
@@ -573,6 +611,13 @@ test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(ALPHA_V2_STATUS_INIT_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(ALPHA_V2_INTERACTIVE_COMPILER_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(ALPHA_V2_CLEAN_MAC_QA_PREPARER_TEST)
+	sh $(ALPHA_V2_CLEAN_MAC_COLLECTOR_TEST) "$(abspath .)"
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(MEDIA_RECORDING_VALIDATOR_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 
@@ -624,6 +669,64 @@ compile-alpha-v2-interactive-evidence: test-release-status \
 		--status "$(abspath $(RELEASE_STATUS_FILE))" \
 		--manifest "$(ALPHA_INTERACTIVE_QA_PLAN)" \
 		--output-dir "$(ALPHA_INTERACTIVE_QA_OUTPUT_DIR)"
+
+# Build a minimal, candidate-bound transfer kit for the source-free Mac. The
+# preparer and target both refuse replacement; the candidate itself stays out
+# of the kit and must be downloaded with Safari during the recorded session.
+prepare-alpha-v2-clean-mac-qa-kit: test-release-status \
+		$(ALPHA_V2_CLEAN_MAC_QA_PREPARER) \
+		$(ALPHA_V2_CLEAN_MAC_COLLECTOR) $(RELEASE_STATUS_FILE)
+	@test -n "$(strip $(CLEAN_MAC_DOWNLOAD_URL))" || { \
+		echo 'CLEAN_MAC_DOWNLOAD_URL is required' >&2; exit 2; \
+	}
+	install -d -m 700 "$(dir $(CLEAN_MAC_QA_KIT_DIR))"
+	python3 -B $(ALPHA_V2_CLEAN_MAC_QA_PREPARER) \
+		--project-root "$(abspath .)" \
+		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
+		--status-file "$(abspath $(RELEASE_STATUS_FILE))" \
+		--download-url "$(CLEAN_MAC_DOWNLOAD_URL)" \
+		--output-dir "$(CLEAN_MAC_QA_KIT_DIR)"
+
+# Compile returned raw intake only after a different human has reviewed the
+# continuous capture. Publication is no-replace and updates status.next.json,
+# never the canonical status file.
+compile-alpha-v2-clean-mac-evidence: test-release-status \
+		$(ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER) $(RELEASE_STATUS_FILE)
+	@test -n "$(strip $(CLEAN_MAC_INTAKE_DIR))" || { \
+		echo 'CLEAN_MAC_INTAKE_DIR is required' >&2; exit 2; \
+	}
+	@test -n "$(strip $(CLEAN_MAC_MEDIA))" || { \
+		echo 'CLEAN_MAC_MEDIA is required' >&2; exit 2; \
+	}
+	@test -n "$(strip $(CLEAN_MAC_REVIEWER))" || { \
+		echo 'CLEAN_MAC_REVIEWER is required' >&2; exit 2; \
+	}
+	@test -n "$(strip $(CLEAN_MAC_REVIEWER_SIGNATURE))" || { \
+		echo 'CLEAN_MAC_REVIEWER_SIGNATURE is required' >&2; exit 2; \
+	}
+	@test -n "$(strip $(CLEAN_MAC_REVIEWED_AT_UTC))" || { \
+		echo 'CLEAN_MAC_REVIEWED_AT_UTC is required' >&2; exit 2; \
+	}
+	@test -n "$(strip $(CLEAN_MAC_REVIEW_NOTES))" || { \
+		echo 'CLEAN_MAC_REVIEW_NOTES is required' >&2; exit 2; \
+	}
+	@test "$(strip $(CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED))" = yes || { \
+		echo 'CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED=yes is required' >&2; \
+		exit 2; \
+	}
+	install -d -m 700 "$(dir $(CLEAN_MAC_EVIDENCE_OUTPUT_DIR))"
+	python3 -B $(ALPHA_V2_CLEAN_MAC_EVIDENCE_COMPILER) \
+		--project-root "$(abspath .)" \
+		--status "$(abspath $(RELEASE_STATUS_FILE))" \
+		--intake-dir "$(CLEAN_MAC_INTAKE_DIR)" \
+		--media "$(CLEAN_MAC_MEDIA)" \
+		--reviewer "$(CLEAN_MAC_REVIEWER)" \
+		--reviewer-signature "$(CLEAN_MAC_REVIEWER_SIGNATURE)" \
+		--reviewed-at-utc "$(CLEAN_MAC_REVIEWED_AT_UTC)" \
+		--review-notes "$(CLEAN_MAC_REVIEW_NOTES)" \
+		--release-note-wording-verified \
+			"$(CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED)" \
+		--output-dir "$(CLEAN_MAC_EVIDENCE_OUTPUT_DIR)"
 
 check-alpha-release-evidence: test-release-status \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_FILE)

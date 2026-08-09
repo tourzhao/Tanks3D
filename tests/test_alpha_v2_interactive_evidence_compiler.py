@@ -129,6 +129,8 @@ class CompilerFixture:
                 for item in compiler.CONTROL_CONTEXT_REQUIREMENTS
             ],
             "clean_mac_evidence_ids": ["gatekeeper_launch"],
+            "clean_mac_minimum_recording_bytes": compiler.MINIMUM_RECORDING_BYTES,
+            "clean_mac_maximum_recording_bytes": compiler.MAXIMUM_RECORDING_BYTES,
             "modes": ["one_player", "two_player"],
             "gameplay_ids": ["movement"],
             "base_ids": ["usa"],
@@ -402,6 +404,9 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
             lambda profile: profile.__setitem__(
                 "clean_mac_evidence_ids", ["main_menu_and_advanced_settings"]
             ),
+            lambda profile: profile.__setitem__(
+                "clean_mac_maximum_recording_bytes", 100_000_000
+            ),
         )
         for mutation in mutations:
             with self.subTest(mutation=mutation):
@@ -487,7 +492,7 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         write_json(self.fixture.manifest_path, manifest)
         self.fixture.assert_rejected_without_mutation()
 
-    def test_invalid_png_and_small_recording_are_rejected(self):
+    def test_invalid_png_and_recording_size_bounds_are_rejected(self):
         manifest = self.fixture.valid_manifest()
         png_group = next(
             group
@@ -512,6 +517,21 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         ]
         write_json(other.manifest_path, manifest)
         other.assert_rejected_without_mutation()
+
+        oversized = CompilerFixture(self)
+        self.addCleanup(oversized.close)
+        manifest = oversized.valid_manifest()
+        recording = oversized.root / "captures" / "too-large.mp4"
+        with recording.open("wb") as stream:
+            stream.truncate(compiler.MAXIMUM_RECORDING_BYTES + 1)
+        manifest["supporting_artifacts"][0]["artifacts"] = [
+            {
+                "path": recording.relative_to(oversized.root).as_posix(),
+                "kind": "recording",
+            }
+        ]
+        write_json(oversized.manifest_path, manifest)
+        oversized.assert_rejected_without_mutation()
 
     def test_each_control_context_requires_a_real_recording(self):
         for evidence_id in compiler.CONTROL_EVIDENCE_IDS:

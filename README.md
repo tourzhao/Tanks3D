@@ -100,8 +100,55 @@ The v2 interactive compiler then turns 70 explicit observations into six
 candidate-bound evidence categories: main menu/advanced settings, one-player,
 two-player, national bases, pickups, and settlement. The first three contexts
 must each have their own recording of at least 64 KiB; a shared clip or a static
-menu image is not sufficient. Clean-Mac acquisition remains a separate
-Gatekeeper session so control testing never has to share its session identity.
+menu image is not sufficient. Keep every recording at or below 95 MB so the
+evidence commit remains compatible with ordinary GitHub Git storage. Clean-Mac
+acquisition remains a separate Gatekeeper session so control testing never has
+to share its session identity.
+
+Clean-Mac evidence uses a two-machine workflow. On the release workstation,
+stage the exact candidate at a recordable HTTPS URL, then create a new transfer
+kit:
+
+```sh
+make prepare-alpha-v2-clean-mac-qa-kit DIST_CHANNEL=alpha.N \
+  CLEAN_MAC_DOWNLOAD_URL='<recordable HTTPS URL ending in the exact filename>'
+```
+
+The kit contains only `START_HERE.command`, `clean-mac-plan.plist`,
+`README.txt`, and `kit-manifest.json`; it contains neither the game repository
+nor the candidate. Transfer it to a fresh Apple Silicon Mac, start the required
+screen recording or external-camera capture, and run its documented
+`/bin/zsh -f START_HERE.command <new-output-dir>` command. That Mac needs no
+checkout, `make`, Python, Homebrew, or raylib. A static PNG cannot replace the
+continuous launch-path recording. Use a 64 KiB–95 MB MOV, MP4, or M4V
+recording with a structurally valid ISO-BMFF video container. Follow the prompts
+to perform the real Safari download, Finder/Archive Utility extraction, five
+diagnostic commands, and first Finder launch. Do not automate **Open Anyway**
+or add/remove quarantine attributes.
+
+Return the completed raw intake and capture to the release workstation. A
+different human reviews them and compiles a new persistent evidence pack:
+
+```sh
+make compile-alpha-v2-clean-mac-evidence DIST_CHANNEL=alpha.N \
+  CLEAN_MAC_INTAKE_DIR=/absolute/path/to/raw-intake \
+  CLEAN_MAC_MEDIA=/absolute/path/to/gatekeeper-capture.mov \
+  CLEAN_MAC_REVIEWER='Reviewer Name' \
+  CLEAN_MAC_REVIEWER_SIGNATURE='Reviewer Name' \
+  CLEAN_MAC_REVIEWED_AT_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  CLEAN_MAC_REVIEW_NOTES='Safari, Finder, dialog, and main menu reviewed.' \
+  CLEAN_MAC_RELEASE_NOTE_WORDING_VERIFIED=yes
+```
+
+The compiler refuses replacement and writes only a candidate-bound evidence
+pack (including canonical acquisition, command-log, session and receipt JSON,
+the reviewed media, and `status.next.json`); it never overwrites the canonical
+release status. Use the release-note verification flag only after the observed
+launch path matches that wording. Run the command immediately after completing
+the review so its generated UTC value follows the recorded session. Review and
+commit the pack before running the clean-worktree, allow-blocked evidence check
+described in the release checklist.
+
 Collect candidate-generated performance telemetry and its launch receipt with:
 
 ```sh

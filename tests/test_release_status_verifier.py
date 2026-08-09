@@ -4,6 +4,8 @@
 import hashlib
 import json
 from pathlib import Path
+import plistlib
+import shutil
 import struct
 import subprocess
 import sys
@@ -12,9 +14,14 @@ import unittest
 import zipfile
 import zlib
 
+from media_recording_fixture import recording as make_recording
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = REPOSITORY_ROOT / "scripts" / "verify_release_status.py"
+CLEAN_MAC_COMPILER = (
+    REPOSITORY_ROOT / "scripts" / "compile_alpha_v2_clean_mac_evidence.py"
+)
 EVIDENCE_COMPILER = (
     REPOSITORY_ROOT / "scripts" / "compile_alpha_v2_interactive_evidence.py"
 )
@@ -37,6 +44,7 @@ PERFORMANCE_NONCE = "1" * 32
 PERFORMANCE_EXECUTABLE = b"#!/bin/sh\nexit 0\n"
 PERFORMANCE_EXECUTABLE_MEMBER = "Tanks3D.app/Contents/MacOS/Tanks3D"
 MINIMUM_RECORDING_BYTES = 64 * 1024
+MAXIMUM_RECORDING_BYTES = 95_000_000
 OBSERVATION_MANIFEST_SCHEMA = (
     "tanks3d-alpha-v2-interactive-observation-manifest-v1"
 )
@@ -350,6 +358,63 @@ class ReleaseFixture:
 
     def refresh_artifact(self, evidence, artifact):
         artifact["sha256"] = digest(self.root / artifact["path"])
+        changed_artifacts = {artifact["path"]: artifact}
+        artifacts_by_name = {
+            Path(item["path"]).name: item for item in evidence["artifacts"]
+        }
+        if Path(artifact["path"]).name == "command-log.json":
+            command_log = json.loads(
+                (self.root / artifact["path"]).read_text(encoding="utf-8")
+            )
+            for command in command_log.get("commands", []):
+                command_id = command.get("id")
+                if not isinstance(command_id, str):
+                    continue
+                prefix = command_id.replace("_", "-")
+                for stream in ("stdout", "stderr"):
+                    name = "{}.{}".format(prefix, stream)
+                    raw_artifact = artifacts_by_name.get(name)
+                    value = command.get(stream)
+                    if raw_artifact is None or not isinstance(value, str):
+                        continue
+                    raw_path = self.root / raw_artifact["path"]
+                    raw_path.write_text(value, encoding="utf-8")
+                    raw_artifact["sha256"] = digest(raw_path)
+                    changed_artifacts[raw_artifact["path"]] = raw_artifact
+            intake_artifact = artifacts_by_name.get("clean-mac-intake.plist")
+            if intake_artifact is not None:
+                intake_path = self.root / intake_artifact["path"]
+                intake = plistlib.loads(intake_path.read_bytes())
+                intake["commands"] = command_log.get("commands", [])
+                intake_path.write_bytes(
+                    plistlib.dumps(
+                        intake, fmt=plistlib.FMT_XML, sort_keys=False
+                    )
+                )
+                intake_artifact["sha256"] = digest(intake_path)
+                changed_artifacts[intake_artifact["path"]] = intake_artifact
+        if Path(artifact["path"]).name == "browser-acquisition.json":
+            acquisition = json.loads(
+                (self.root / artifact["path"]).read_text(encoding="utf-8")
+            )
+            intake_artifact = artifacts_by_name.get("clean-mac-intake.plist")
+            if intake_artifact is not None:
+                intake_path = self.root / intake_artifact["path"]
+                intake = plistlib.loads(intake_path.read_bytes())
+                for key in (
+                    "client",
+                    "started_at_utc",
+                    "completed_at_utc",
+                    "zip_quarantine_agent",
+                ):
+                    intake["acquisition"][key] = acquisition.get(key)
+                intake_path.write_bytes(
+                    plistlib.dumps(
+                        intake, fmt=plistlib.FMT_XML, sort_keys=False
+                    )
+                )
+                intake_artifact["sha256"] = digest(intake_path)
+                changed_artifacts[intake_artifact["path"]] = intake_artifact
         receipt_artifact = next(
             (
                 item
@@ -368,6 +433,25 @@ class ReleaseFixture:
                 json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
             )
             receipt_artifact["sha256"] = digest(receipt_path)
+        clean_mac_receipt = next(
+            (
+                item
+                for item in evidence["artifacts"]
+                if item["path"].endswith("clean-mac-compiler-receipt.json")
+            ),
+            None,
+        )
+        if clean_mac_receipt is not None and clean_mac_receipt is not artifact:
+            receipt_path = self.root / clean_mac_receipt["path"]
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            for reference in receipt["files"].values():
+                changed = changed_artifacts.get(reference["path"])
+                if changed is not None:
+                    reference["sha256"] = changed["sha256"]
+            receipt_path.write_text(
+                json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
+            )
+            clean_mac_receipt["sha256"] = digest(receipt_path)
         self.refresh_evidence_manifest(evidence)
 
     def performance_artifact(self, filename):
@@ -416,6 +500,62 @@ class ReleaseFixture:
             shared["sha256"] = manifest_digest
             self.refresh_evidence_manifest(evidence)
 
+    def clean_mac_artifact(self, filename):
+        evidence = next(
+            item
+            for item in self.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        artifact = next(
+            item
+            for item in evidence["artifacts"]
+            if Path(item["path"]).name == filename
+        )
+        return evidence, artifact, self.root / artifact["path"]
+
+    def mutate_clean_mac_plist(self, filename, mutation):
+        evidence, artifact, path = self.clean_mac_artifact(filename)
+        payload = plistlib.loads(path.read_bytes())
+        mutation(payload)
+        path.write_bytes(
+            plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False)
+        )
+        self.refresh_artifact(evidence, artifact)
+
+    def set_clean_mac_url(self, url):
+        self.status["clean_mac"]["details"]["download_url"] = url
+        evidence, acquisition_artifact, acquisition_path = self.clean_mac_artifact(
+            "browser-acquisition.json"
+        )
+        acquisition = json.loads(acquisition_path.read_text(encoding="utf-8"))
+        acquisition["url"] = url
+        acquisition_path.write_text(
+            json.dumps(acquisition) + "\n", encoding="utf-8"
+        )
+        self.refresh_artifact(evidence, acquisition_artifact)
+
+        evidence, where_artifact, where_path = self.clean_mac_artifact(
+            "where-froms.hex"
+        )
+        where_path.write_text(
+            plistlib.dumps([url], fmt=plistlib.FMT_BINARY).hex() + "\n",
+            encoding="ascii",
+        )
+        self.refresh_artifact(evidence, where_artifact)
+        self.mutate_clean_mac_plist(
+            "clean-mac-plan.plist",
+            lambda payload: payload.__setitem__("download_url", url),
+        )
+        _, _, plan_path = self.clean_mac_artifact("clean-mac-plan.plist")
+
+        def update_intake(payload):
+            payload["plan_sha256"] = digest(plan_path)
+            payload["download_url"] = url
+            payload["acquisition"]["where_froms_url"] = url
+            payload["acquisition"]["where_froms_sha256"] = digest(where_path)
+
+        self.mutate_clean_mac_plist("clean-mac-intake.plist", update_intake)
+
     def mutate_gameplay_event_log(self, evidence_id, mutation):
         evidence = next(
             item for item in self.status["evidence"] if item["id"] == evidence_id
@@ -452,9 +592,22 @@ class ReleaseFixture:
                 "main_menu_and_advanced_settings",
                 "gatekeeper_launch",
             }:
-                self.add_evidence_artifact(
-                    evidence, evidence["id"] + ".png", kind="png"
-                )
+                if profile == "v2" and evidence["id"] == "gatekeeper_launch":
+                    recording = (
+                        self.root
+                        / "evidence/gatekeeper-launch-recording.mov"
+                    )
+                    recording.parent.mkdir(parents=True, exist_ok=True)
+                    recording.write_bytes(
+                        make_recording(minimum_bytes=MINIMUM_RECORDING_BYTES)
+                    )
+                    self.append_evidence_artifact(
+                        evidence, recording, kind="recording"
+                    )
+                else:
+                    self.add_evidence_artifact(
+                        evidence, evidence["id"] + ".png", kind="png"
+                    )
             evidence["status"] = "PASS"
             evidence["reviewer"] = "Fixture Reviewer"
             evidence["reviewed_at_utc"] = REVIEW_UTC
@@ -645,6 +798,37 @@ class ReleaseFixture:
             "conclusion": "PASS",
             "release_note_wording_verified": "yes",
         }
+        if profile == "v2":
+            quarantine_hex = "5e0cc926"
+            self.status["clean_mac"]["details"]["checksum_command"] = (
+                "/usr/bin/shasum -a 256 {}".format(Path(artifact["path"]).name)
+            )
+            self.status["gatekeeper"]["details"].update(
+                {
+                    "zip_quarantine_command": (
+                        "/usr/bin/xattr -p com.apple.quarantine {}".format(
+                            Path(artifact["path"]).name
+                        )
+                    ),
+                    "zip_quarantine_output": (
+                        "0083;{};Safari;fixture".format(quarantine_hex)
+                    ),
+                    "app_quarantine_command": (
+                        "/usr/bin/xattr -p com.apple.quarantine Tanks3D.app"
+                    ),
+                    "app_quarantine_output": (
+                        "0083;{};Archive Utility;fixture".format(quarantine_hex)
+                    ),
+                    "codesign_command": (
+                        "/usr/bin/codesign --verify --deep --strict "
+                        "--verbose=4 Tanks3D.app"
+                    ),
+                    "spctl_command": (
+                        "/usr/sbin/spctl --assess --type execute "
+                        "--verbose=4 Tanks3D.app"
+                    ),
+                }
+            )
         self.status["extended_session"]["details"] = {
             "duration_minutes": "30",
             "stages_completed": "2",
@@ -720,14 +904,24 @@ class ReleaseFixture:
 
         command_log = self.root / "evidence/command-log.json"
         command_log.parent.mkdir(parents=True, exist_ok=True)
+        command_paths = (
+            requirements["clean_mac_system_command_paths"]
+            if profile == "v2"
+            else {
+                "shasum": "shasum",
+                "xattr": "xattr",
+                "codesign": "codesign",
+                "spctl": "spctl",
+            }
+        )
         command_specs = [
-            ("checksum", ["shasum", "-a", "256", artifact_name], 0, "{}  {}".format(candidate_digest, artifact_name), ""),
-            ("zip_quarantine", ["xattr", "-p", "com.apple.quarantine", artifact_name], 0, gate_details["zip_quarantine_output"], ""),
-            ("app_quarantine", ["xattr", "-p", "com.apple.quarantine", "Tanks3D.app"], 0, gate_details["app_quarantine_output"], ""),
+            ("checksum", [command_paths["shasum"], "-a", "256", artifact_name], 0, "{}  {}\n".format(candidate_digest, artifact_name), ""),
+            ("zip_quarantine", [command_paths["xattr"], "-p", "com.apple.quarantine", artifact_name], 0, gate_details["zip_quarantine_output"], ""),
+            ("app_quarantine", [command_paths["xattr"], "-p", "com.apple.quarantine", "Tanks3D.app"], 0, gate_details["app_quarantine_output"], ""),
             (
                 "codesign",
                 [
-                    "codesign",
+                    command_paths["codesign"],
                     "--verify",
                     "--deep",
                     "--strict",
@@ -741,7 +935,7 @@ class ReleaseFixture:
             (
                 "spctl",
                 [
-                    "spctl",
+                    command_paths["spctl"],
                     "--assess",
                     "--type",
                     "execute",
@@ -805,6 +999,185 @@ class ReleaseFixture:
             encoding="utf-8",
         )
         self.append_evidence_artifact(evidence_by_id["gatekeeper_launch"], command_log, kind="log")
+        raw_command_files = {}
+        if profile == "v2":
+            for command_id, _, _, stdout, stderr in command_specs:
+                prefix = command_id.replace("_", "-")
+                for stream, contents in (("stdout", stdout), ("stderr", stderr)):
+                    path = self.root / "evidence/{}.{}".format(prefix, stream)
+                    path.write_text(contents, encoding="utf-8")
+                    self.append_evidence_artifact(
+                        evidence_by_id["gatekeeper_launch"], path, kind="log"
+                    )
+                    raw_command_files["{}_{}".format(command_id, stream)] = path
+        if profile == "v2":
+            gatekeeper_evidence = evidence_by_id["gatekeeper_launch"]
+            raw_files = {
+                name: self.root / "evidence" / name
+                for name in (
+                    "clean-mac-plan.plist",
+                    "clean-mac-intake.plist",
+                    "where-froms.hex",
+                )
+            }
+            plan = {
+                "schema": requirements["clean_mac_plan_schema"],
+                "requirements_profile": "macos-alpha-v2",
+                "candidate_tag": self.status["release"]["tag"],
+                "candidate_filename": artifact_name,
+                "candidate_sha256": candidate_digest,
+                "download_url": clean_details["download_url"],
+                "minimum_macos_version": "26.0",
+                "collector_sha256": requirements[
+                    "clean_mac_collector_sha256"
+                ],
+                "prepared_at_utc": "2020-01-01T16:29:00Z",
+                "session_nonce": "2" * 32,
+            }
+            raw_files["clean-mac-plan.plist"].write_bytes(
+                plistlib.dumps(plan, fmt=plistlib.FMT_XML, sort_keys=False)
+            )
+            where_plist = plistlib.dumps(
+                [clean_details["download_url"]], fmt=plistlib.FMT_BINARY
+            )
+            raw_files["where-froms.hex"].write_text(
+                where_plist.hex() + "\n", encoding="ascii"
+            )
+            browser = json.loads(acquisition_log.read_text(encoding="utf-8"))
+            command_records = json.loads(
+                command_log.read_text(encoding="utf-8")
+            )["commands"]
+            intake = {
+                "schema": requirements["clean_mac_intake_schema"],
+                "plan_sha256": digest(raw_files["clean-mac-plan.plist"]),
+                "session_nonce": plan["session_nonce"],
+                "collector_sha256": plan["collector_sha256"],
+                "candidate_filename": artifact_name,
+                "candidate_sha256": candidate_digest,
+                "download_url": clean_details["download_url"],
+                "tester": fixture_tester,
+                "tester_signature": fixture_tester,
+                "machine": "Fixture Mac arm64",
+                "machine_details": {
+                    key: clean_details[key]
+                    for key in requirements["clean_mac_machine_detail_keys"]
+                },
+                "session_started_at_utc": SESSION_START_UTC,
+                "session_completed_at_utc": UTC,
+                "acquisition": {
+                    "client": browser["client"],
+                    "started_at_utc": browser["started_at_utc"],
+                    "completed_at_utc": browser["completed_at_utc"],
+                    "zip_quarantine_agent": browser[
+                        "zip_quarantine_agent"
+                    ],
+                    "quarantine_timestamp_utc": (
+                        "2020-01-01T16:30:30Z"
+                    ),
+                    "where_froms_url": clean_details["download_url"],
+                    "where_froms_sha256": digest(
+                        raw_files["where-froms.hex"]
+                    ),
+                },
+                "commands": command_records,
+                "observations": {
+                    key: gate_details[key]
+                    for key in requirements["clean_mac_observation_keys"]
+                },
+                "notes": "Quarantined Finder launch reached the main menu.",
+                "complete": True,
+                "test_mode": False,
+            }
+            raw_files["clean-mac-intake.plist"].write_bytes(
+                plistlib.dumps(intake, fmt=plistlib.FMT_XML, sort_keys=False)
+            )
+            for name, kind in (
+                ("clean-mac-plan.plist", "report"),
+                ("clean-mac-intake.plist", "report"),
+                ("where-froms.hex", "log"),
+            ):
+                self.append_evidence_artifact(
+                    gatekeeper_evidence, raw_files[name], kind=kind
+                )
+            media_artifact = next(
+                item
+                for item in gatekeeper_evidence["artifacts"]
+                if item["kind"] in {"png", "recording"}
+            )
+            receipt_files = {
+                "plan": {
+                    "path": raw_files["clean-mac-plan.plist"].relative_to(
+                        self.root
+                    ).as_posix(),
+                    "sha256": digest(raw_files["clean-mac-plan.plist"]),
+                },
+                "intake": {
+                    "path": raw_files["clean-mac-intake.plist"].relative_to(
+                        self.root
+                    ).as_posix(),
+                    "sha256": digest(raw_files["clean-mac-intake.plist"]),
+                },
+                "where_froms": {
+                    "path": raw_files["where-froms.hex"].relative_to(
+                        self.root
+                    ).as_posix(),
+                    "sha256": digest(raw_files["where-froms.hex"]),
+                },
+                "browser_acquisition": {
+                    "path": acquisition_log.relative_to(self.root).as_posix(),
+                    "sha256": digest(acquisition_log),
+                },
+                "command_log": {
+                    "path": command_log.relative_to(self.root).as_posix(),
+                    "sha256": digest(command_log),
+                },
+                "media": {
+                    "path": media_artifact["path"],
+                    "sha256": media_artifact["sha256"],
+                },
+            }
+            receipt_files.update(
+                {
+                    file_id: {
+                        "path": path.relative_to(self.root).as_posix(),
+                        "sha256": digest(path),
+                    }
+                    for file_id, path in raw_command_files.items()
+                }
+            )
+            receipt_path = self.root / "evidence/clean-mac-compiler-receipt.json"
+            receipt_path.write_text(
+                json.dumps(
+                    {
+                        "schema": requirements[
+                            "clean_mac_compiler_receipt_schema"
+                        ],
+                        "producer": requirements[
+                            "clean_mac_compiler_receipt_producer"
+                        ],
+                        "candidate_sha256": candidate_digest,
+                        "session_nonce": "2" * 32,
+                        "collector_sha256": requirements[
+                            "clean_mac_collector_sha256"
+                        ],
+                        "tester": fixture_tester,
+                        "tester_signature": fixture_tester,
+                        "reviewer": "Fixture Reviewer",
+                        "reviewer_signature": "Fixture Reviewer",
+                        "reviewed_at_utc": REVIEW_UTC,
+                        "review_notes": (
+                            "Interactive evidence and release visuals reviewed."
+                        ),
+                        "files": receipt_files,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.append_evidence_artifact(
+                gatekeeper_evidence, receipt_path, kind="report"
+            )
 
         performance_evidence = evidence_by_id["extended_session_metrics"]
         if profile == "v2":
@@ -1670,6 +2043,26 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
                 )
             )
 
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][0]
+        evidence["artifacts"] = [
+            artifact
+            for artifact in evidence["artifacts"]
+            if artifact["kind"] != "png"
+        ]
+        recording = fixture.root / "evidence/menu-too-large.mp4"
+        with recording.open("wb") as stream:
+            stream.truncate(MAXIMUM_RECORDING_BYTES + 1)
+        fixture.append_evidence_artifact(evidence, recording, kind="recording")
+        fixture.refresh_evidence_manifest(evidence)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "recording must be no larger than {} bytes".format(
+                MAXIMUM_RECORDING_BYTES
+            )
+        )
+
     def test_pass_language_and_audio_acceptance_cannot_contradict_status(self):
         note_cases = (
             (
@@ -2422,17 +2815,402 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         result = fixture.run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_command_log_rejects_test_url_wrong_args_and_false_spctl_outcome(self):
+    def test_v2_clean_mac_receipt_and_raw_transcripts_are_fail_closed(self):
         fixture = self.new_fixture()
         fixture.make_all_pass()
-        artifact_name = fixture.status["clean_mac"]["details"]["downloaded_artifact_filename"]
-        fixture.status["clean_mac"]["details"]["download_url"] = "https://example.com/" + artifact_name
+        evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        receipt = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("clean-mac-compiler-receipt.json")
+        )
+        evidence["artifacts"].remove(receipt)
+        fixture.refresh_evidence_manifest(evidence)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "exactly one compiler receipt")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        receipt = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("clean-mac-compiler-receipt.json")
+        )
+        receipt_path = fixture.root / receipt["path"]
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        payload["collector_sha256"] = "f" * 64
+        receipt_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, receipt)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "canonical collector")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence_by_id = {
+            item["id"]: item for item in fixture.status["evidence"]
+        }
+        evidence = evidence_by_id["gatekeeper_launch"]
+        receipt = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("clean-mac-compiler-receipt.json")
+        )
+        source = next(
+            item
+            for item in evidence["artifacts"]
+            if Path(item["path"]).name == "checksum.stdout"
+        )
+        foreign = fixture.root / "evidence/foreign/checksum.stdout"
+        foreign.parent.mkdir(parents=True, exist_ok=True)
+        foreign.write_bytes((fixture.root / source["path"]).read_bytes())
+        fixture.append_evidence_artifact(
+            evidence_by_id["main_menu_and_advanced_settings"],
+            foreign,
+            kind="log",
+        )
+        fixture.refresh_evidence_manifest(
+            evidence_by_id["main_menu_and_advanced_settings"]
+        )
+        receipt_path = fixture.root / receipt["path"]
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+        payload["files"]["checksum_stdout"] = {
+            "path": foreign.relative_to(fixture.root).as_posix(),
+            "sha256": digest(foreign),
+        }
+        receipt_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, receipt)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "not attached to Gatekeeper evidence"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        transcript = next(
+            item
+            for item in evidence["artifacts"]
+            if Path(item["path"]).name == "spctl.stderr"
+        )
+        (fixture.root / transcript["path"]).write_text(
+            "substituted assessment\n", encoding="utf-8"
+        )
+        fixture.refresh_artifact(evidence, transcript)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "raw spctl.stderr does not match the command log"
+        )
+
+    def test_v2_clean_mac_raw_plan_intake_and_origin_are_semantic(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_clean_mac_plist(
+            "clean-mac-plan.plist",
+            lambda payload: payload.__setitem__(
+                "candidate_sha256", "f" * 64
+            ),
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "plan candidate_sha256 is not candidate-bound")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_clean_mac_plist(
+            "clean-mac-intake.plist",
+            lambda payload: payload.__setitem__("test_mode", True),
+        )
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "must be complete and must not be test mode"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence, where_artifact, where_path = fixture.clean_mac_artifact(
+            "where-froms.hex"
+        )
+        wrong_origin = plistlib.dumps(
+            ["https://github.com/wrong/candidate.zip"],
+            fmt=plistlib.FMT_BINARY,
+        )
+        where_path.write_text(wrong_origin.hex() + "\n", encoding="ascii")
+        fixture.refresh_artifact(evidence, where_artifact)
+        fixture.mutate_clean_mac_plist(
+            "clean-mac-intake.plist",
+            lambda payload: payload["acquisition"].__setitem__(
+                "where_froms_sha256", digest(where_path)
+            ),
+        )
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "where-froms does not contain the exact download URL"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence, plan_artifact, plan_path = fixture.clean_mac_artifact(
+            "clean-mac-plan.plist"
+        )
+        plan_path.write_text("not a plist\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, plan_artifact)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "does not use the canonical Apple plist declaration"
+        )
+
+    def test_v2_clean_mac_rejects_untrusted_app_quarantine_agent(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence, command, command_path = fixture.clean_mac_artifact(
+            "command-log.json"
+        )
+        quarantine = "0083;5e0cc926;ManualWriter;fixture"
+        fixture.status["gatekeeper"]["details"][
+            "app_quarantine_output"
+        ] = quarantine
+        command_payload = json.loads(command_path.read_text(encoding="utf-8"))
+        for record in command_payload["commands"]:
+            if record["id"] == "app_quarantine":
+                record["stdout"] = quarantine
+        command_path.write_text(
+            json.dumps(command_payload) + "\n", encoding="utf-8"
+        )
+        fixture.refresh_artifact(evidence, command)
+        fixture.mutate_clean_mac_plist(
+            "clean-mac-intake.plist",
+            lambda payload: payload.__setitem__(
+                "commands", command_payload["commands"]
+            ),
+        )
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "app quarantine agent is not a supported Finder path"
+        )
+
+    def test_clean_mac_compiler_output_passes_the_full_verifier(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        requirements = fixture.requirements()
+        gatekeeper_evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        artifact_paths = {
+            Path(item["path"]).name: fixture.root / item["path"]
+            for item in gatekeeper_evidence["artifacts"]
+        }
+        media_path = artifact_paths["gatekeeper-launch-recording.mov"]
+        intake_dir = fixture.root / "returned-clean-mac-intake"
+        intake_dir.mkdir()
+        intake_names = [
+            "clean-mac-plan.plist",
+            "clean-mac-intake.plist",
+            "where-froms.hex",
+            "checksum.stdout",
+            "checksum.stderr",
+            "zip-quarantine.stdout",
+            "zip-quarantine.stderr",
+            "app-quarantine.stdout",
+            "app-quarantine.stderr",
+            "codesign.stdout",
+            "codesign.stderr",
+            "spctl.stdout",
+            "spctl.stderr",
+        ]
+        for name in intake_names:
+            shutil.copyfile(artifact_paths[name], intake_dir / name)
+        (intake_dir / "COMPLETE").write_bytes(b"")
+
+        for gate_name, initial_status in (
+            ("clean_mac", "NOT_RUN"),
+            ("gatekeeper", "BLOCKED"),
+        ):
+            gate = fixture.status[gate_name]
+            gate["status"] = initial_status
+            gate["tester"] = ""
+            gate["tested_at_utc"] = None
+            gate["evidence_ids"] = []
+            gate["checks_confirmed"] = []
+            detail_key = "{}_detail_keys".format(gate_name)
+            gate["details"] = {key: "" for key in requirements[detail_key]}
+            gate["notes"] = "Clean-Mac evidence has not been compiled."
+        gatekeeper_evidence["status"] = "NOT_RUN"
+        gatekeeper_evidence["artifacts"] = []
+        gatekeeper_evidence["reviewer"] = ""
+        gatekeeper_evidence["reviewed_at_utc"] = None
+        gatekeeper_evidence["interactive"] = {
+            "candidate_sha256": "",
+            "tester": "",
+            "machine": "",
+            "tested_at_utc": None,
+            "signature": "",
+            "coverage_refs": {},
+        }
+        gatekeeper_evidence["notes"] = "Gatekeeper launch not observed."
+        fixture.write_status()
+
+        output_dir = fixture.root / "compiled-clean-mac"
+        command = [
+            sys.executable,
+            str(CLEAN_MAC_COMPILER),
+            "--project-root",
+            str(fixture.root.resolve()),
+            "--status",
+            str(fixture.status_path.resolve()),
+            "--intake-dir",
+            str(intake_dir.resolve()),
+            "--media",
+            str(media_path.resolve()),
+            "--reviewer",
+            "Independent Clean Reviewer",
+            "--reviewer-signature",
+            "Independent Clean Reviewer",
+            "--reviewed-at-utc",
+            REVIEW_UTC,
+            "--review-notes",
+            "Raw Safari, command, and launch evidence reviewed.",
+            "--release-note-wording-verified",
+            "yes",
+            "--output-dir",
+            str(output_dir.resolve()),
+        ]
+        compiled = subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(
+            compiled.returncode, 0, compiled.stdout + compiled.stderr
+        )
+        result = fixture.run(status_path=output_dir / "status.next.json")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_v2_clean_mac_requires_continuous_recording_container(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        recording = next(
+            item
+            for item in evidence["artifacts"]
+            if Path(item["path"]).name.startswith(
+                "gatekeeper-launch-recording."
+            )
+        )
+        (fixture.root / recording["path"]).write_bytes(
+            b"padded static evidence".ljust(MINIMUM_RECORDING_BYTES, b"0")
+        )
+        fixture.refresh_artifact(evidence, recording)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "is not structurally valid")
+
+    def test_v2_clean_mac_rejects_url_checksum_and_quarantine_drift(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.set_clean_mac_url(
+            fixture.status["clean_mac"]["details"]["download_url"]
+            + "?token=secret"
+        )
         fixture.write_status()
         self.assert_failed(fixture.run(), "non-test HTTPS candidate URL")
 
         fixture = self.new_fixture()
         fixture.make_all_pass()
-        fixture.status["clean_mac"]["details"]["download_url"] = (
+        evidence = next(
+            item
+            for item in fixture.status["evidence"]
+            if item["id"] == "gatekeeper_launch"
+        )
+        command = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("command-log.json")
+        )
+        command_path = fixture.root / command["path"]
+        payload = json.loads(command_path.read_text(encoding="utf-8"))
+        payload["commands"][0]["stdout"] += "trailing text\n"
+        command_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, command)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "does not exactly bind the candidate")
+
+        for quarantine, expected in (
+            (
+                "0083;not-hex;Safari;fixture",
+                "ZIP quarantine output is not canonical",
+            ),
+            (
+                "0083;00000001;Safari;fixture",
+                "lies outside the Safari acquisition",
+            ),
+        ):
+            with self.subTest(quarantine=quarantine):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                evidence = next(
+                    item
+                    for item in fixture.status["evidence"]
+                    if item["id"] == "gatekeeper_launch"
+                )
+                fixture.status["gatekeeper"]["details"][
+                    "zip_quarantine_output"
+                ] = quarantine
+                command = next(
+                    item
+                    for item in evidence["artifacts"]
+                    if item["path"].endswith("command-log.json")
+                )
+                command_path = fixture.root / command["path"]
+                payload = json.loads(
+                    command_path.read_text(encoding="utf-8")
+                )
+                for record in payload["commands"]:
+                    if record["id"] == "zip_quarantine":
+                        record["stdout"] = quarantine
+                command_path.write_text(
+                    json.dumps(payload) + "\n", encoding="utf-8"
+                )
+                fixture.refresh_artifact(evidence, command)
+                if quarantine.startswith("0083;00000001;"):
+                    fixture.mutate_clean_mac_plist(
+                        "clean-mac-intake.plist",
+                        lambda payload: payload["acquisition"].__setitem__(
+                            "quarantine_timestamp_utc",
+                            "1970-01-01T00:00:01Z",
+                        ),
+                    )
+                fixture.write_status()
+                self.assert_failed(fixture.run(), expected)
+
+    def test_command_log_rejects_test_url_wrong_args_and_false_spctl_outcome(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        artifact_name = fixture.status["clean_mac"]["details"]["downloaded_artifact_filename"]
+        fixture.set_clean_mac_url("https://example.com/" + artifact_name)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "non-test HTTPS candidate URL")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.set_clean_mac_url(
             "https://download.example.com/" + artifact_name
         )
         fixture.write_status()
@@ -2455,11 +3233,17 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             "github.com:abc",
             "github.com:99999",
             "github.com:444",
+            "release.local",
+            "release.internal",
+            "release.lan",
+            "release.onion",
+            "fixture.github.com",
+            "placeholder.github.com",
         ):
             with self.subTest(forbidden_download_host=host):
                 fixture = self.new_fixture()
                 fixture.make_all_pass()
-                fixture.status["clean_mac"]["details"]["download_url"] = (
+                fixture.set_clean_mac_url(
                     "https://{}/{}".format(host, artifact_name)
                 )
                 fixture.write_status()
@@ -2566,7 +3350,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture = self.new_fixture()
         fixture.make_all_pass()
         gate = fixture.status["gatekeeper"]["details"]
-        gate["zip_quarantine_output"] = "0083;fixture;ManualWriter;"
+        gate["zip_quarantine_output"] = (
+            "0083;5e0cc926;ManualWriter;fixture"
+        )
         evidence = fixture.status["evidence"][6]
         command = next(
             item
@@ -2603,7 +3389,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
         fixture.refresh_artifact(evidence, command)
         fixture.write_status()
-        self.assert_failed(fixture.run(), "does not record its assessment outcome")
+        self.assert_failed(
+            fixture.run(), "must record exactly one assessment outcome"
+        )
 
         fixture = self.new_fixture()
         fixture.make_all_pass()

@@ -153,6 +153,7 @@ OBSERVATION_KEYS = {
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 TIMESTAMP_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
 MINIMUM_RECORDING_BYTES = 64 * 1024
+MAXIMUM_RECORDING_BYTES = 95_000_000
 MAXIMUM_PNG_FILE_BYTES = 64 * 1024 * 1024
 MAXIMUM_DECODED_PNG_BYTES = 64 * 1024 * 1024
 FUTURE_TIMESTAMP_TOLERANCE = timedelta(minutes=5)
@@ -592,6 +593,14 @@ def load_profile(requirements_path: Path) -> Tuple[bytes, Mapping[str, Any]]:
         require_string_list(pickup.get("checks"), "pickup requirement checks")
     if profile["modes"] != ["one_player", "two_player"]:
         raise CompileError("requirements profile modes are not canonical")
+    if profile.get("clean_mac_minimum_recording_bytes") != MINIMUM_RECORDING_BYTES:
+        raise CompileError(
+            "requirements profile recording minimum does not match the compiler"
+        )
+    if profile.get("clean_mac_maximum_recording_bytes") != MAXIMUM_RECORDING_BYTES:
+        raise CompileError(
+            "requirements profile recording maximum does not match the compiler"
+        )
     return raw, profile
 
 
@@ -837,12 +846,19 @@ def snapshot_artifact(
         if data is None:
             raise CompileError("internal PNG read failure for {}".format(label))
         verify_png_data(data, label)
-    elif kind == "recording" and snapshot.size < MINIMUM_RECORDING_BYTES:
-        raise CompileError(
-            "{} recording must be at least {} bytes".format(
-                label, MINIMUM_RECORDING_BYTES
+    elif kind == "recording":
+        if snapshot.size < MINIMUM_RECORDING_BYTES:
+            raise CompileError(
+                "{} recording must be at least {} bytes".format(
+                    label, MINIMUM_RECORDING_BYTES
+                )
             )
-        )
+        if snapshot.size > MAXIMUM_RECORDING_BYTES:
+            raise CompileError(
+                "{} recording must be no larger than {} bytes".format(
+                    label, MAXIMUM_RECORDING_BYTES
+                )
+            )
     return path_text, snapshot
 
 

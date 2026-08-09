@@ -886,7 +886,23 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   interval in a structured record, then records the five post-download
   checksum/quarantine/signature commands. Clean-Mac binds only the
   `gatekeeper_launch` session; `main_menu_reached` remains a Gatekeeper detail,
-  not a reason to reuse the controls session. The v2 performance path embeds
+  not a reason to reuse the controls session. Its two-machine tooling keeps the
+  trust boundary explicit: the release workstation prepares a minimal,
+  candidate-bound kit containing no game checkout or candidate; a `/bin/zsh -f`
+  collector on the fresh Mac writes a new permission-restricted raw intake;
+  and an independent reviewer compiles that intake and its continuous recording
+  (not a static PNG) back in the repository. The collector opens the planned URL
+  in Safari but never drives the download, Finder extraction, Gatekeeper dialogs,
+  or **Open Anyway**; it never writes or removes quarantine metadata and
+  preserves five stdout/stderr pairs (ten raw command streams). The
+  compiler rejects test-mode, incomplete, replaced, or candidate-mismatched
+  intake and publishes a no-overwrite evidence pack with `status.next.json`;
+  it never mutates canonical release state. A shared no-follow ISO-BMFF parser
+  rejects padded file-header stand-ins and requires positive duration, a video
+  track, samples, and media payload. The final verifier independently parses
+  the raw plan, intake, Safari-origin plist, command streams, and recording;
+  structural checks support, but do not replace, the independent human review
+  of what the continuous capture shows. The v2 performance path embeds
   source identity in the distribution binary, records
   genuine frame/RSS windows plus active-gameplay, focused-window, and cleared-
   stage evidence, publishes with atomic no-replace output, and binds them to the
