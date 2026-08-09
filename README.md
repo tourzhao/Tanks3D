@@ -157,9 +157,15 @@ make run-alpha-performance-qa DIST_CHANNEL=alpha.N
 ```
 
 The runner re-verifies the tagged candidate, copies the verified ZIP to a
-private hash-checked snapshot, extracts only that snapshot, records real
-one-second frame/RSS windows for 1,801 seconds, and refuses to replace an
-existing evidence directory. For the inherited 22-sound set, the profile
+private hash-checked snapshot, extracts only that snapshot, and first executes
+its no-window, identity-bound performance capability self-check. Legacy or
+drifted candidates fail before evidence files or the long session are started.
+New `macos-alpha-v2` work requires the v3 candidate attestation, proving that
+the tagged strict verifier enforced this capability contract.
+Compatible candidates record real one-second frame/RSS windows for 1,801
+seconds; the runner terminates a hung process after the requested duration plus
+a two-minute grace period and refuses to replace an existing evidence
+directory. For the inherited 22-sound set, the profile
 accepts only the release owner's explicit `ACCEPT` risk decision; `CONFIRM`
 needs a future profile with an externally trusted cryptographic rights-holder
 signature.
@@ -327,12 +333,14 @@ and direct-fire streaks reset when the player tank is destroyed.
 - `macos/` contains application-bundle metadata.
 - `scripts/verify_macos_dist.sh` validates the extracted Alpha archive rather
   than trusting the staging directory.
-- `tests/test_macos_dist_verifier.sh` exercises thirteen isolated rejection paths:
+- `tests/test_macos_dist_verifier.sh` exercises sixteen isolated rejection paths:
   checksum-name/content mismatches, a checksum symlink, input and resolved
   newline-bearing paths, lexical and symlink-parent path escapes, an archive
   symlink, an extra top-level payload, an archived symbolic link, and a
   checksum-updated signed-resource mutation, plus re-signed mutations of the
-  raylib dependency notice and official raylib license.
+  raylib dependency notice, official raylib license, compiled performance
+  capability schema, a bounded capability-probe timeout, and a bounded
+  integrated-self-test timeout.
 
 Run the importer check with:
 
@@ -342,6 +350,8 @@ build/Tanks3D --quick-start --gltf-tank-qa
 
 For narrower checks, use `make test-core`, `make test-game`, `make test-rules`,
 `make test-app`, `make test-unit`, `make test-session`, or `make test-assets`.
+`make test-release-performance-capabilities` runs the exact no-resource,
+no-window performance handshake and compares its JSON byte-for-byte.
 Use `make test-release-screenshot` for the explicit local 1280x720 GPU smoke;
 it opens a window and remains outside CI and headless release gates.
 Use `make test-dist` to rebuild and validate only the self-contained archive.

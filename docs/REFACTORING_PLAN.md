@@ -1200,3 +1200,33 @@ and both success paths. `make test`, `make test-dist DIST_CHANNEL=alpha.4`, the
 pass. The C++ ledger remains 221 suites and 8,580 checks because this increment
 does not alter production C++ behavior. No candidate, tag, or publication was
 created.
+
+The fifty-third increment closes the packaged performance-capability gap
+without changing gameplay, maps, assets, or rendering. A new exclusive
+`--self-test=release-performance-capabilities` path runs before resource,
+window, and audio initialization, executes a deterministic production
+parser/recorder self-check, and emits exact JSON containing the v2 telemetry
+schema, CLI, markers, sampling/memory semantics, and embedded source identity.
+The distribution verifier executes that handshake from the extracted static
+Mach-O with a five-second bound and byte-compares a commit/tag-specialized
+golden contract; its full embedded self-test has a separate twenty-second
+bound. Re-signed binary-schema, hanging-capability, and hanging-self-test
+mutations are the fourteenth through sixteenth distribution rejection cases. The
+hashed build configuration pins the capability schema, telemetry schema, and
+golden SHA; candidate construction and current strict verification reject
+missing, duplicate, or drifted declarations. Candidate attestation v3 prevents
+historical v2 candidates from acquiring the new capability merely by appending
+configuration strings. The v2 initializer and performance
+runner reject legacy candidates before producing outputs. The runner repeats
+the five-second identity-bound probe on its private ZIP snapshot and gives the
+long process its requested duration plus 120 seconds before terminate/kill
+cleanup, preventing an unsupported or hung candidate from consuming an
+unbounded QA session. Every `macos-alpha-v2` status, including blocked work in
+progress, requires candidate v3 and the current build contract; older candidates
+remain readable only through their historical profile. The
+release verifier now passes 60 tests, the v2 initializer 17, and the performance
+runner 21; candidate tooling passes 18 build rejections, 14 strict-verifier
+rejections, five tagged-verifier rejections, and both success paths. The static
+distribution still passes 17 embedded suites / 7,181 checks, and the C++ ledger
+remains 221 suites / 8,580 checks. No candidate, tag, push, or publication was
+created.

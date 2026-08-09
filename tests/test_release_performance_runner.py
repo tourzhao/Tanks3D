@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -18,6 +19,9 @@ import zipfile
 sys.dont_write_bytecode = True
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = REPOSITORY_ROOT / "scripts" / "run_release_performance_qa.py"
+CAPABILITY_GOLDEN = (
+    REPOSITORY_ROOT / "tests" / "expected_release_performance_capabilities.json"
+)
 SPEC = importlib.util.spec_from_file_location("run_release_performance_qa", RUNNER_PATH)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError("cannot load performance QA runner")
@@ -38,12 +42,34 @@ def digest(path):
 
 
 class FakeProcess:
-    def __init__(self, exit_code=0, pid=4242):
+    def __init__(
+        self, exit_code=0, pid=4242, hangs=False, ignores_terminate=False
+    ):
         self.pid = pid
         self._exit_code = exit_code
+        self.hangs = hangs
+        self.ignores_terminate = ignores_terminate
+        self.terminated = False
+        self.killed = False
+        self.wait_timeouts = []
 
-    def wait(self):
+    def wait(self, timeout=None):
+        self.wait_timeouts.append(timeout)
+        if self.hangs and not self.killed and (
+            not self.terminated or self.ignores_terminate
+        ):
+            raise subprocess.TimeoutExpired("fixture candidate", timeout)
+        if self.terminated and not self.ignores_terminate:
+            return -15
+        if self.killed:
+            return -9
         return self._exit_code
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
 
 
 class RunnerFixture:
@@ -59,6 +85,9 @@ class RunnerFixture:
         self.verifier_receipt_mode = "valid"
         self.extract_returncode = 0
         self.process_returncode = 0
+        self.process_hangs = False
+        self.process_ignores_terminate = False
+        self.capability_mode = "valid"
         self.marker_mode = "valid"
         self.telemetry_mode = "valid"
         self.receipt_race = False
@@ -72,6 +101,7 @@ class RunnerFixture:
         self.snapshot_pass_fds = None
         self.verifier_input = None
         self.last_executable = None
+        self.last_process = None
         self._write_verifier()
         self._write_candidate()
 
@@ -89,10 +119,21 @@ class RunnerFixture:
         attestation = self.candidate / "attestation.txt"
         artifact.write_bytes(b"fixture archive bytes\n")
         gate_log.write_text("fixture gates pass\n", encoding="utf-8")
-        build_config.write_text("fixture=true\n", encoding="utf-8")
+        build_config.write_text(
+            "fixture=true\n"
+            "performance-capability-schema={}\n"
+            "performance-telemetry-schema={}\n"
+            "performance-capability-contract-sha256={}\n".format(
+                RUNNER.CAPABILITY_SCHEMA,
+                RUNNER.TELEMETRY_SCHEMA,
+                RUNNER.CAPABILITY_CONTRACT_SHA256,
+            ),
+            encoding="utf-8",
+        )
         artifact_sha = digest(artifact)
         checksum.write_text("{}  {}\n".format(artifact_sha, artifact.name), encoding="utf-8")
         values = {
+            "schema": RUNNER.CANDIDATE_ATTESTATION_SCHEMA,
             "source_commit": SOURCE_COMMIT,
             "source_tag": SOURCE_TAG,
             "artifact_filename": artifact.name,
@@ -168,6 +209,44 @@ class RunnerFixture:
                 stdout="",
                 stderr="forced extraction failure\n" if self.extract_returncode else "",
             )
+        if len(argv) == 2 and argv[1] == RUNNER.CAPABILITY_ARGUMENT:
+            if self.capability_mode == "timeout":
+                raise subprocess.TimeoutExpired(argv, kwargs.get("timeout"))
+            identity = RUNNER.CandidateIdentity(
+                candidate_dir=self.candidate,
+                artifact=self.artifact,
+                artifact_sha256=self.artifact_sha256,
+                source_commit=SOURCE_COMMIT,
+                source_tag=SOURCE_TAG,
+            )
+            capability = json.loads(CAPABILITY_GOLDEN.read_text(encoding="utf-8"))
+            capability["source_commit"] = identity.source_commit
+            capability["source_tag"] = identity.source_tag
+            if self.capability_mode == "wrong_schema":
+                capability["schema"] = "tanks3d-release-performance-capabilities-v0"
+            elif self.capability_mode == "wrong_identity":
+                capability["source_commit"] = "0" * 40
+            elif self.capability_mode == "extra_key":
+                capability["unexpected"] = True
+            if self.capability_mode == "duplicate_key":
+                stdout = b'{"schema":"first","schema":"second"}\n'
+            elif self.capability_mode == "invalid_utf8":
+                stdout = b"\xff\n"
+            else:
+                stdout = (
+                    json.dumps(capability, indent=2, sort_keys=False) + "\n"
+                ).encode("utf-8")
+            stderr = (
+                b"unexpected capability diagnostic\n"
+                if self.capability_mode == "stderr"
+                else b""
+            )
+            return subprocess.CompletedProcess(
+                argv,
+                2 if self.capability_mode == "nonzero" else 0,
+                stdout=stdout,
+                stderr=stderr,
+            )
         raise AssertionError("unexpected subprocess.run argv: {!r}".format(argv))
 
     @staticmethod
@@ -226,7 +305,12 @@ class RunnerFixture:
             (self.output / RUNNER.RECEIPT_FILENAME).write_text(
                 "sentinel receipt must survive\n", encoding="utf-8"
             )
-        return FakeProcess(self.process_returncode)
+        self.last_process = FakeProcess(
+            self.process_returncode,
+            hangs=self.process_hangs,
+            ignores_terminate=self.process_ignores_terminate,
+        )
+        return self.last_process
 
     def patches(self):
         return (
@@ -254,6 +338,26 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(RUNNER.RunnerError, fragment):
             fixture.run(duration=2)
         self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_python_capability_contract_exactly_specializes_repository_golden(self):
+        fixture = self.new_fixture()
+        identity = RUNNER.CandidateIdentity(
+            candidate_dir=fixture.candidate,
+            artifact=fixture.artifact,
+            artifact_sha256=fixture.artifact_sha256,
+            source_commit=SOURCE_COMMIT,
+            source_tag=SOURCE_TAG,
+        )
+        golden = json.loads(CAPABILITY_GOLDEN.read_text(encoding="utf-8"))
+        self.assertEqual(digest(CAPABILITY_GOLDEN), RUNNER.CAPABILITY_CONTRACT_SHA256)
+        golden["source_commit"] = SOURCE_COMMIT
+        golden["source_tag"] = SOURCE_TAG
+        actual = RUNNER.expected_performance_capabilities(identity)
+        self.assertEqual(actual, golden)
+        self.assertEqual(
+            (json.dumps(actual, indent=2, sort_keys=False) + "\n").encode("utf-8"),
+            (json.dumps(golden, indent=2, sort_keys=False) + "\n").encode("utf-8"),
+        )
 
     def test_success_binds_candidate_process_nonce_time_and_three_outputs(self):
         fixture = self.new_fixture()
@@ -299,6 +403,11 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         )
         self.assertEqual(fixture.calls[1][0], "/usr/bin/ditto")
         self.assertEqual(
+            fixture.calls[2],
+            [str(fixture.last_executable), RUNNER.CAPABILITY_ARGUMENT],
+        )
+        self.assertIn("--release-performance-log=", " ".join(fixture.calls[3]))
+        self.assertEqual(
             fixture.extracted_archive_argument,
             "/dev/fd/{}".format(fixture.snapshot_descriptor),
         )
@@ -312,6 +421,10 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
             os.fstat(fixture.snapshot_descriptor)
         self.assertIsNotNone(fixture.last_executable)
         self.assertFalse(fixture.last_executable.exists())
+        self.assertEqual(
+            fixture.last_process.wait_timeouts,
+            [RUNNER.DEFAULT_DURATION_SECONDS + RUNNER.PROCESS_TIMEOUT_GRACE_SECONDS],
+        )
 
     def test_archive_replacement_after_snapshot_cannot_change_extracted_bytes(self):
         fixture = self.new_fixture()
@@ -449,6 +562,80 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         with self.assertRaises(OSError):
             os.fstat(fixture.snapshot_descriptor)
         self.assertEqual(list(fixture.output.iterdir()), [])
+
+    def test_legacy_build_config_is_rejected_before_snapshot_or_launch(self):
+        fixture = self.new_fixture()
+        build_config = fixture.candidate / "build-config.txt"
+        build_config.write_text("fixture=true\n", encoding="utf-8")
+        attestation = fixture.candidate / "attestation.txt"
+        text = attestation.read_text(encoding="utf-8")
+        text = re.sub(
+            r"^build_config_sha256=.*$",
+            "build_config_sha256={}".format(digest(build_config)),
+            text,
+            flags=re.MULTILINE,
+        )
+        attestation.write_text(text, encoding="utf-8")
+
+        self.assert_runner_error(fixture, "current performance-capability-schema contract")
+        self.assertEqual(len(fixture.calls), 1)
+        self.assertIsNone(fixture.last_process)
+        self.assertEqual(list(fixture.output.iterdir()), [])
+
+    def test_legacy_candidate_attestation_is_rejected_before_snapshot_or_launch(self):
+        fixture = self.new_fixture()
+        attestation = fixture.candidate / "attestation.txt"
+        text = attestation.read_text(encoding="utf-8").replace(
+            "schema=tanks3d-alpha-candidate-v3",
+            "schema=tanks3d-alpha-candidate-v2",
+            1,
+        )
+        attestation.write_text(text, encoding="utf-8")
+
+        self.assert_runner_error(fixture, "tanks3d-alpha-candidate-v3")
+        self.assertEqual(len(fixture.calls), 1)
+        self.assertIsNone(fixture.last_process)
+        self.assertEqual(list(fixture.output.iterdir()), [])
+
+    def test_capability_probe_failures_precede_long_run_and_leave_no_outputs(self):
+        cases = (
+            ("nonzero", "probe failed"),
+            ("timeout", "probe timed out"),
+            ("stderr", "wrote to stderr"),
+            ("wrong_schema", "does not match"),
+            ("wrong_identity", "does not match"),
+            ("extra_key", "does not match"),
+            ("duplicate_key", "duplicate JSON key"),
+            ("invalid_utf8", "not UTF-8"),
+        )
+        for mode, fragment in cases:
+            with self.subTest(mode=mode):
+                fixture = self.new_fixture()
+                fixture.capability_mode = mode
+                self.assert_runner_error(fixture, fragment)
+                self.assertIsNone(fixture.last_process)
+                self.assertEqual(list(fixture.output.iterdir()), [])
+
+    def test_long_run_timeout_terminates_process_and_never_publishes_receipt(self):
+        fixture = self.new_fixture()
+        fixture.process_hangs = True
+        self.assert_runner_error(fixture, "exceeded its 122-second timeout")
+        self.assertIsNotNone(fixture.last_process)
+        self.assertTrue(fixture.last_process.terminated)
+        self.assertFalse(fixture.last_process.killed)
+        self.assertEqual(fixture.last_process.wait_timeouts, [122, 5])
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
+
+    def test_long_run_timeout_kills_process_that_ignores_termination(self):
+        fixture = self.new_fixture()
+        fixture.process_hangs = True
+        fixture.process_ignores_terminate = True
+        self.assert_runner_error(fixture, "exceeded its 122-second timeout")
+        self.assertIsNotNone(fixture.last_process)
+        self.assertTrue(fixture.last_process.terminated)
+        self.assertTrue(fixture.last_process.killed)
+        self.assertEqual(fixture.last_process.wait_timeouts, [122, 5, 5])
+        self.assertFalse((fixture.output / RUNNER.RECEIPT_FILENAME).exists())
 
     def test_verifier_receipt_must_be_exact_and_match_the_captured_candidate(self):
         cases = (

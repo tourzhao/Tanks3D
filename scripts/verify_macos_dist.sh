@@ -4,8 +4,8 @@ set -eu
 LC_ALL=C
 export LC_ALL
 
-if [ "$#" -ne 7 ]; then
-    echo "usage: $0 PROJECT_ROOT ARCHIVE CHECKSUM ARCH MACOS_MIN VERSION BASENAME" >&2
+if [ "$#" -ne 9 ]; then
+    echo "usage: $0 PROJECT_ROOT ARCHIVE CHECKSUM ARCH MACOS_MIN VERSION BASENAME SOURCE_COMMIT SOURCE_TAG" >&2
     exit 2
 fi
 
@@ -16,11 +16,48 @@ expected_arch=$4
 expected_macos_min=$5
 expected_version=$6
 expected_basename=$7
+expected_source_commit=$8
+expected_source_tag=$9
 
 fail()
 {
     echo "distribution verification failed: $1" >&2
     exit 1
+}
+
+run_bounded_executable()
+{
+    bounded_executable=$1
+    bounded_stdout=$2
+    bounded_stderr=$3
+    bounded_timeout=$4
+    bounded_argument=$5
+    python3 - "$bounded_executable" "$bounded_stdout" "$bounded_stderr" \
+            "$bounded_timeout" "$bounded_argument" <<'PY'
+from pathlib import Path
+import subprocess
+import sys
+
+executable = sys.argv[1]
+stdout_path = Path(sys.argv[2])
+stderr_path = Path(sys.argv[3])
+timeout_seconds = int(sys.argv[4], 10)
+argument = sys.argv[5]
+with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:
+    try:
+        completed = subprocess.run(
+            [executable, argument],
+            stdout=stdout_stream,
+            stderr=stderr_stream,
+            cwd=str(Path(executable).parent),
+            close_fds=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit(124)
+raise SystemExit(completed.returncode)
+PY
 }
 
 contains_newline()
@@ -84,6 +121,7 @@ checksum="$checksum_dir/$checksum_name"
 [ ! -L "$checksum" ] || fail "checksum must not be a symbolic link"
 
 resource_manifest="$project_root/tests/expected_dist_bundle_resources.txt"
+performance_capability_contract="$project_root/tests/expected_release_performance_capabilities.json"
 case "$archive" in
     "$project_root"/build/dist/*.zip | \
         "$project_root"/build/release/*/*.zip) ;;
@@ -91,6 +129,22 @@ case "$archive" in
 esac
 
 [ -f "$resource_manifest" ] || fail "resource manifest is missing"
+[ -x "$(command -v python3 2>/dev/null)" ] || \
+    fail "python3 is required for the bounded capability probe"
+[ -f "$performance_capability_contract" ] && \
+    [ ! -L "$performance_capability_contract" ] || \
+    fail "release performance capability contract is missing"
+performance_capability_contract_sha256=$(shasum -a 256 \
+    "$performance_capability_contract" | awk '{print $1}')
+[ "$performance_capability_contract_sha256" = \
+    5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c ] || \
+    fail "release performance capability contract has drifted"
+printf '%s\n' "$expected_source_commit" | \
+    grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$' || \
+    fail "expected source commit is invalid"
+printf '%s\n' "$expected_source_tag" | \
+    grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$' || \
+    fail "expected source tag is invalid"
 
 [ "$archive_name" = "$expected_basename.zip" ] || \
     fail "archive name does not match the requested release identity"
@@ -279,6 +333,39 @@ if ! codesign --verify --deep --strict --verbose=4 "$app"; then
     fail "app signature integrity check failed"
 fi
 
+performance_capability_expected="$verify_root/expected-release-performance-capabilities.json"
+performance_capability_output="$verify_root/actual-release-performance-capabilities.json"
+performance_capability_stderr="$verify_root/release-performance-capabilities.stderr"
+awk -v source_commit="$expected_source_commit" \
+        -v source_tag="$expected_source_tag" '
+    /^  "source_commit": / {
+        printf "  \"source_commit\": \"%s\",\n", source_commit
+        next
+    }
+    /^  "source_tag": / {
+        printf "  \"source_tag\": \"%s\",\n", source_tag
+        next
+    }
+    { print }
+' "$performance_capability_contract" > "$performance_capability_expected"
+performance_capability_status=0
+run_bounded_executable "$executable" "$performance_capability_output" \
+        "$performance_capability_stderr" 5 \
+        --self-test=release-performance-capabilities || \
+    performance_capability_status=$?
+if [ "$performance_capability_status" -ne 0 ]; then
+    sed -n '1,40p' "$performance_capability_stderr" >&2
+    [ "$performance_capability_status" -ne 124 ] || \
+        fail "release performance capability probe timed out"
+    fail "release performance capability probe failed"
+fi
+[ ! -s "$performance_capability_stderr" ] || {
+    sed -n '1,40p' "$performance_capability_stderr" >&2
+    fail "release performance capability probe wrote to stderr"
+}
+cmp -s "$performance_capability_expected" "$performance_capability_output" || \
+    fail "release performance capability manifest does not match the contract"
+
 resource_list="$verify_root/resources.txt"
 cd "$resources"
 find . -type f -print | LC_ALL=C sort > "$resource_list"
@@ -318,5 +405,19 @@ local_paths=$(grep -R -a -l -E '/Users/|/opt/homebrew|/usr/local/' "$app" \
     2>/dev/null | sed -n '1p')
 [ -z "$local_paths" ] || fail "app embeds a build-machine path"
 
-"$executable" --self-test
+self_test_output="$verify_root/integrated-self-test.stdout"
+self_test_stderr="$verify_root/integrated-self-test.stderr"
+self_test_status=0
+run_bounded_executable "$executable" "$self_test_output" \
+        "$self_test_stderr" 20 --self-test || self_test_status=$?
+if [ "$self_test_status" -ne 0 ]; then
+    sed -n '1,80p' "$self_test_output" >&2
+    sed -n '1,80p' "$self_test_stderr" >&2
+    [ "$self_test_status" -ne 124 ] || \
+        fail "integrated self-test timed out"
+    fail "integrated self-test failed"
+fi
+cat "$self_test_output"
+cat "$self_test_stderr" >&2
+echo "Verified release performance capabilities: tanks3d-performance-log-v2"
 echo "Verified self-contained distribution: $archive_name"

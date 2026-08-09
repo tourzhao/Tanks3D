@@ -1,0 +1,22 @@
+{
+  "schema": "tanks3d-release-performance-capabilities-v1",
+  "telemetry_schema": "tanks3d-performance-log-v2",
+  "producer": "Tanks3D",
+  "quick_start_argument": "--quick-start",
+  "log_argument_prefix": "--release-performance-log=",
+  "candidate_sha256_argument_prefix": "--release-candidate-sha256=",
+  "session_nonce_argument_prefix": "--release-session-nonce=",
+  "duration_argument_prefix": "--release-performance-duration-seconds=",
+  "start_marker": "TANKS3D_PERFORMANCE_START",
+  "complete_marker": "TANKS3D_PERFORMANCE_COMPLETE",
+  "default_duration_seconds": 1801,
+  "maximum_duration_seconds": 14400,
+  "sample_interval_microseconds": 1000000,
+  "clock": "steady_clock",
+  "memory_metric": "proc_pid_rusage.ri_phys_footprint",
+  "memory_unit": "bytes",
+  "app_states": ["gameplay", "settlement", "high_score"],
+  "source_commit": "0000000000000000000000000000000000000000",
+  "source_tag": "development",
+  "self_check": "PASS"
+}

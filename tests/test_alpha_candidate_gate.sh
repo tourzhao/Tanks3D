@@ -54,7 +54,7 @@ apply_fixture_files()
 
 set -eu
 
-[ "$#" -eq 7 ] || exit 64
+[ "$#" -eq 9 ] || exit 64
 if [ "${FAKE_DIST_VERIFIER_FAIL:-}" = 1 ]; then
     echo "controlled distribution-verifier failure" >&2
     exit 75
@@ -170,6 +170,9 @@ case "$target" in
         dist_source_commit=
         dist_source_tag=
         dist_raylib_version=6.0
+        dist_performance_capability_schema=tanks3d-release-performance-capabilities-v1
+        dist_performance_telemetry_schema=tanks3d-performance-log-v2
+        dist_performance_contract_sha256=5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c
         for make_argument do
             case "$make_argument" in
                 DIST_CHANNEL=*) dist_channel=${make_argument#DIST_CHANNEL=} ;;
@@ -194,15 +197,36 @@ case "$target" in
         if [ -n "${FAKE_CONFIG_RAYLIB_VERSION:-}" ]; then
             dist_raylib_version=$FAKE_CONFIG_RAYLIB_VERSION
         fi
+        if [ -n "${FAKE_CONFIG_PERFORMANCE_CAPABILITY_SCHEMA:-}" ]; then
+            dist_performance_capability_schema=$FAKE_CONFIG_PERFORMANCE_CAPABILITY_SCHEMA
+        fi
+        if [ -n "${FAKE_CONFIG_PERFORMANCE_TELEMETRY_SCHEMA:-}" ]; then
+            dist_performance_telemetry_schema=$FAKE_CONFIG_PERFORMANCE_TELEMETRY_SCHEMA
+        fi
+        if [ -n "${FAKE_CONFIG_PERFORMANCE_CONTRACT_SHA256:-}" ]; then
+            dist_performance_contract_sha256=$FAKE_CONFIG_PERFORMANCE_CONTRACT_SHA256
+        fi
         dist_dir="$fixture_root/build/dist"
         payload_dir="$dist_dir/payload"
         artifact_basename="Tanks3D-0.1.0-$dist_channel-macos-arm64-macos26.0"
         artifact="$dist_dir/$artifact_basename.zip"
         mkdir -p "$payload_dir"
-        printf '%s\n' "source-commit=$dist_source_commit" \
-            "source-tag=$dist_source_tag" 'arch=arm64' 'macos-min=26.0' \
-            "raylib-version=$dist_raylib_version" \
-            'compiler=controlled-test-compiler' > "$dist_dir/.build-config"
+        {
+            printf '%s\n' "source-commit=$dist_source_commit" \
+                "source-tag=$dist_source_tag" 'arch=arm64' \
+                'macos-min=26.0' "raylib-version=$dist_raylib_version"
+            if [ "${FAKE_CONFIG_OMIT_PERFORMANCE_CAPABILITY:-}" != 1 ]; then
+                printf '%s\n' \
+                    "performance-capability-schema=$dist_performance_capability_schema" \
+                    "performance-telemetry-schema=$dist_performance_telemetry_schema" \
+                    "performance-capability-contract-sha256=$dist_performance_contract_sha256"
+            fi
+            if [ "${FAKE_CONFIG_DUPLICATE_PERFORMANCE_CAPABILITY:-}" = 1 ]; then
+                printf '%s\n' \
+                    "performance-capability-schema=$dist_performance_capability_schema"
+            fi
+            printf '%s\n' 'compiler=controlled-test-compiler'
+        } > "$dist_dir/.build-config"
         printf '%s\n' 'controlled ZIP payload' > "$payload_dir/payload.txt"
         (
             cd "$payload_dir"
@@ -391,6 +415,28 @@ expect_build_rejection unsupported-build-config-raylib \
     "distribution build configuration names an unsupported raylib version" \
     "$fixture_dir" FAKE_CONFIG_RAYLIB_VERSION=6.1
 
+prepare_fixture missing-build-config-performance-capability correct
+expect_build_rejection missing-build-config-performance-capability \
+    "distribution performance capability schema is missing or ambiguous" \
+    "$fixture_dir" FAKE_CONFIG_OMIT_PERFORMANCE_CAPABILITY=1
+
+prepare_fixture unsupported-build-config-performance-capability correct
+expect_build_rejection unsupported-build-config-performance-capability \
+    "distribution build configuration names an unsupported performance capability schema" \
+    "$fixture_dir" \
+    FAKE_CONFIG_PERFORMANCE_CAPABILITY_SCHEMA=tanks3d-release-performance-capabilities-v0
+
+prepare_fixture duplicate-build-config-performance-capability correct
+expect_build_rejection duplicate-build-config-performance-capability \
+    "distribution performance capability schema is missing or ambiguous" \
+    "$fixture_dir" FAKE_CONFIG_DUPLICATE_PERFORMANCE_CAPABILITY=1
+
+prepare_fixture unsupported-build-config-performance-contract correct
+expect_build_rejection unsupported-build-config-performance-contract \
+    "distribution build configuration names an unsupported performance capability contract" \
+    "$fixture_dir" \
+    FAKE_CONFIG_PERFORMANCE_CONTRACT_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+
 prepare_fixture valid-candidate correct
 valid_fixture=$fixture_dir
 seed_preserved_release_outputs "$valid_fixture"
@@ -427,6 +473,14 @@ sed 's/^gate_test_alpha_candidate=PASS$/gate_test_alpha_candidate=FAIL/' \
 mv "$attestation.tmp" "$attestation"
 expect_verifier_rejection gate-attestation \
     "attestation gate 'gate_test_alpha_candidate' is not PASS" \
+    "$valid_fixture" "$valid_candidate"
+cp "$attestation_backup" "$attestation"
+
+sed 's/^schema=tanks3d-alpha-candidate-v3$/schema=tanks3d-alpha-candidate-v2/' \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection legacy-attestation-schema \
+    "unsupported attestation schema" \
     "$valid_fixture" "$valid_candidate"
 cp "$attestation_backup" "$attestation"
 
@@ -468,6 +522,45 @@ sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256
 mv "$attestation.tmp" "$attestation"
 expect_verifier_rejection config-raylib-version \
     "build configuration raylib version is unsupported" \
+    "$valid_fixture" "$valid_candidate"
+cp "$build_config_backup" "$build_config"
+cp "$attestation_backup" "$attestation"
+
+sed '/^performance-capability-schema=/d' "$build_config" > \
+    "$build_config.tmp"
+mv "$build_config.tmp" "$build_config"
+modified_build_config_sha256=$(shasum -a 256 "$build_config" | awk '{print $1}')
+sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256/" \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection config-missing-performance-capability \
+    "build configuration performance capability schema is missing or ambiguous" \
+    "$valid_fixture" "$valid_candidate"
+cp "$build_config_backup" "$build_config"
+cp "$attestation_backup" "$attestation"
+
+sed 's/^performance-telemetry-schema=.*/performance-telemetry-schema=tanks3d-performance-log-v1/' \
+    "$build_config" > "$build_config.tmp"
+mv "$build_config.tmp" "$build_config"
+modified_build_config_sha256=$(shasum -a 256 "$build_config" | awk '{print $1}')
+sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256/" \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection config-performance-telemetry-schema \
+    "build configuration performance telemetry schema is unsupported" \
+    "$valid_fixture" "$valid_candidate"
+cp "$build_config_backup" "$build_config"
+cp "$attestation_backup" "$attestation"
+
+sed 's/^performance-capability-contract-sha256=.*/performance-capability-contract-sha256=0000000000000000000000000000000000000000000000000000000000000000/' \
+    "$build_config" > "$build_config.tmp"
+mv "$build_config.tmp" "$build_config"
+modified_build_config_sha256=$(shasum -a 256 "$build_config" | awk '{print $1}')
+sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256/" \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection config-performance-contract \
+    "build configuration performance capability contract is unsupported" \
     "$valid_fixture" "$valid_candidate"
 cp "$build_config_backup" "$build_config"
 cp "$attestation_backup" "$attestation"
@@ -622,4 +715,4 @@ env TMPDIR="$tagged_temporary_root" \
     fail "restored post-tag candidate did not verify"
 assert_no_tagged_temporary_snapshot
 
-echo "Alpha candidate gate tests passed: 14 build rejections, 10 strict verifier rejections, 5 tagged verifier rejections, 2 successes."
+echo "Alpha candidate gate tests passed: 18 build rejections, 14 strict verifier rejections, 5 tagged verifier rejections, 2 successes."

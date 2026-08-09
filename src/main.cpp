@@ -17,6 +17,7 @@
 #include <rlgl.h>
 
 #include "app/command_side_effect_dispatch.h"
+#include "app/release_performance_capabilities.h"
 #include "app/release_performance_log.h"
 #include "app/release_performance_options.h"
 #include "app/release_screenshot_file.h"
@@ -96,6 +97,10 @@ using tanks3d::app::Rgba8;
 using tanks3d::app::ReleasePerformanceOptions;
 using tanks3d::app::ReleasePerformanceRecorder;
 using tanks3d::app::ReleaseScreenshotOptions;
+using tanks3d::app::checkReleasePerformanceCapabilities;
+using tanks3d::app::kReleasePerformanceCapabilitiesArgument;
+using tanks3d::app::kReleasePerformanceCompleteMarker;
+using tanks3d::app::kReleasePerformanceStartMarker;
 using tanks3d::app::kReleaseScreenshotHeight;
 using tanks3d::app::kReleaseScreenshotWidth;
 using tanks3d::app::saveReleaseScreenshotFileNoReplace;
@@ -119,6 +124,7 @@ using tanks3d::app::makeShellMapCorePresentationCommand;
 using tanks3d::app::makeShellTankPresentationCommand;
 using tanks3d::app::parseReleasePerformanceOptions;
 using tanks3d::app::parseReleaseScreenshotOptions;
+using tanks3d::app::writeReleasePerformanceCapabilities;
 using tanks3d::app::dispatchCommandSideEffect;
 using tanks3d::app::shellMapCorePresentationStep;
 using tanks3d::app::shellTankPresentationStep;
@@ -6869,6 +6875,37 @@ fs::path locateResourceRoot(const char *programPath)
 int main(int argc, char **argv)
 {
     const std::string firstArgument = argc > 1 ? argv[1] : "";
+    bool capabilityArgumentSeen = false;
+    for (int argument = 1; argument < argc; ++argument)
+    {
+        if (std::string{argv[argument]} ==
+            kReleasePerformanceCapabilitiesArgument)
+        {
+            capabilityArgumentSeen = true;
+        }
+    }
+    if (capabilityArgumentSeen)
+    {
+        if (argc != 2 ||
+            firstArgument != kReleasePerformanceCapabilitiesArgument)
+        {
+            std::cerr << kReleasePerformanceCapabilitiesArgument
+                      << " must be the only argument\n";
+            return 2;
+        }
+        const auto capabilityCheck = checkReleasePerformanceCapabilities(
+            TANKS3D_RELEASE_SOURCE_COMMIT, TANKS3D_RELEASE_SOURCE_TAG);
+        if (!capabilityCheck.success)
+        {
+            std::cerr << "Release performance capability self-check failed: "
+                      << capabilityCheck.error << '\n';
+            return 1;
+        }
+        writeReleasePerformanceCapabilities(
+            std::cout, TANKS3D_RELEASE_SOURCE_COMMIT,
+            TANKS3D_RELEASE_SOURCE_TAG);
+        return std::cout ? 0 : 1;
+    }
     if (firstArgument == "--self-test=unit")
         return runSelfTests({}, SelfTestSelection::Unit);
     if (firstArgument == "--self-test=session")
@@ -6878,7 +6915,8 @@ int main(int argc, char **argv)
     {
         std::cerr << "Unknown self-test category: "
                   << firstArgument.substr(std::string("--self-test=").size())
-                  << "\nValid categories: unit, session, assets. "
+                  << "\nValid categories: unit, session, assets, "
+                     "release-performance-capabilities. "
                      "Use --self-test to run all suites.\n";
         return 2;
     }
@@ -7192,7 +7230,7 @@ int main(int argc, char **argv)
             }
             else
             {
-                std::cout << "TANKS3D_PERFORMANCE_START "
+                std::cout << kReleasePerformanceStartMarker << ' '
                           << releasePerformance.sessionNonce << std::endl;
             }
         }
@@ -7241,7 +7279,7 @@ int main(int argc, char **argv)
                 else
                 {
                     releasePerformanceSaved = true;
-                    std::cout << "TANKS3D_PERFORMANCE_COMPLETE "
+                    std::cout << kReleasePerformanceCompleteMarker << ' '
                               << releasePerformance.sessionNonce
                               << std::endl;
                 }

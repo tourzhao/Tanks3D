@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import struct
 import subprocess
@@ -113,13 +114,20 @@ class InitializerFixture:
         attestation = self.candidate / "attestation.txt"
         artifact.write_bytes(b"fixture candidate ZIP\n")
         gate_log.write_text("fixture gates\n", encoding="utf-8")
-        build_config.write_text("fixture=true\n", encoding="utf-8")
+        build_config.write_text(
+            "fixture=true\n"
+            "performance-capability-schema=tanks3d-release-performance-capabilities-v1\n"
+            "performance-telemetry-schema=tanks3d-performance-log-v2\n"
+            "performance-capability-contract-sha256="
+            "5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c\n",
+            encoding="utf-8",
+        )
         artifact_hash = digest(artifact)
         checksum.write_text(
             "{}  {}\n".format(artifact_hash, artifact_name), encoding="utf-8"
         )
         values = {
-            "schema": "tanks3d-alpha-candidate-v2",
+            "schema": "tanks3d-alpha-candidate-v3",
             "source_commit": COMMIT,
             "source_head_at_start": COMMIT,
             "source_head_at_finish": COMMIT,
@@ -175,6 +183,19 @@ class InitializerFixture:
             check=False,
             timeout=15,
         )
+
+    def replace_build_config(self, text):
+        build_config = self.candidate / "build-config.txt"
+        build_config.write_text(text, encoding="utf-8")
+        attestation = self.candidate / "attestation.txt"
+        attestation_text = attestation.read_text(encoding="utf-8")
+        attestation_text = re.sub(
+            r"^build_config_sha256=.*$",
+            "build_config_sha256={}".format(digest(build_config)),
+            attestation_text,
+            flags=re.MULTILINE,
+        )
+        attestation.write_text(attestation_text, encoding="utf-8")
 
     def assert_no_outputs(self, testcase):
         testcase.assertFalse(self.asset_destination.exists())
@@ -432,6 +453,41 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
                     profile_path.write_text(json.dumps(profile), encoding="utf-8")
                     fragment = "does not match the canonical contract"
                 self.assert_failed(fixture, fixture.run(), fragment)
+
+    def test_refuses_legacy_or_drifted_performance_capability_contract(self):
+        cases = (
+            ("fixture=true\n", "performance-capability-schema"),
+            (
+                "fixture=true\n"
+                "performance-capability-schema=tanks3d-release-performance-capabilities-v0\n"
+                "performance-telemetry-schema=tanks3d-performance-log-v2\n"
+                "performance-capability-contract-sha256="
+                "5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c\n",
+                "performance-capability-schema",
+            ),
+        )
+        for build_config, fragment in cases:
+            with self.subTest(build_config=build_config):
+                fixture = self.fixture()
+                fixture.replace_build_config(build_config)
+                self.assert_failed(fixture, fixture.run(), fragment)
+
+    def test_refuses_legacy_candidate_attestation_before_writing(self):
+        fixture = self.fixture()
+        attestation = fixture.candidate / "attestation.txt"
+        attestation.write_text(
+            attestation.read_text(encoding="utf-8").replace(
+                "schema=tanks3d-alpha-candidate-v3",
+                "schema=tanks3d-alpha-candidate-v2",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        self.assert_failed(
+            fixture,
+            fixture.run(),
+            "candidate must use tanks3d-alpha-candidate-v3",
+        )
 
     def test_refuses_tagged_verifier_failure(self):
         fixture = self.fixture()

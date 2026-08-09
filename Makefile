@@ -32,10 +32,25 @@ RELEASE_SCREENSHOT_SMOKE_FILE := \
 RELEASE_PERFORMANCE_SMOKE_DIR := build/release-performance-smoke
 RELEASE_PERFORMANCE_SMOKE_FILE := \
 	$(RELEASE_PERFORMANCE_SMOKE_DIR)/performance-log-v2.json
+RELEASE_PERFORMANCE_CAPABILITY_SCHEMA := \
+	tanks3d-release-performance-capabilities-v1
+RELEASE_PERFORMANCE_TELEMETRY_SCHEMA := tanks3d-performance-log-v2
+RELEASE_PERFORMANCE_CAPABILITY_CONTRACT := \
+	tests/expected_release_performance_capabilities.json
+RELEASE_PERFORMANCE_CAPABILITY_CONTRACT_SHA256 := $(shell shasum -a 256 \
+	$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) 2>/dev/null | awk '{print $$1}')
+RELEASE_PERFORMANCE_REQUIRED_CONTRACT_SHA256 := \
+	5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c
+RELEASE_PERFORMANCE_CAPABILITY_OUTPUT := \
+	build/tests/release-performance-capabilities.json
+RELEASE_PERFORMANCE_CAPABILITY_STDERR := \
+	build/tests/release-performance-capabilities.stderr
 COMMAND_SIDE_EFFECT_DISPATCH_SOURCE := \
 	src/app/command_side_effect_dispatch.cpp
 ATOMIC_OUTPUT_FILE_SOURCE := src/app/atomic_output_file.cpp
 RELEASE_PERFORMANCE_LOG_SOURCE := src/app/release_performance_log.cpp
+RELEASE_PERFORMANCE_CAPABILITY_SOURCE := \
+	src/app/release_performance_capabilities.cpp
 RELEASE_SCREENSHOT_FILE_SOURCE := src/app/release_screenshot_file.cpp
 SHELL_CANCELLATION_PRESENTATION_SOURCE := \
 	src/app/shell_cancellation_presentation.cpp
@@ -44,6 +59,7 @@ SHELL_MAP_CORE_PRESENTATION_SOURCE := \
 SHELL_TANK_PRESENTATION_SOURCE := src/app/shell_tank_presentation.cpp
 APP_SOURCES := $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
 	$(ATOMIC_OUTPUT_FILE_SOURCE) \
+	$(RELEASE_PERFORMANCE_CAPABILITY_SOURCE) \
 	$(RELEASE_PERFORMANCE_LOG_SOURCE) \
 	$(RELEASE_SCREENSHOT_FILE_SOURCE) \
 	$(SHELL_CANCELLATION_PRESENTATION_SOURCE) \
@@ -66,6 +82,7 @@ AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
 APP_HEADERS := src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
 	src/app/atomic_output_file.h \
+	src/app/release_performance_capabilities.h \
 	src/app/release_performance_log.h \
 	src/app/release_performance_options.h \
 	src/app/release_screenshot_file.h \
@@ -452,7 +469,8 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	test-app test-core-boundaries test-pure-boundaries \
 	test-app-boundaries test-architecture test-unit test-session \
 	test-assets test-bundle test-release-screenshot test-sanitize coverage \
-	test-release-performance-smoke run-alpha-performance-qa \
+	test-release-performance-capabilities test-release-performance-smoke \
+	run-alpha-performance-qa \
 	check-dist-prereqs test-dist dist test-alpha-candidate \
 	verify-alpha-candidate verify-tagged-alpha-candidate alpha-candidate \
 	test-release-status check-alpha-release-evidence \
@@ -500,6 +518,8 @@ check-dist-prereqs:
 	test "$(RAYLIB_VERSION)" = "$(RAYLIB_REQUIRED_VERSION)"
 	test "$(RAYLIB_LICENSE_SHA256)" = \
 		"$(RAYLIB_REQUIRED_LICENSE_SHA256)"
+	test "$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT_SHA256)" = \
+		"$(RELEASE_PERFORMANCE_REQUIRED_CONTRACT_SHA256)"
 	test -n "$(APP_VERSION)"
 	printf '%s\n' "$(DIST_SOURCE_COMMIT)" | \
 		grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$$'
@@ -527,6 +547,9 @@ $(DIST_CONFIG_FILE): force-dist-config | check-dist-prereqs
 			'raylib-prefix=$(abspath $(RAYLIB_PREFIX))' \
 			'raylib-version=$(RAYLIB_VERSION)' \
 			'raylib-sha256=$(DIST_RAYLIB_SHA256)' \
+			'performance-capability-schema=$(RELEASE_PERFORMANCE_CAPABILITY_SCHEMA)' \
+			'performance-telemetry-schema=$(RELEASE_PERFORMANCE_TELEMETRY_SCHEMA)' \
+			'performance-capability-contract-sha256=$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT_SHA256)' \
 			'arch=$(DIST_ARCH)' 'macos-min=$(DIST_MACOS_MIN)' \
 			'compile-flags=$(DIST_COMPILE_FLAGS)' \
 			'link-flags=$(DIST_LINK_FLAGS)'; \
@@ -600,14 +623,16 @@ $(DIST_CHECKSUM): $(DIST_ARCHIVE)
 	cd $(DIST_DIR) && shasum -a 256 $(notdir $(DIST_ARCHIVE)) \
 		> $(notdir $(DIST_CHECKSUM))
 
-test-dist: $(DIST_CHECKSUM) $(DIST_RESOURCE_MANIFEST) $(DIST_VERIFY_SCRIPT) \
+test-dist: $(DIST_CHECKSUM) $(DIST_RESOURCE_MANIFEST) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) $(DIST_VERIFY_SCRIPT) \
 		$(DIST_VERIFY_NEGATIVE_TEST)
 	sh $(DIST_VERIFY_SCRIPT) $(abspath .) $(abspath $(DIST_ARCHIVE)) \
 		$(abspath $(DIST_CHECKSUM)) $(DIST_ARCH) $(DIST_MACOS_MIN) \
-		$(APP_VERSION) $(DIST_BASENAME)
+		$(APP_VERSION) $(DIST_BASENAME) $(DIST_SOURCE_COMMIT) \
+		$(DIST_SOURCE_TAG)
 	sh $(DIST_VERIFY_NEGATIVE_TEST) $(abspath .) \
 		$(abspath $(DIST_ARCHIVE)) $(DIST_ARCH) $(DIST_MACOS_MIN) \
-		$(APP_VERSION)
+		$(APP_VERSION) $(DIST_SOURCE_COMMIT) $(DIST_SOURCE_TAG)
 
 dist: test test-dist
 
@@ -822,7 +847,8 @@ run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER)
 		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
 		--output-dir "$(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)"
 
-test: all test-bundle test-rules test-app
+test: all test-bundle test-rules test-app \
+		test-release-performance-capabilities
 	./$(TARGET) --self-test
 
 test-unit: $(TARGET) test-rules test-app
@@ -842,6 +868,42 @@ test-bundle: $(APP_EXECUTABLE) $(BUNDLE_RESOURCE_MANIFEST)
 		'Print :LSMinimumSystemVersion' $(APP)/Contents/Info.plist)" = \
 		"$(MACOS_MIN)"
 	codesign --verify --deep --strict --verbose=4 $(APP)
+
+# This exact, no-window handshake proves that the built executable exposes the
+# release-performance contract before any resource or raylib initialization.
+test-release-performance-capabilities: $(TARGET) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT)
+	mkdir -p $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT))
+	$(RM) $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_STDERR)
+	cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
+		$(abspath $(TARGET)) --self-test=release-performance-capabilities \
+			> $(abspath $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) \
+			2> $(abspath $(RELEASE_PERFORMANCE_CAPABILITY_STDERR))
+	test ! -s $(RELEASE_PERFORMANCE_CAPABILITY_STDERR)
+	cmp -s $(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) \
+		$(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)
+	python3 -m json.tool $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT) >/dev/null
+	@if cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
+		$(abspath $(TARGET)) --self-test=release-performance-capabilities \
+			--quick-start >/dev/null 2>&1; then \
+		echo 'performance capability probe accepted an extra argument' >&2; \
+		exit 1; \
+	fi
+	@if cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
+		$(abspath $(TARGET)) --quick-start \
+			--self-test=release-performance-capabilities \
+			>/dev/null 2>&1; then \
+		echo 'performance capability probe was accepted out of position' >&2; \
+		exit 1; \
+	fi
+	@if cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
+		$(abspath $(TARGET)) --self-test=release-performance-capabilities \
+			--self-test=release-performance-capabilities \
+			>/dev/null 2>&1; then \
+		echo 'performance capability probe accepted a duplicate argument' >&2; \
+		exit 1; \
+	fi
 
 $(HEADER_ONLY_RULE_TEST_TARGETS): build/tests/%: tests/%.cpp $(PURE_HEADERS) \
 		tests/test_support.h

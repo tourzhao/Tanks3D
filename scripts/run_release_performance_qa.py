@@ -33,6 +33,15 @@ STDERR_FILENAME = "performance-stderr.log"
 RECEIPT_FILENAME = "performance-qa-receipt.json"
 START_MARKER = "TANKS3D_PERFORMANCE_START"
 COMPLETE_MARKER = "TANKS3D_PERFORMANCE_COMPLETE"
+CAPABILITY_ARGUMENT = "--self-test=release-performance-capabilities"
+CAPABILITY_SCHEMA = "tanks3d-release-performance-capabilities-v1"
+CAPABILITY_CONTRACT_SHA256 = (
+    "5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c"
+)
+CAPABILITY_TIMEOUT_SECONDS = 5
+PROCESS_TIMEOUT_GRACE_SECONDS = 120
+PROCESS_TERMINATE_GRACE_SECONDS = 5
+CANDIDATE_ATTESTATION_SCHEMA = "tanks3d-alpha-candidate-v3"
 DEFAULT_DURATION_SECONDS = 1801
 MAX_DURATION_SECONDS = 4 * 60 * 60
 MAX_TELEMETRY_BYTES = 128 * 1024 * 1024
@@ -66,6 +75,11 @@ REQUIRED_TELEMETRY_KEYS = {
     "source_commit",
     "source_tag",
     "clean_shutdown",
+}
+PERFORMANCE_BUILD_CONFIG = {
+    "performance-capability-schema": CAPABILITY_SCHEMA,
+    "performance-telemetry-schema": TELEMETRY_SCHEMA,
+    "performance-capability-contract-sha256": CAPABILITY_CONTRACT_SHA256,
 }
 
 
@@ -426,6 +440,7 @@ def parse_attestation(data: bytes) -> Dict[str, str]:
             raise RunnerError("duplicate or empty attestation key on line {}".format(line_number))
         values[key] = value
     required = {
+        "schema",
         "source_commit",
         "source_tag",
         "artifact_filename",
@@ -439,7 +454,39 @@ def parse_attestation(data: bytes) -> Dict[str, str]:
     missing = sorted(required - set(values))
     if missing:
         raise RunnerError("attestation is missing keys: {}".format(", ".join(missing)))
+    if values["schema"] != CANDIDATE_ATTESTATION_SCHEMA:
+        raise RunnerError(
+            "candidate must use {}".format(CANDIDATE_ATTESTATION_SCHEMA)
+        )
     return values
+
+
+def validate_performance_build_config(data: bytes) -> None:
+    try:
+        lines = data.decode("utf-8").splitlines()
+    except UnicodeError as exc:
+        raise RunnerError("cannot read candidate build configuration: {}".format(exc))
+    values: Dict[str, str] = {}
+    for line_number, line in enumerate(lines, 1):
+        if not line or "=" not in line:
+            raise RunnerError(
+                "malformed candidate build configuration line {}".format(line_number)
+            )
+        key, value = line.split("=", 1)
+        if not key or key in values:
+            raise RunnerError(
+                "duplicate or empty candidate build configuration key on line {}".format(
+                    line_number
+                )
+            )
+        values[key] = value
+    for key, expected in PERFORMANCE_BUILD_CONFIG.items():
+        if values.get(key) != expected:
+            raise RunnerError(
+                "candidate build configuration lacks the current {} contract".format(
+                    key
+                )
+            )
 
 
 def invoke_tagged_verifier(project_root: Path, candidate_dir: Path) -> Dict[str, str]:
@@ -579,6 +626,7 @@ def parse_candidate(project_root: Path, candidate_argument: Path) -> CandidateId
         raise RunnerError("build configuration digest does not match its attestation")
     if hashlib.sha256(captured[gate_log_name]).hexdigest() != values["gate_log_sha256"]:
         raise RunnerError("gate log digest does not match its attestation")
+    validate_performance_build_config(captured[build_config_name])
     try:
         checksum_text = captured[values["checksum_filename"]].decode("utf-8")
     except UnicodeError as exc:
@@ -640,6 +688,108 @@ def extract_candidate(archive_snapshot_descriptor: int, destination: Path) -> Pa
     if not os.access(executable, os.X_OK):
         raise RunnerError("extracted candidate executable is not executable")
     return executable
+
+
+def expected_performance_capabilities(identity: CandidateIdentity) -> Dict[str, Any]:
+    return {
+        "schema": CAPABILITY_SCHEMA,
+        "telemetry_schema": TELEMETRY_SCHEMA,
+        "producer": "Tanks3D",
+        "quick_start_argument": "--quick-start",
+        "log_argument_prefix": "--release-performance-log=",
+        "candidate_sha256_argument_prefix": "--release-candidate-sha256=",
+        "session_nonce_argument_prefix": "--release-session-nonce=",
+        "duration_argument_prefix": "--release-performance-duration-seconds=",
+        "start_marker": START_MARKER,
+        "complete_marker": COMPLETE_MARKER,
+        "default_duration_seconds": DEFAULT_DURATION_SECONDS,
+        "maximum_duration_seconds": MAX_DURATION_SECONDS,
+        "sample_interval_microseconds": 1_000_000,
+        "clock": "steady_clock",
+        "memory_metric": "proc_pid_rusage.ri_phys_footprint",
+        "memory_unit": "bytes",
+        "app_states": ["gameplay", "settlement", "high_score"],
+        "source_commit": identity.source_commit,
+        "source_tag": identity.source_tag,
+        "self_check": "PASS",
+    }
+
+
+def probe_performance_capabilities(
+    executable: Path, identity: CandidateIdentity
+) -> None:
+    argv = [str(executable), CAPABILITY_ARGUMENT]
+    try:
+        completed = subprocess.run(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            cwd=str(executable.parent),
+            close_fds=True,
+            timeout=CAPABILITY_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        raise RunnerError("candidate performance capability probe timed out")
+    except OSError as exc:
+        raise RunnerError(
+            "cannot run candidate performance capability probe: {}".format(exc)
+        )
+    if completed.returncode != 0:
+        diagnostic = (completed.stderr or completed.stdout).decode(
+            "utf-8", errors="replace"
+        ).strip()
+        raise RunnerError(
+            "candidate performance capability probe failed (exit {}): {}".format(
+                completed.returncode, diagnostic or "no diagnostic"
+            )
+        )
+    if completed.stderr:
+        raise RunnerError("candidate performance capability probe wrote to stderr")
+    if len(completed.stdout) == 0 or len(completed.stdout) > 64 * 1024:
+        raise RunnerError("candidate performance capability output has an invalid size")
+    try:
+        text = completed.stdout.decode("utf-8")
+        value = json.loads(text, object_pairs_hook=reject_duplicate_pairs)
+    except UnicodeError as exc:
+        raise RunnerError(
+            "candidate performance capability output is not UTF-8: {}".format(exc)
+        )
+    except RunnerError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise RunnerError(
+            "candidate performance capability output is invalid JSON: {}".format(exc)
+        )
+    expected = expected_performance_capabilities(identity)
+    canonical = (json.dumps(expected, indent=2, sort_keys=False) + "\n").encode(
+        "utf-8"
+    )
+    if value != expected or completed.stdout != canonical:
+        raise RunnerError(
+            "candidate performance capability manifest does not match its identity and contract"
+        )
+
+
+def wait_for_performance_process(process: subprocess.Popen, duration_seconds: int) -> int:
+    timeout_seconds = duration_seconds + PROCESS_TIMEOUT_GRACE_SECONDS
+    try:
+        return process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        try:
+            process.terminate()
+            process.wait(timeout=PROCESS_TERMINATE_GRACE_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                process.kill()
+                process.wait(timeout=PROCESS_TERMINATE_GRACE_SECONDS)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        raise RunnerError(
+            "candidate performance run exceeded its {}-second timeout".format(
+                timeout_seconds
+            )
+        )
 
 
 def create_output_file(path: Path):
@@ -778,6 +928,7 @@ def run_performance_qa(
             )
         finally:
             os.close(archive_snapshot_descriptor)
+        probe_performance_capabilities(executable, identity)
         executable_sha256 = sha256_file(executable)
         argv = [
             str(executable),
@@ -803,7 +954,9 @@ def run_performance_qa(
                 except OSError as exc:
                     raise RunnerError("cannot launch extracted candidate: {}".format(exc))
                 pid = process.pid
-                exit_code = process.wait()
+                exit_code = wait_for_performance_process(
+                    process, duration_seconds
+                )
         except RunnerError:
             raise
         completed_at_utc = utc_now()

@@ -50,21 +50,26 @@ verifier, detects concurrent candidate/tag/`HEAD` changes, and always removes
 the clone. Never move an attested tag to accommodate later documentation.
 
 The directory contains the ZIP, `.sha256`, build configuration, gate log, and
-`attestation.txt`. The v2 attestation binds all of them to one clean commit and
-records all eight required gates as `PASS`. Verification also reruns the full
-macOS distribution verifier against the candidate ZIP. Publish this exact file
-set together.
+`attestation.txt`. The v3 attestation binds all of them to one clean commit,
+records all eight required gates as `PASS`, and distinguishes candidates whose
+tagged strict verifier enforced the current performance-capability contract
+from historical v2 candidates. Verification also reruns the full macOS
+distribution verifier against the candidate ZIP. Publish this exact file set
+together.
 
 `test-dist` statically links the installed raylib and rejects an architecture or
 deployment-target mismatch. It verifies the ZIP checksum and structure,
 exact resource and license manifest, bundle metadata, system-only dynamic
 dependencies, ad-hoc signature integrity, absence of quarantine/DLP metadata or
-local paths, and all integrated self-tests after extraction. Thirteen isolated
+local paths, the identity-bound performance capability handshake, and all
+integrated self-tests after extraction. Sixteen isolated
 negative fixtures cover checksum-name/content mismatches, a checksum symlink,
 input and resolved newline-bearing paths, lexical and symlink-parent path
 escapes, an archive symlink, an extra top-level payload, an archived symbolic
 link, a checksum-updated mutation of a signature-sealed runtime resource, and
-re-signed mutations of both raylib notice files. The runtime-resource case
+re-signed mutations of both raylib notice files and the compiled performance
+capability schema, plus hanging capability and integrated-self-test cases that
+must hit their five- and twenty-second bounds. The runtime-resource case
 proves accidental-tamper detection by the ad-hoc resource seal; the notice
 cases prove the independent byte comparisons. Neither mechanism authenticates
 the publisher or replaces Developer ID signing.
@@ -74,6 +79,18 @@ raylib license is the exact official 6.0 text before compiling. It also ships
 and byte-compares the version-locked embedded-dependency notices. A raylib
 upgrade therefore requires an explicit notice audit and a newly attested
 candidate; do not bypass the version check.
+
+The hashed build configuration also pins
+`tanks3d-release-performance-capabilities-v1`,
+`tanks3d-performance-log-v2`, and the exact capability-contract SHA-256. The
+extracted executable must answer
+`--self-test=release-performance-capabilities` before resource, window, or
+audio initialization; the verifier compares the complete JSON, including the
+embedded commit/tag and deterministic parser/recorder self-check. Every
+`macos-alpha-v2` status requires a v3 candidate and this current contract,
+including an honestly blocked work-in-progress status. Older candidates remain
+readable only under their historical release profile and cannot start a new v2
+baseline or performance run.
 
 The release object cache carries a configuration fingerprint. Changing the
 compiler identity, raylib prefix or archive contents, architecture, deployment
@@ -386,7 +403,10 @@ focused, and complete at least one stage. The candidate exits after at least
 1,801 seconds and a complete one-second sample window. `Esc` or closing the
 window aborts the run without a valid receipt. The runner snapshots and rehashes
 the candidate ZIP before extraction, so a concurrent replacement cannot alter
-the executed bundle. Add all four generated files to the
+the executed bundle. Before creating any evidence file, it checks the private
+snapshot's exact capability JSON with a five-second timeout and verifies the
+source identity; the long process also has a duration-plus-120-second watchdog
+with terminate/kill cleanup. Add all four generated files to the
 `extended_session_metrics` evidence before final verification.
 
 `build/release-evidence/<tag>/` is an ignored local intake directory, not a

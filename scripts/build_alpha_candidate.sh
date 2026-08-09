@@ -12,6 +12,9 @@ fi
 project_root=${1:-.}
 dist_channel=${2:-alpha.1}
 required_raylib_version=6.0
+required_performance_capability_schema=tanks3d-release-performance-capabilities-v1
+required_performance_telemetry_schema=tanks3d-performance-log-v2
+required_performance_contract_sha256=5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c
 
 fail()
 {
@@ -189,6 +192,15 @@ dist_source_tag=$(read_config_value source-tag) || \
     fail "distribution source tag is missing or ambiguous"
 dist_raylib_version=$(read_config_value raylib-version) || \
     fail "distribution raylib version is missing or ambiguous"
+dist_performance_capability_schema=$(read_config_value \
+    performance-capability-schema) || \
+    fail "distribution performance capability schema is missing or ambiguous"
+dist_performance_telemetry_schema=$(read_config_value \
+    performance-telemetry-schema) || \
+    fail "distribution performance telemetry schema is missing or ambiguous"
+dist_performance_contract_sha256=$(read_config_value \
+    performance-capability-contract-sha256) || \
+    fail "distribution performance capability contract is missing or ambiguous"
 [ "$dist_arch" = arm64 ] || \
     fail "Alpha candidates must target arm64, not '$dist_arch'"
 printf '%s\n' "$dist_macos_min" | \
@@ -200,6 +212,15 @@ printf '%s\n' "$dist_macos_min" | \
     fail "distribution build configuration names a different source tag"
 [ "$dist_raylib_version" = "$required_raylib_version" ] || \
     fail "distribution build configuration names an unsupported raylib version"
+[ "$dist_performance_capability_schema" = \
+    "$required_performance_capability_schema" ] || \
+    fail "distribution build configuration names an unsupported performance capability schema"
+[ "$dist_performance_telemetry_schema" = \
+    "$required_performance_telemetry_schema" ] || \
+    fail "distribution build configuration names an unsupported performance telemetry schema"
+[ "$dist_performance_contract_sha256" = \
+    "$required_performance_contract_sha256" ] || \
+    fail "distribution build configuration names an unsupported performance capability contract"
 
 artifact_basename="Tanks3D-$app_version-$dist_channel-macos-$dist_arch-macos$dist_macos_min"
 artifact_filename="$artifact_basename.zip"
@@ -272,7 +293,7 @@ gate_log_sha256=$(shasum -a 256 \
     "$stage_dir/alpha-candidate-gates.log" | awk '{print $1}')
 
 {
-    printf 'schema=tanks3d-alpha-candidate-v2\n'
+    printf 'schema=tanks3d-alpha-candidate-v3\n'
     printf 'source_commit=%s\n' "$source_commit"
     printf 'source_head_at_start=%s\n' "$source_commit"
     printf 'source_head_at_finish=%s\n' "$finish_commit"

@@ -9,6 +9,16 @@
 
 namespace tanks3d::app
 {
+inline constexpr const char *kReleasePerformanceQuickStartArgument =
+    "--quick-start";
+inline constexpr const char *kReleasePerformanceLogArgumentPrefix =
+    "--release-performance-log=";
+inline constexpr const char *kReleasePerformanceCandidateArgumentPrefix =
+    "--release-candidate-sha256=";
+inline constexpr const char *kReleasePerformanceNonceArgumentPrefix =
+    "--release-session-nonce=";
+inline constexpr const char *kReleasePerformanceDurationArgumentPrefix =
+    "--release-performance-duration-seconds=";
 inline constexpr int kDefaultReleasePerformanceDurationSeconds = 1801;
 inline constexpr int kMaximumReleasePerformanceDurationSeconds = 14400;
 inline constexpr std::int64_t kReleasePerformanceIntervalMicroseconds =
@@ -91,20 +101,16 @@ inline bool parseReleasePerformanceDuration(const std::string &text,
 inline ReleasePerformanceParseResult parseReleasePerformanceOptions(
     const std::vector<std::string> &arguments)
 {
-    constexpr const char *kOutputPrefix = "--release-performance-log=";
-    constexpr const char *kCandidatePrefix =
-        "--release-candidate-sha256=";
-    constexpr const char *kNoncePrefix = "--release-session-nonce=";
-    constexpr const char *kDurationPrefix =
-        "--release-performance-duration-seconds=";
     const std::size_t outputPrefixSize =
-        std::char_traits<char>::length(kOutputPrefix);
+        std::char_traits<char>::length(kReleasePerformanceLogArgumentPrefix);
     const std::size_t candidatePrefixSize =
-        std::char_traits<char>::length(kCandidatePrefix);
+        std::char_traits<char>::length(
+            kReleasePerformanceCandidateArgumentPrefix);
     const std::size_t noncePrefixSize =
-        std::char_traits<char>::length(kNoncePrefix);
+        std::char_traits<char>::length(kReleasePerformanceNonceArgumentPrefix);
     const std::size_t durationPrefixSize =
-        std::char_traits<char>::length(kDurationPrefix);
+        std::char_traits<char>::length(
+            kReleasePerformanceDurationArgumentPrefix);
 
     ReleasePerformanceParseResult result;
     bool outputSeen = false;
@@ -122,11 +128,12 @@ inline ReleasePerformanceParseResult parseReleasePerformanceOptions(
             argument == "--release-candidate-sha256" ||
             argument == "--release-session-nonce" ||
             argument == "--release-performance-duration-seconds" ||
-            argument.rfind(kOutputPrefix, 0) == 0 ||
-            argument.rfind(kCandidatePrefix, 0) == 0 ||
-            argument.rfind(kNoncePrefix, 0) == 0 ||
-            argument.rfind(kDurationPrefix, 0) == 0;
-        if (argument == "--quick-start")
+            argument.rfind(kReleasePerformanceLogArgumentPrefix, 0) == 0 ||
+            argument.rfind(kReleasePerformanceCandidateArgumentPrefix, 0) ==
+                0 ||
+            argument.rfind(kReleasePerformanceNonceArgumentPrefix, 0) == 0 ||
+            argument.rfind(kReleasePerformanceDurationArgumentPrefix, 0) == 0;
+        if (argument == kReleasePerformanceQuickStartArgument)
             ++quickStartCount;
         else if (!performanceArgument && incompatibleArgument.empty())
             incompatibleArgument = argument;
@@ -161,7 +168,7 @@ inline ReleasePerformanceParseResult parseReleasePerformanceOptions(
             return result;
         }
 
-        if (argument.rfind(kOutputPrefix, 0) == 0)
+        if (argument.rfind(kReleasePerformanceLogArgumentPrefix, 0) == 0)
         {
             if (outputSeen)
             {
@@ -193,7 +200,8 @@ inline ReleasePerformanceParseResult parseReleasePerformanceOptions(
             continue;
         }
 
-        if (argument.rfind(kCandidatePrefix, 0) == 0)
+        if (argument.rfind(kReleasePerformanceCandidateArgumentPrefix, 0) ==
+            0)
         {
             if (candidateSeen)
             {
@@ -214,7 +222,7 @@ inline ReleasePerformanceParseResult parseReleasePerformanceOptions(
             continue;
         }
 
-        if (argument.rfind(kNoncePrefix, 0) == 0)
+        if (argument.rfind(kReleasePerformanceNonceArgumentPrefix, 0) == 0)
         {
             if (nonceSeen)
             {
@@ -233,7 +241,8 @@ inline ReleasePerformanceParseResult parseReleasePerformanceOptions(
             continue;
         }
 
-        if (argument.rfind(kDurationPrefix, 0) == 0)
+        if (argument.rfind(kReleasePerformanceDurationArgumentPrefix, 0) ==
+            0)
         {
             if (durationSeen)
             {

@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import struct
 import subprocess
@@ -167,12 +168,20 @@ class ReleaseFixture:
                     "Tanks3D.app/Contents/Resources/sounds/{}".format(sound.name),
                 )
         gate_log_path.write_text("all fixture gates pass\n", encoding="utf-8")
-        build_config_path.write_text("fixture=true\n", encoding="utf-8")
+        build_config_path.write_text(
+            "fixture=true\n"
+            "performance-capability-schema=tanks3d-release-performance-capabilities-v1\n"
+            "performance-telemetry-schema=tanks3d-performance-log-v2\n"
+            "performance-capability-contract-sha256="
+            "5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c\n",
+            encoding="utf-8",
+        )
         artifact_digest = digest(artifact_path)
         checksum_path.write_text(
             "{}  {}\n".format(artifact_digest, artifact_path.name), encoding="utf-8"
         )
         attestation = {
+            "schema": "tanks3d-alpha-candidate-v3",
             "source_commit": release["source_commit"],
             "source_head_at_start": release["source_commit"],
             "source_head_at_finish": release["source_commit"],
@@ -304,6 +313,38 @@ class ReleaseFixture:
         self.status_path.write_text(
             json.dumps(self.status, indent=2, sort_keys=False) + "\n", encoding="utf-8"
         )
+
+    def replace_build_config(self, text):
+        release = self.status["release"]
+        build_config = self.root / release["build_config"]["path"]
+        attestation = self.root / release["attestation"]["path"]
+        build_config.write_text(text, encoding="utf-8")
+        attestation_text = attestation.read_text(encoding="utf-8")
+        attestation_text = re.sub(
+            r"^build_config_sha256=.*$",
+            "build_config_sha256={}".format(digest(build_config)),
+            attestation_text,
+            flags=re.MULTILINE,
+        )
+        attestation.write_text(attestation_text, encoding="utf-8")
+        release["build_config"]["sha256"] = digest(build_config)
+        release["attestation"]["sha256"] = digest(attestation)
+        self.write_status()
+
+    def replace_attestation_schema(self, schema):
+        release = self.status["release"]
+        attestation = self.root / release["attestation"]["path"]
+        attestation.write_text(
+            re.sub(
+                r"^schema=.*$",
+                "schema={}".format(schema),
+                attestation.read_text(encoding="utf-8"),
+                flags=re.MULTILINE,
+            ),
+            encoding="utf-8",
+        )
+        release["attestation"]["sha256"] = digest(attestation)
+        self.write_status()
 
     def run(self, allow_blocked=False, status_path=None):
         command = [
@@ -1643,6 +1684,62 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         result = fixture.run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("all required Alpha gates PASS", result.stdout)
+
+    def test_v2_status_requires_current_candidate_and_performance_contract(self):
+        def make_blocked_v2(candidate_fixture):
+            candidate_fixture.make_all_pass()
+            candidate_fixture.status["approvals"][1] = {
+                "role": "release_owner",
+                "status": "BLOCKED",
+                "name": "",
+                "signature": "",
+                "approved_at_utc": None,
+                "evidence_ids": [],
+                "notes": "Release-owner approval is pending.",
+            }
+            candidate_fixture.status["report"] = {
+                "qa_owner": "",
+                "completed_at_utc": None,
+                "release_date": None,
+            }
+            candidate_fixture._write_documents(ready=False)
+            candidate_fixture.write_status()
+            result = candidate_fixture.run(allow_blocked=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.replace_build_config("fixture=true\n")
+        self.assert_failed(
+            fixture.run(),
+            "macos-alpha-v2 candidate build configuration lacks the current performance-capability-schema contract",
+        )
+
+        historical = self.new_fixture()
+        make_blocked_v2(historical)
+        historical.replace_build_config("fixture=true\n")
+        self.assert_failed(
+            historical.run(allow_blocked=True),
+            "macos-alpha-v2 candidate build configuration lacks the current performance-capability-schema contract",
+        )
+
+        legacy_candidate = self.new_fixture()
+        legacy_candidate.make_all_pass()
+        legacy_candidate.replace_attestation_schema("tanks3d-alpha-candidate-v2")
+        self.assert_failed(
+            legacy_candidate.run(),
+            "macos-alpha-v2 candidate must use tanks3d-alpha-candidate-v3",
+        )
+
+        historical_candidate = self.new_fixture()
+        make_blocked_v2(historical_candidate)
+        historical_candidate.replace_attestation_schema(
+            "tanks3d-alpha-candidate-v2"
+        )
+        self.assert_failed(
+            historical_candidate.run(allow_blocked=True),
+            "macos-alpha-v2 candidate must use tanks3d-alpha-candidate-v3",
+        )
 
     def test_missing_additional_and_duplicate_keys_are_rejected(self):
         fixture = self.new_fixture()

@@ -14,14 +14,14 @@ expanding the existing `Game3D` class.
 
 ## Current Shape and Risks
 
-The forty-two production source/header files contain 19,662 lines.
-`src/main.cpp` remains one 7,302-line production translation unit; 10,826 lines
+The forty-nine production source/header files contain 21,109 lines.
+`src/main.cpp` remains one 7,552-line production translation unit; 10,826 lines
 of transitional self-tests still live in `tests/self_tests.inl` and are
 textually compiled into that unit. Thirteen pure headers and seven pure
 implementation sources under
 `src/core/` and `src/game/` are independently compiled and tested without
 raylib. `player_system.h/.cpp` are 277/289 lines; their 1,793-line direct test is
-outside the production denominator. The five `src/app/` implementation modules,
+outside the production denominator. The eight `src/app/` implementation modules,
 their shared POD values and release-screenshot option parser,
 synchronous side-effect boundary, and the `src/audio/` cue/output headers are
 also compiled without raylib and guarded against reverse dependencies.
@@ -904,7 +904,14 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   the raw plan, intake, Safari-origin plist, command streams, and recording;
   structural checks support, but do not replace, the independent human review
   of what the continuous capture shows. The v2 performance path embeds
-  source identity in the distribution binary, records
+  source identity in the distribution binary and exposes a no-window,
+  no-resource capability JSON that runs the production parser and recorder
+  self-check. The distribution verifier checks that exact packaged-Mach-O
+  handshake, while the performance runner repeats it on its private ZIP
+  snapshot before the long session and bounds that session with a
+  duration-plus-grace watchdog. Candidate attestation v3 proves that the
+  attested tag's strict verifier enforced the current capability contract; all
+  `macos-alpha-v2` records require v3 even while blocked. Compatible candidates then record
   genuine frame/RSS windows plus active-gameplay, focused-window, and cleared-
   stage evidence, publishes with atomic no-replace output, and binds them to the
   tagged ZIP through a launch receipt. The runner hashes a no-follow private ZIP

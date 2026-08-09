@@ -91,6 +91,13 @@ CHANNEL_RE = re.compile(r"^alpha\.(?:0|[1-9][0-9]*)$")
 COMMIT_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+PERFORMANCE_BUILD_CONFIG = {
+    "performance-capability-schema":
+        "tanks3d-release-performance-capabilities-v1",
+    "performance-telemetry-schema": "tanks3d-performance-log-v2",
+    "performance-capability-contract-sha256":
+        "5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c",
+}
 
 
 class InitError(Exception):
@@ -238,6 +245,32 @@ def parse_attestation(data: bytes) -> Dict[str, str]:
     return result
 
 
+def validate_performance_build_config(data: bytes) -> None:
+    try:
+        lines = data.decode("utf-8").splitlines()
+    except UnicodeError as exc:
+        raise InitError("build-config.txt is not UTF-8: {}".format(exc))
+    values: Dict[str, str] = {}
+    for number, line in enumerate(lines, 1):
+        if not line or "=" not in line:
+            raise InitError("malformed build configuration line {}".format(number))
+        key, value = line.split("=", 1)
+        if not key or key in values:
+            raise InitError(
+                "duplicate or empty build configuration key on line {}".format(
+                    number
+                )
+            )
+        values[key] = value
+    for key, expected in PERFORMANCE_BUILD_CONFIG.items():
+        if values.get(key) != expected:
+            raise InitError(
+                "candidate build configuration lacks the current {} contract".format(
+                    key
+                )
+            )
+
+
 def run_tagged_verifier(root: Path, candidate_dir: Path) -> Dict[str, str]:
     verifier = root / "scripts/verify_tagged_alpha_candidate.sh"
     require_no_symlink_components(root, verifier, "tagged candidate verifier")
@@ -354,8 +387,8 @@ def validate_candidate(root: Path, candidate_argument: Path) -> Dict[str, Any]:
     for key in ("source_head_at_start", "source_head_at_finish", "source_tag_commit"):
         if attestation[key] != commit:
             raise InitError("attestation {} does not match source_commit".format(key))
-    if attestation["schema"] != "tanks3d-alpha-candidate-v2":
-        raise InitError("candidate must use tanks3d-alpha-candidate-v2")
+    if attestation["schema"] != "tanks3d-alpha-candidate-v3":
+        raise InitError("candidate must use tanks3d-alpha-candidate-v3")
     if attestation["source_tree"] != "clean":
         raise InitError("candidate was not built from a clean tree")
     for key in GATE_KEYS:
@@ -409,6 +442,7 @@ def validate_candidate(root: Path, candidate_argument: Path) -> Dict[str, Any]:
     ).encode("ascii")
     if contents["checksum"] != expected_checksum:
         raise InitError("candidate checksum file is not canonical")
+    validate_performance_build_config(contents["build_config"])
 
     return {
         "dir": candidate_dir,

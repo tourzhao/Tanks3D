@@ -18,6 +18,9 @@ fi
 project_root=$1
 candidate_dir=$2
 required_raylib_version=6.0
+required_performance_capability_schema=tanks3d-release-performance-capabilities-v1
+required_performance_telemetry_schema=tanks3d-performance-log-v2
+required_performance_contract_sha256=5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c
 
 fail()
 {
@@ -156,7 +159,7 @@ build_config_sha256=$(attestation_value build_config_sha256)
 gate_log_filename=$(attestation_value gate_log_filename)
 gate_log_sha256=$(attestation_value gate_log_sha256)
 
-[ "$schema" = tanks3d-alpha-candidate-v2 ] || \
+[ "$schema" = tanks3d-alpha-candidate-v3 ] || \
     fail "unsupported attestation schema"
 require_commit_id "source commit" "$source_commit"
 require_commit_id "starting HEAD" "$source_head_at_start"
@@ -282,6 +285,15 @@ config_source_tag=$(config_value source-tag) || \
     fail "build configuration source tag is missing or ambiguous"
 config_raylib_version=$(config_value raylib-version) || \
     fail "build configuration raylib version is missing or ambiguous"
+config_performance_capability_schema=$(config_value \
+    performance-capability-schema) || \
+    fail "build configuration performance capability schema is missing or ambiguous"
+config_performance_telemetry_schema=$(config_value \
+    performance-telemetry-schema) || \
+    fail "build configuration performance telemetry schema is missing or ambiguous"
+config_performance_contract_sha256=$(config_value \
+    performance-capability-contract-sha256) || \
+    fail "build configuration performance capability contract is missing or ambiguous"
 [ "$config_arch" = "$dist_arch" ] || \
     fail "build configuration architecture does not match the attestation"
 [ "$config_macos_min" = "$dist_macos_min" ] || \
@@ -292,13 +304,23 @@ config_raylib_version=$(config_value raylib-version) || \
     fail "build configuration source tag does not match the attestation"
 [ "$config_raylib_version" = "$required_raylib_version" ] || \
     fail "build configuration raylib version is unsupported"
+[ "$config_performance_capability_schema" = \
+    "$required_performance_capability_schema" ] || \
+    fail "build configuration performance capability schema is unsupported"
+[ "$config_performance_telemetry_schema" = \
+    "$required_performance_telemetry_schema" ] || \
+    fail "build configuration performance telemetry schema is unsupported"
+[ "$config_performance_contract_sha256" = \
+    "$required_performance_contract_sha256" ] || \
+    fail "build configuration performance capability contract is unsupported"
 
 dist_verifier="$project_root/scripts/verify_macos_dist.sh"
 [ -f "$dist_verifier" ] && [ ! -L "$dist_verifier" ] || \
     fail "macOS distribution verifier is missing or is not a regular file"
 if ! sh "$dist_verifier" "$project_root" "$artifact" "$checksum" \
         "$dist_arch" "$dist_macos_min" "$app_version" \
-        "$artifact_basename" >/dev/null 2>&1; then
+        "$artifact_basename" "$source_commit" "$source_tag" \
+        >/dev/null 2>&1; then
     fail "macOS distribution verifier rejected the candidate artifact"
 fi
 

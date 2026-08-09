@@ -686,6 +686,14 @@ PERFORMANCE_V2_FILENAMES = {
 }
 PERFORMANCE_V2_START_MARKER = "TANKS3D_PERFORMANCE_START"
 PERFORMANCE_V2_COMPLETE_MARKER = "TANKS3D_PERFORMANCE_COMPLETE"
+CURRENT_V2_PERFORMANCE_BUILD_CONFIG = {
+    "performance-capability-schema":
+        "tanks3d-release-performance-capabilities-v1",
+    "performance-telemetry-schema": "tanks3d-performance-log-v2",
+    "performance-capability-contract-sha256":
+        "5137950da46fa11ee6d5ff60fafe67e83c4c0aacfb5fc83f2b0ce5f74afcfe1c",
+}
+CURRENT_V2_CANDIDATE_ATTESTATION_SCHEMA = "tanks3d-alpha-candidate-v3"
 PERFORMANCE_THRESHOLDS_V2 = {
     "minimum_duration_minutes": 30,
     "minimum_stages_completed": 1,
@@ -4505,6 +4513,47 @@ def parse_attestation(path: Path) -> Dict[str, str]:
     return result
 
 
+def validate_current_v2_candidate_contract(
+    attestation_path: Path, build_config_path: Path
+) -> None:
+    attestation = parse_attestation(attestation_path)
+    if attestation.get("schema") != CURRENT_V2_CANDIDATE_ATTESTATION_SCHEMA:
+        raise VerificationError(
+            "macos-alpha-v2 candidate must use {}".format(
+                CURRENT_V2_CANDIDATE_ATTESTATION_SCHEMA
+            )
+        )
+    try:
+        lines = build_config_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise VerificationError(
+            "cannot read candidate build configuration: {}".format(exc)
+        )
+    values: Dict[str, str] = {}
+    for line_number, line in enumerate(lines, 1):
+        if not line or "=" not in line:
+            raise VerificationError(
+                "malformed candidate build configuration line {}".format(
+                    line_number
+                )
+            )
+        key, value = line.split("=", 1)
+        if not key or key in values:
+            raise VerificationError(
+                "duplicate or empty candidate build configuration key on line {}".format(
+                    line_number
+                )
+            )
+        values[key] = value
+    for key, expected in CURRENT_V2_PERFORMANCE_BUILD_CONFIG.items():
+        if values.get(key) != expected:
+            raise VerificationError(
+                "macos-alpha-v2 candidate build configuration lacks the current {} contract".format(
+                    key
+                )
+            )
+
+
 def validate_release(
     root: Path, raw_release: Any
 ) -> Tuple[Mapping[str, Any], Dict[str, Tuple[Path, str]], Path]:
@@ -5480,6 +5529,11 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         approvals,
         report["release_date"],
     )
+    if requirements_profile == "macos-alpha-v2":
+        validate_current_v2_candidate_contract(
+            file_refs["attestation"][0],
+            file_refs["build_config"][0]
+        )
     invoke_tagged_candidate_verifier(root, candidate_dir, file_refs)
 
     if not blockers and requirements_profile == "macos-alpha-v1":
