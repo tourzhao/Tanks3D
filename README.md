@@ -45,6 +45,21 @@ operation after verifying that they are archived elsewhere.
 
 ## macOS Alpha package
 
+### Download the Alpha 4 public playtest
+
+[Download Tanks 3D v0.1.0-alpha.4](https://github.com/tourzhao/Tanks3D/releases/tag/v0.1.0-alpha.4)
+for Apple Silicon Macs running macOS 26.0 or later. Choose the attached
+`Tanks3D-0.1.0-alpha.4-macos-arm64-macos26.0.zip`, not GitHub's automatically
+generated source archives. This is an explicitly labeled public pre-release:
+the immutable candidate passed the automated build, test, sanitizer, bundle,
+signature, and archive-integrity gates, while the repository's formal human-QA
+evidence archive remains incomplete. It is not a notarized or stable release.
+
+After extracting the ZIP, right-click `Tanks3D.app` and choose **Open**. Because
+the app is ad-hoc signed rather than Apple-notarized, macOS may require
+**System Settings > Privacy & Security > Open Anyway**. Verify the downloaded
+ZIP against the SHA-256 file attached to the release before opening it.
+
 `make dist` builds and verifies a self-contained ZIP for the current Mac
 architecture. It requires and statically links raylib 6.0, copies the
 version-locked raylib and embedded-dependency notices into the app, applies an
