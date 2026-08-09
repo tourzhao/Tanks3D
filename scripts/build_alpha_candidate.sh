@@ -122,7 +122,9 @@ git_dir=$(git -C "$project_root" rev-parse --absolute-git-dir 2>/dev/null) || \
     fail "Git directory cannot be resolved"
 git_dir=$(CDPATH= cd "$git_dir" 2>/dev/null && pwd -P) || \
     fail "Git directory is not accessible"
-candidate_lock="$git_dir/tanks3d-alpha-candidate-$release_tag.lock"
+# Every channel shares build/dist, compiler objects, and the development app.
+# Serialize candidate construction for the whole worktree, not just one tag.
+candidate_lock="$git_dir/tanks3d-alpha-candidate.lock"
 
 gate_log=$(mktemp "${TMPDIR:-/tmp}/tanks3d-alpha-gates.XXXXXX") || \
     fail "temporary gate log cannot be created"
@@ -148,7 +150,7 @@ trap 'exit 1' 1 2 15
 if mkdir "$candidate_lock" 2>/dev/null; then
     lock_owned=yes
 else
-    fail "another Alpha candidate build is active for '$release_tag'"
+    fail "another Alpha candidate build is active in this worktree"
 fi
 [ ! -e "$candidate_dir" ] && [ ! -L "$candidate_dir" ] || \
     fail "candidate appeared before the gates started"
@@ -180,11 +182,19 @@ dist_arch=$(read_config_value arch) || \
     fail "distribution architecture is missing or ambiguous"
 dist_macos_min=$(read_config_value macos-min) || \
     fail "distribution deployment target is missing or ambiguous"
+dist_source_commit=$(read_config_value source-commit) || \
+    fail "distribution source commit is missing or ambiguous"
+dist_source_tag=$(read_config_value source-tag) || \
+    fail "distribution source tag is missing or ambiguous"
 [ "$dist_arch" = arm64 ] || \
     fail "Alpha candidates must target arm64, not '$dist_arch'"
 printf '%s\n' "$dist_macos_min" | \
     grep -Eq '^[0-9]+(\.[0-9]+)*$' || \
     fail "distribution deployment target is invalid"
+[ "$dist_source_commit" = "$source_commit" ] || \
+    fail "distribution build configuration names a different source commit"
+[ "$dist_source_tag" = "$release_tag" ] || \
+    fail "distribution build configuration names a different source tag"
 
 artifact_basename="Tanks3D-$app_version-$dist_channel-macos-$dist_arch-macos$dist_macos_min"
 artifact_filename="$artifact_basename.zip"

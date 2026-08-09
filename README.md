@@ -37,6 +37,12 @@ it. If raylib is installed outside Homebrew's active prefix, pass it explicitly:
 make RAYLIB_PREFIX=/path/to/raylib clean all
 ```
 
+`make clean` removes disposable compiler, test, coverage, and distribution
+outputs. It deliberately preserves immutable candidate files under
+`build/release/` and candidate-bound QA evidence under
+`build/release-evidence/`; remove those records only as an explicit manual
+operation after verifying that they are archived elsewhere.
+
 ## macOS Alpha package
 
 `make dist` builds and verifies a self-contained ZIP for the current Mac

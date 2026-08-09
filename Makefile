@@ -90,6 +90,7 @@ ALPHA_CANDIDATE_VERIFY_SCRIPT := scripts/verify_alpha_candidate.sh
 ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT := \
 	scripts/verify_tagged_alpha_candidate.sh
 ALPHA_CANDIDATE_GATE_TEST := tests/test_alpha_candidate_gate.sh
+CLEAN_PRESERVATION_TEST := tests/test_clean_preserves_release_outputs.sh
 RELEASE_REQUIREMENTS_PROFILE := \
 	docs/release-requirements/macos-alpha-v1.json
 RELEASE_REQUIREMENTS_PROFILE_V2 := \
@@ -399,7 +400,7 @@ SANITIZER_FLAGS := -O1 -g -fno-omit-frame-pointer \
 COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	-isysroot "$(COVERAGE_SDKROOT)" $(MACOS_TARGET_FLAG)
 
-.PHONY: all clean debug run run-app test test-core test-game test-rules \
+.PHONY: all clean test-clean debug run run-app test test-core test-game test-rules \
 	test-app test-core-boundaries test-pure-boundaries \
 	test-app-boundaries test-architecture test-unit test-session \
 	test-assets test-bundle test-release-screenshot test-sanitize coverage \
@@ -560,7 +561,11 @@ test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
 
-test-alpha-candidate: test-release-status $(ALPHA_CANDIDATE_BUILD_SCRIPT) \
+test-clean: $(CLEAN_PRESERVATION_TEST)
+	sh $(CLEAN_PRESERVATION_TEST) "$(abspath .)"
+
+test-alpha-candidate: test-release-status test-clean \
+		$(ALPHA_CANDIDATE_BUILD_SCRIPT) \
 		$(ALPHA_CANDIDATE_VERIFY_SCRIPT) \
 		$(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) \
 		$(ALPHA_CANDIDATE_GATE_TEST)
@@ -1078,8 +1083,14 @@ coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES)
 		-instr-profile=$(COVERAGE_PROFILE) \
 		$(SOURCES) $(PRODUCTION_HEADERS)
 
+# Candidate packages and candidate-bound QA under build/release{,-evidence}
+# are immutable records, not disposable compiler output. Keep the cleanup list
+# explicit so an ordinary rebuild cannot erase them.
 clean:
-	$(RM) -r build
+	$(RM) -r $(TARGET) $(APP) $(OBJECT_DIR) $(DEBUG_DIR) \
+		$(SANITIZER_DIR) $(COVERAGE_DIR) $(DIST_DIR) build/tests \
+		$(RELEASE_SCREENSHOT_SMOKE_DIR) \
+		$(RELEASE_PERFORMANCE_SMOKE_DIR) build/verifier-path-escape.*
 
 -include $(DEPFILES) $(DEBUG_DEPFILES) $(SANITIZER_DEPFILES) \
 	$(COVERAGE_DEPFILES) $(RULE_IMPL_DEPFILES) \

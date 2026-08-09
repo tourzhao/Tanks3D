@@ -15,15 +15,22 @@ make test-alpha-candidate
 make alpha-candidate DIST_CHANNEL=alpha.1
 ```
 
-The candidate command starts from `make clean`, runs `debug`, architecture,
+The candidate command starts from `make clean`, which preserves earlier
+candidate directories and candidate-bound QA evidence while removing disposable
+build outputs. It then runs `debug`, architecture,
 the Alpha builder/verifier negative-contract fixtures, test, sanitizer,
 coverage, and `test-dist` gates, and rechecks the clean worktree, `HEAD`, tag,
 bundle version, and channel before publishing anything. The standalone
 `test-alpha-candidate` command is a quick preflight; the candidate builder runs
 and attests it again, so direct script invocation cannot bypass that gate.
 It writes atomically to `build/release/<tag>/`; a failed run leaves no candidate
-for that tag. While `HEAD` still equals the attested tag, recheck an existing
-directory with:
+for that tag. Candidate construction holds one worktree-wide lock because every
+channel shares `build/dist/` and the compiler object directories. Do not bypass
+the lock or run another distribution build concurrently. The verifier
+independently requires the captured build configuration's source commit and tag
+to match the candidate attestation.
+
+While `HEAD` still equals the attested tag, recheck an existing directory with:
 
 ```sh
 make verify-alpha-candidate \
@@ -34,7 +41,7 @@ The strict target deliberately rejects later documentation commits. Once
 `HEAD` has advanced, keep the tag immutable and verify from its source snapshot:
 
 ```sh
-make verify-tagged-alpha-candidate DIST_CHANNEL=alpha.3
+make verify-tagged-alpha-candidate DIST_CHANNEL=alpha.N
 ```
 
 The tagged verifier requires a clean worktree, copies the exact five candidate
@@ -180,7 +187,7 @@ test times; known-issue review follows evidence review, then QA approval, then
 release-owner approval. Public upload is allowed only after:
 
 ```sh
-make verify-alpha-release-ready DIST_CHANNEL=alpha.3
+make verify-alpha-release-ready DIST_CHANNEL=alpha.N
 ```
 
 This no-exception target must report that every required gate passes.
@@ -214,7 +221,8 @@ opens a window and intentionally remains outside CI and candidate gates.
   problems as known issues.
 - Review the archive's `licenses/` directory and decide whether to accept,
   confirm, or replace the inherited sound set described in
-  `ASSET_LICENSES.md`. The v1 profile approves only explicit owner `ACCEPT`;
+  `ASSET_LICENSES.md`. The current v2 profile approves only explicit owner
+  `ACCEPT`;
   `CONFIRM` requires a new profile with an externally trusted cryptographic
   rights-holder signature, and `REPLACE` requires a newly attested candidate
   plus replacement-manifest verification.

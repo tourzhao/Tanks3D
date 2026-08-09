@@ -10,8 +10,9 @@ and generated files only in `build/`.
 ## Build, Test, and Development Commands
 
 - `brew install raylib` installs the macOS dependency.
-- `make clean` removes generated outputs; `make test` rebuilds and runs all
-  headless checks.
+- `make clean` removes disposable build/test outputs but preserves immutable
+  candidates in `build/release/` and QA evidence in `build/release-evidence/`;
+  `make test` rebuilds and runs all headless checks.
 - `make test-unit`, `make test-session`, and `make test-assets` run focused
   groups; only the asset group needs runtime files.
 - `make test-bundle` verifies the exact `.app` resource manifest.

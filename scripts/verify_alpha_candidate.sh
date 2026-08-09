@@ -275,10 +275,18 @@ config_arch=$(config_value arch) || \
     fail "build configuration architecture is missing or ambiguous"
 config_macos_min=$(config_value macos-min) || \
     fail "build configuration deployment target is missing or ambiguous"
+config_source_commit=$(config_value source-commit) || \
+    fail "build configuration source commit is missing or ambiguous"
+config_source_tag=$(config_value source-tag) || \
+    fail "build configuration source tag is missing or ambiguous"
 [ "$config_arch" = "$dist_arch" ] || \
     fail "build configuration architecture does not match the attestation"
 [ "$config_macos_min" = "$dist_macos_min" ] || \
     fail "build configuration deployment target does not match the attestation"
+[ "$config_source_commit" = "$source_commit" ] || \
+    fail "build configuration source commit does not match the attestation"
+[ "$config_source_tag" = "$source_tag" ] || \
+    fail "build configuration source tag does not match the attestation"
 
 dist_verifier="$project_root/scripts/verify_macos_dist.sh"
 [ -f "$dist_verifier" ] && [ ! -L "$dist_verifier" ] || \

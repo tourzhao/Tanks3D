@@ -100,6 +100,30 @@ prepare_fixture()
     esac
 }
 
+seed_preserved_release_outputs()
+{
+    seeded_fixture=$1
+    seeded_candidate="$seeded_fixture/build/release/v0.1.0-alpha.previous/attestation.txt"
+    seeded_evidence="$seeded_fixture/build/release-evidence/v0.1.0-alpha.previous/session.json"
+    mkdir -p "${seeded_candidate%/*}" "${seeded_evidence%/*}"
+    printf '%s\n' 'immutable candidate sentinel' > "$seeded_candidate"
+    printf '%s\n' 'candidate-bound evidence sentinel' > "$seeded_evidence"
+}
+
+assert_preserved_release_outputs()
+{
+    checked_fixture=$1
+    checked_candidate="$checked_fixture/build/release/v0.1.0-alpha.previous/attestation.txt"
+    checked_evidence="$checked_fixture/build/release-evidence/v0.1.0-alpha.previous/session.json"
+    [ -f "$checked_candidate" ] || fail "candidate build deleted a prior candidate"
+    [ -f "$checked_evidence" ] || \
+        fail "candidate build deleted prior candidate-bound evidence"
+    [ "$(cat "$checked_candidate")" = 'immutable candidate sentinel' ] || \
+        fail "candidate build changed a prior candidate"
+    [ "$(cat "$checked_evidence")" = 'candidate-bound evidence sentinel' ] || \
+        fail "candidate build changed prior candidate-bound evidence"
+}
+
 cat > "$fake_bin/make" <<'EOF'
 #!/bin/sh
 
@@ -131,24 +155,48 @@ fi
 
 case "$target" in
     clean)
-        rm -rf "$fixture_root/build"
+        rm -rf "$fixture_root/build/dist" "$fixture_root/build/obj" \
+            "$fixture_root/build/debug" "$fixture_root/build/sanitize" \
+            "$fixture_root/build/coverage" "$fixture_root/build/tests" \
+            "$fixture_root/build/Tanks3D" "$fixture_root/build/Tanks3D.app" \
+            "$fixture_root/build/release-screenshot-smoke" \
+            "$fixture_root/build/release-performance-smoke"
         ;;
     test-alpha-candidate|debug|test-architecture|test|test-sanitize|coverage)
         printf 'controlled make completed %s\n' "$target"
         ;;
     test-dist)
         dist_channel=alpha.1
+        dist_source_commit=
+        dist_source_tag=
         for make_argument do
             case "$make_argument" in
                 DIST_CHANNEL=*) dist_channel=${make_argument#DIST_CHANNEL=} ;;
+                DIST_SOURCE_COMMIT=*)
+                    dist_source_commit=${make_argument#DIST_SOURCE_COMMIT=}
+                    ;;
+                DIST_SOURCE_TAG=*)
+                    dist_source_tag=${make_argument#DIST_SOURCE_TAG=}
+                    ;;
             esac
         done
+        [ -n "$dist_source_commit" ] && [ -n "$dist_source_tag" ] || {
+            echo "controlled make did not receive source identity" >&2
+            exit 67
+        }
+        if [ -n "${FAKE_CONFIG_SOURCE_COMMIT:-}" ]; then
+            dist_source_commit=$FAKE_CONFIG_SOURCE_COMMIT
+        fi
+        if [ -n "${FAKE_CONFIG_SOURCE_TAG:-}" ]; then
+            dist_source_tag=$FAKE_CONFIG_SOURCE_TAG
+        fi
         dist_dir="$fixture_root/build/dist"
         payload_dir="$dist_dir/payload"
         artifact_basename="Tanks3D-0.1.0-$dist_channel-macos-arm64-macos26.0"
         artifact="$dist_dir/$artifact_basename.zip"
         mkdir -p "$payload_dir"
-        printf '%s\n' 'arch=arm64' 'macos-min=26.0' \
+        printf '%s\n' "source-commit=$dist_source_commit" \
+            "source-tag=$dist_source_tag" 'arch=arm64' 'macos-min=26.0' \
             'compiler=controlled-test-compiler' > "$dist_dir/.build-config"
         printf '%s\n' 'controlled ZIP payload' > "$payload_dir/payload.txt"
         (
@@ -291,21 +339,26 @@ expect_build_rejection stale-tag \
     "release tag 'v0.1.0-alpha.1' does not identify HEAD" "$fixture_dir"
 
 prepare_fixture concurrent-build correct
-mkdir "$fixture_dir/.git/tanks3d-alpha-candidate-v0.1.0-alpha.1.lock"
+git -C "$fixture_dir" tag v0.1.0-alpha.2 2>/dev/null
+mkdir "$fixture_dir/.git/tanks3d-alpha-candidate.lock"
 expect_build_rejection concurrent-build \
-    "another Alpha candidate build is active for 'v0.1.0-alpha.1'" \
+    "another Alpha candidate build is active in this worktree" \
     "$fixture_dir"
 
 prepare_fixture failed-gate correct
-expect_build_rejection failed-gate "gate 'test-sanitize' failed" "$fixture_dir" \
+failed_gate_fixture=$fixture_dir
+seed_preserved_release_outputs "$failed_gate_fixture"
+expect_build_rejection failed-gate "gate 'test-sanitize' failed" \
+    "$failed_gate_fixture" \
     FAKE_FAIL_GATE=test-sanitize
+assert_preserved_release_outputs "$failed_gate_fixture"
 
 prepare_fixture failed-tooling-gate correct
 failed_tooling_fixture=$fixture_dir
 expect_build_rejection failed-tooling-gate \
     "gate 'test-alpha-candidate' failed" "$failed_tooling_fixture" \
     FAKE_FAIL_GATE=test-alpha-candidate
-[ ! -e "$failed_tooling_fixture/.git/tanks3d-alpha-candidate-v0.1.0-alpha.1.lock" ] || \
+[ ! -e "$failed_tooling_fixture/.git/tanks3d-alpha-candidate.lock" ] || \
     fail "a failed tooling gate left its candidate lock"
 
 prepare_fixture changed-head correct
@@ -317,8 +370,20 @@ prepare_fixture bad-checksum correct
 expect_build_rejection bad-checksum "checksum digest does not match the ZIP" \
     "$fixture_dir" FAKE_BAD_CHECKSUM=1
 
+prepare_fixture mismatched-build-config-commit correct
+expect_build_rejection mismatched-build-config-commit \
+    "distribution build configuration names a different source commit" \
+    "$fixture_dir" \
+    FAKE_CONFIG_SOURCE_COMMIT=0000000000000000000000000000000000000000
+
+prepare_fixture mismatched-build-config-tag correct
+expect_build_rejection mismatched-build-config-tag \
+    "distribution build configuration names a different source tag" \
+    "$fixture_dir" FAKE_CONFIG_SOURCE_TAG=v0.1.0-alpha.other
+
 prepare_fixture valid-candidate correct
 valid_fixture=$fixture_dir
+seed_preserved_release_outputs "$valid_fixture"
 valid_log="$test_root/valid-candidate.log"
 env PATH="$fake_bin:$PATH" ALPHA_FIXTURE_ROOT="$test_root" \
     sh "$valid_fixture/scripts/build_alpha_candidate.sh" \
@@ -331,6 +396,7 @@ valid_candidate="$valid_fixture/build/release/v0.1.0-alpha.1"
 sh "$valid_fixture/scripts/verify_alpha_candidate.sh" \
     "$valid_fixture" "$valid_candidate" >/dev/null || \
     fail "valid published candidate did not verify"
+assert_preserved_release_outputs "$valid_fixture"
 printf 'PASS candidate creation and verification\n'
 
 artifact="$valid_candidate/Tanks3D-0.1.0-alpha.1-macos-arm64-macos26.0.zip"
@@ -352,6 +418,35 @@ mv "$attestation.tmp" "$attestation"
 expect_verifier_rejection gate-attestation \
     "attestation gate 'gate_test_alpha_candidate' is not PASS" \
     "$valid_fixture" "$valid_candidate"
+cp "$attestation_backup" "$attestation"
+
+build_config="$valid_candidate/build-config.txt"
+build_config_backup="$test_root/valid-build-config.txt"
+cp "$build_config" "$build_config_backup"
+sed 's/^source-commit=.*/source-commit=0000000000000000000000000000000000000000/' \
+    "$build_config" > "$build_config.tmp"
+mv "$build_config.tmp" "$build_config"
+modified_build_config_sha256=$(shasum -a 256 "$build_config" | awk '{print $1}')
+sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256/" \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection config-source-commit \
+    "build configuration source commit does not match the attestation" \
+    "$valid_fixture" "$valid_candidate"
+cp "$build_config_backup" "$build_config"
+cp "$attestation_backup" "$attestation"
+
+sed 's/^source-tag=.*/source-tag=v0.1.0-alpha.other/' \
+    "$build_config" > "$build_config.tmp"
+mv "$build_config.tmp" "$build_config"
+modified_build_config_sha256=$(shasum -a 256 "$build_config" | awk '{print $1}')
+sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256/" \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection config-source-tag \
+    "build configuration source tag does not match the attestation" \
+    "$valid_fixture" "$valid_candidate"
+cp "$build_config_backup" "$build_config"
 cp "$attestation_backup" "$attestation"
 
 gate_log="$valid_candidate/alpha-candidate-gates.log"
@@ -504,4 +599,4 @@ env TMPDIR="$tagged_temporary_root" \
     fail "restored post-tag candidate did not verify"
 assert_no_tagged_temporary_snapshot
 
-echo "Alpha candidate gate tests passed: 11 build rejections, 7 strict verifier rejections, 5 tagged verifier rejections, 2 successes."
+echo "Alpha candidate gate tests passed: 13 build rejections, 9 strict verifier rejections, 5 tagged verifier rejections, 2 successes."
