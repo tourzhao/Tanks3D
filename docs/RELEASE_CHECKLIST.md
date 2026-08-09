@@ -148,10 +148,11 @@ The second command uses `--allow-blocked`: success means the incomplete record
 is internally honest, not that publication is approved. It still fails on a
 bad candidate, stale hashes, wrong evidence classes, or invalid claims. Each
 interactive evidence block must identify the candidate SHA-256, tester, Mac,
-UTC test time, typed signature, and coverage references. Live gameplay also
-requires candidate-bound `tanks3d-interactive-session-v1` and
-`tanks3d-gameplay-event-log-v2` JSON artifacts with per-category results and
-supporting hashes; a screenshot or free-form report is insufficient. Clean-Mac
+UTC test time, typed signature, and coverage references. The six compiled
+interactive categories require candidate-bound
+`tanks3d-interactive-session-v1` and `tanks3d-gameplay-event-log-v2` JSON
+artifacts with per-category results and supporting hashes; a screenshot or
+free-form report is insufficient. Clean-Mac
 and Gatekeeper commands use `tanks3d-command-log-v1`. Under v2, acquire the
 exact HTTPS asset with Safari so the download receives genuine quarantine
 metadata; never synthesize that attribute. A
@@ -173,11 +174,13 @@ physical-footprint growth, >=80% active-gameplay time, >=95% focused-window
 time, and at least one candidate-reported cleared stage. It also cross-checks
 the recorded stage count and player-mode summary. A consistently hashed
 artifact may support multiple categories only when its structured schema names
-each one. The live-gameplay compiler is stricter for supporting captures: its
-five category groups must use distinct repository paths, even when the files
-were exported from one longer recording.
+each one. The interactive compiler is stricter for supporting captures: its six
+category groups must use distinct repository paths, even when files were
+exported from one longer source recording. Main-menu, one-player, and two-player
+evidence must each attach its own recording of at least 64 KiB; none may reuse a
+path or substitute a still image for that recording.
 
-### Live-gameplay observation compiler
+### Interactive observation compiler
 
 After initializing the candidate-specific status, create the observation plan:
 
@@ -185,17 +188,38 @@ After initializing the candidate-specific status, create the observation plan:
 make init-alpha-v2-interactive-plan DIST_CHANNEL=alpha.N
 ```
 
-The no-overwrite plan contains all 67 gameplay, national-base, pickup, and
-settlement observations as `NOT_RUN`. Fill the candidate SHA, tester/machine,
+The no-overwrite plan contains all 70 main-menu/control, gameplay,
+national-base, pickup, and settlement observations as `NOT_RUN`. Fill the
+candidate SHA, tester/machine,
 session interval, signatures, reviewer, and review fields once at manifest
 level. For every observation row, enter only its explicit result, observation
 time, exact `checks_confirmed`, and notes; do not add keys. Add one or more real
-PNG/recording paths to each of the five category-level
+PNG/recording paths to each of the six category-level
 `supporting_artifacts` groups. There is no bulk-PASS option. Any missing,
 reordered, or non-PASS row makes compilation fail. PNG files must decode as
 valid PNGs; each recording must contain at least 64 KiB. Placeholder identities,
 future timestamps, and notes that say a PASS was blocked, skipped, pending, or
 not exercised are rejected during compilation.
+
+The three control contexts are exact, not interchangeable:
+
+- `main_menu_and_advanced_settings` covers both menu-navigation families, both
+  confirmation keys, both setup exit keys, defaults/reset, every HP/rate range
+  step, and Advanced-menu `Esc` value preservation.
+- `one_player_gameplay` covers all P1 movement/fire alternatives, the shared
+  battle/display/stage hotkeys, live tuning after start/restart, and both sides
+  of the Bandage eligibility rule.
+- `two_player_gameplay` repeats P1 and shared-hotkey coverage, adds every P2
+  movement/fire alternative, and repeats live tuning and Bandage coverage with
+  both players active.
+
+An `or` in a check ID groups publicly supported alternatives; it never permits
+testing only one. Record both Arrow/WASD menu families, `Enter` and `Space`, all
+three fire keys for each player, `N` and `B`, and both `Q` and `Esc` setup exits.
+For `F8`, capture the observed render change and the `high-quality` 2048x2048 or
+`balanced` 1024x1024 shadow-map line in the context recording, then repeat that
+line in the observation notes; the compiler does not accept a standalone log
+artifact. `F11` is the borderless toggle.
 
 Place final supporting captures in a persistent candidate evidence directory
 before compiling, then choose a new output directory there. For example:
@@ -206,7 +230,7 @@ make compile-alpha-v2-interactive-evidence DIST_CHANNEL=alpha.N \
   ALPHA_INTERACTIVE_QA_OUTPUT_DIR="$PWD/docs/assets/releases/v0.1.0-alpha.N/evidence/interactive"
 ```
 
-The compiler creates one canonical manifest, five v2 event logs, five session
+The compiler creates one canonical manifest, six v2 event logs, six session
 reports, and `status.next.json` without changing the source status or replacing
 any file. The event producer is honestly identified as the project QA compiler,
 and every event log binds the canonical observation-manifest SHA-256.
@@ -226,11 +250,10 @@ candidate documents, and commit that promotion. Re-run the canonical evidence
 check from a clean worktree. The compiler does not update release prose,
 document hashes, known issues, audio, or approvals.
 
-This compiler covers the five live-play categories only. Main-menu/published-
-control evidence and the source-free Safari acquisition/five-command records
-still require their own accountable collection workflow; keep those gates
-`NOT_RUN`/`BLOCKED` rather than copying synthetic fixtures or hand-authoring a
-false PASS.
+This compiler covers main-menu/published-control evidence and the five live-play
+categories. The source-free Safari acquisition and five-command records remain
+outside it; keep those gates `NOT_RUN`/`BLOCKED` rather than copying synthetic
+fixtures or hand-authoring a false PASS.
 
 Treat source-free launch QA and performance QA as separate gates. The Clean-Mac
 machine downloads only the staged candidate ZIP in Safari and must have no
@@ -247,6 +270,12 @@ These may be different Macs. If one physical Mac is used,
 finish and sign the Clean-Mac/Gatekeeper gate before installing or cloning the
 performance tooling; do not claim `source_checkout_absent` for the later
 performance phase.
+
+Under v2, Clean-Mac status binds only `gatekeeper_launch`; do not attach or reuse
+the `main_menu_and_advanced_settings` control session for that gate. The
+Gatekeeper details still require `main_menu_reached`, observed after the
+quarantined Finder launch, as proof that the tested launch path reached the
+application rather than merely clearing command-line checks.
 
 After building the immutable candidate, create the performance evidence once:
 
@@ -326,7 +355,7 @@ opens a window and intentionally remains outside CI and candidate gates.
 - Test the extracted ZIP on a clean Mac matching the declared minimum system.
 - Complete one-player and two-player stages, including pause/Esc, every pickup,
   all three national bases, player death/respawn, base loss, stage settlement,
-  fullscreen, resize, sound, and the final report.
+  borderless toggle, resize, sound, and the final report.
 - Run a longer session and record frame-rate, thermal, rendering, and audio
   problems as known issues.
 - Review the archive's `licenses/` directory and decide whether to accept,

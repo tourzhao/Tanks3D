@@ -862,21 +862,32 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   or silently reinterpret the release tag. A separate machine-readable status
   gate binds manual evidence and approvals to that candidate. Interactive,
   command and gameplay-event records use strict JSON formats. The v2
-  live-gameplay evidence path starts from an all-`NOT_RUN` observation plan;
-  its standard-library compiler accepts only 67 explicitly passed rows with
-  exact checks, non-blocking notes, bounded timestamps, valid captures, and
+  interactive evidence path starts from an all-`NOT_RUN` observation plan;
+  its standard-library compiler accepts only 70 explicitly passed rows across
+  main-menu/control and five live-play categories, with exact checks,
+  non-blocking notes, bounded timestamps, valid captures, and
   independent reviewer identity. Recordings are hashed as streams, and input
   identity is rechecked before a dirfd/inode-bound no-replace publication. It
-  writes a new status snapshot plus five session/event pairs without modifying
+  writes a new status snapshot plus six session/event pairs without modifying
   the source status or overwriting evidence. V2 event logs identify the QA
   compiler—not the game binary—as their producer and bind the canonical
-  observation-manifest hash. Published-control PASS also requires the eight
-  fixed advanced-settings checks. The v2
+  observation-manifest hash. Main-menu, one-player, and two-player evidence use
+  distinct >=64 KiB recordings. The menu context owns both navigation/confirm/
+  exit alternatives plus ranges, defaults/reset, and `Esc` preservation;
+  one-player owns P1/shared hotkeys plus runtime tuning/Bandage; two-player owns
+  P1/P2/shared hotkeys plus the same runtime checks. An `or` check requires every
+  published alternative. F11 is borderless, while F8 is corroborated by its
+  2048x2048 high-quality / 1024x1024 balanced shadow-map line captured in the
+  context recording and observation notes, not a separate log artifact.
+  Published-control PASS also requires the eight fixed advanced-settings checks.
+  The v2
   clean-Mac contract uses a real Safari HTTPS acquisition so quarantine is
   observed rather than synthesized, binds that acquisition's identity and
   interval in a structured record, then records the five post-download
-  checksum/quarantine/signature commands. The v2 performance path embeds source
-  identity in the distribution binary, records
+  checksum/quarantine/signature commands. Clean-Mac binds only the
+  `gatekeeper_launch` session; `main_menu_reached` remains a Gatekeeper detail,
+  not a reason to reuse the controls session. The v2 performance path embeds
+  source identity in the distribution binary, records
   genuine frame/RSS windows plus active-gameplay, focused-window, and cleared-
   stage evidence, publishes with atomic no-replace output, and binds them to the
   tagged ZIP through a launch receipt. The runner hashes a no-follow private ZIP

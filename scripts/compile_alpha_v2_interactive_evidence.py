@@ -31,11 +31,97 @@ EVENT_LOG_PRODUCER = "Tanks3D Alpha QA Evidence Compiler"
 OBSERVATION_MANIFEST_SHA256_KEY = "observation_manifest_sha256"
 REQUIREMENTS_SCHEMA = "tanks3d-release-requirements-v2"
 EVIDENCE_IDS = (
+    "main_menu_and_advanced_settings",
     "one_player_gameplay",
     "two_player_gameplay",
     "national_bases",
     "pickup_and_minimap",
     "settlement_report",
+)
+CONTROL_EVIDENCE_IDS = (
+    "main_menu_and_advanced_settings",
+    "one_player_gameplay",
+    "two_player_gameplay",
+)
+PUBLISHED_CONTROL_CHECKS = (
+    "menu_arrow_or_wasd_navigation",
+    "menu_enter_or_space_confirm",
+    "player_1_arrow_movement",
+    "player_1_fire_bindings",
+    "player_2_wasd_movement",
+    "player_2_fire_bindings",
+    "enter_pause_resume",
+    "escape_returns_to_setup",
+    "r_restarts_stage",
+    "f8_quality_toggle",
+    "f11_borderless_toggle",
+    "n_b_stage_navigation",
+    "q_or_escape_exits_from_setup",
+)
+ADVANCED_SETTINGS_CHECKS = (
+    "default_hp_3_and_reset_restores_defaults",
+    "player_hp_range_1_to_6_step_1",
+    "enemy_speed_range_minus_30_to_plus_30_step_5",
+    "fire_frequency_range_minus_30_to_plus_30_step_5",
+    "spawn_pace_range_minus_30_to_plus_30_step_5",
+    "selected_tuning_applies_after_start_and_restart",
+    "hp_1_disables_bandage_and_normal_hp_restores_it",
+    "escape_preserves_selected_values",
+)
+CONTROL_CONTEXT_KEYS = {"context", "coverage_token", "evidence_id", "checks"}
+CONTROL_CONTEXT_REQUIREMENTS = (
+    {
+        "context": "main_menu",
+        "coverage_token": "controls:main_menu",
+        "evidence_id": "main_menu_and_advanced_settings",
+        "checks": [
+            "menu_arrow_or_wasd_navigation",
+            "menu_enter_or_space_confirm",
+            "q_or_escape_exits_from_setup",
+            "default_hp_3_and_reset_restores_defaults",
+            "player_hp_range_1_to_6_step_1",
+            "enemy_speed_range_minus_30_to_plus_30_step_5",
+            "fire_frequency_range_minus_30_to_plus_30_step_5",
+            "spawn_pace_range_minus_30_to_plus_30_step_5",
+            "escape_preserves_selected_values",
+        ],
+    },
+    {
+        "context": "one_player",
+        "coverage_token": "controls:one_player",
+        "evidence_id": "one_player_gameplay",
+        "checks": [
+            "player_1_arrow_movement",
+            "player_1_fire_bindings",
+            "enter_pause_resume",
+            "escape_returns_to_setup",
+            "r_restarts_stage",
+            "f8_quality_toggle",
+            "f11_borderless_toggle",
+            "n_b_stage_navigation",
+            "selected_tuning_applies_after_start_and_restart",
+            "hp_1_disables_bandage_and_normal_hp_restores_it",
+        ],
+    },
+    {
+        "context": "two_player",
+        "coverage_token": "controls:two_player",
+        "evidence_id": "two_player_gameplay",
+        "checks": [
+            "player_1_arrow_movement",
+            "player_1_fire_bindings",
+            "player_2_wasd_movement",
+            "player_2_fire_bindings",
+            "enter_pause_resume",
+            "escape_returns_to_setup",
+            "r_restarts_stage",
+            "f8_quality_toggle",
+            "f11_borderless_toggle",
+            "n_b_stage_navigation",
+            "selected_tuning_applies_after_start_and_restart",
+            "hp_1_disables_bandage_and_normal_hp_restores_it",
+        ],
+    },
 )
 MANIFEST_KEYS = {
     "schema",
@@ -420,6 +506,9 @@ def load_profile(requirements_path: Path) -> Tuple[bytes, Mapping[str, Any]]:
                 "requirements profile.{} does not match the compiler".format(key)
             )
     expected_lists = {
+        "published_control_checks": list(PUBLISHED_CONTROL_CHECKS),
+        "advanced_settings_checks": list(ADVANCED_SETTINGS_CHECKS),
+        "clean_mac_evidence_ids": ["gatekeeper_launch"],
         "interactive_observation_manifest_keys": list(MANIFEST_KEYS),
         "interactive_observation_keys": list(OBSERVATION_KEYS),
         "interactive_observation_evidence_ids": list(EVIDENCE_IDS),
@@ -458,6 +547,40 @@ def load_profile(requirements_path: Path) -> Tuple[bytes, Mapping[str, Any]]:
             raise CompileError(
                 "requirements profile.{} does not match the compiler".format(key)
             )
+
+    global_control_checks = list(PUBLISHED_CONTROL_CHECKS + ADVANCED_SETTINGS_CHECKS)
+    raw_contexts = profile.get("published_control_context_requirements")
+    if not isinstance(raw_contexts, list) or len(raw_contexts) != len(
+        CONTROL_CONTEXT_REQUIREMENTS
+    ):
+        raise CompileError(
+            "requirements profile.published_control_context_requirements "
+            "does not match the compiler"
+        )
+    covered_checks = set()
+    for index, (raw_context, expected) in enumerate(
+        zip(raw_contexts, CONTROL_CONTEXT_REQUIREMENTS)
+    ):
+        label = "requirements profile.published_control_context_requirements[{}]".format(
+            index
+        )
+        context = require_object(raw_context, label)
+        require_exact_keys(context, CONTROL_CONTEXT_KEYS, label)
+        for key in ("context", "coverage_token", "evidence_id"):
+            if context[key] != expected[key]:
+                raise CompileError("{}.{} does not match the compiler".format(label, key))
+        checks = require_string_list(context["checks"], label + ".checks")
+        if checks != expected["checks"]:
+            raise CompileError("{}.checks do not match the compiler".format(label))
+        positions = [global_control_checks.index(check) for check in checks]
+        if positions != sorted(positions):
+            raise CompileError("{}.checks are not in global profile order".format(label))
+        covered_checks.update(checks)
+    if covered_checks != set(global_control_checks):
+        raise CompileError(
+            "published control contexts do not cover the canonical 21 checks"
+        )
+
     for key in ("modes", "gameplay_ids", "base_ids", "base_checks", "settlement_ids"):
         require_string_list(profile.get(key), "requirements profile.{}".format(key))
     pickups = profile.get("pickup_requirements")
@@ -510,6 +633,17 @@ def token_plan(profile: Mapping[str, Any]) -> List[Dict[str, Any]]:
             add("pickup", pickup["id"], mode, "pickup_and_minimap", pickup["checks"])
     for item_id in profile["settlement_ids"]:
         add("settlement", item_id, None, "settlement_report", [item_id])
+    for control_context in profile["published_control_context_requirements"]:
+        result.append(
+            {
+                "section": "controls",
+                "id": control_context["context"],
+                "mode": None,
+                "coverage_token": control_context["coverage_token"],
+                "evidence_id": control_context["evidence_id"],
+                "required_checks": list(control_context["checks"]),
+            }
+        )
     tokens = [item["coverage_token"] for item in result]
     if len(tokens) != len(set(tokens)):
         raise CompileError("requirements profile produces duplicate coverage tokens")
@@ -760,7 +894,7 @@ def support_artifacts(
 ) -> Tuple[Dict[str, List[Dict[str, str]]], Dict[str, FileSnapshot]]:
     raw_groups = manifest["supporting_artifacts"]
     if not isinstance(raw_groups, list) or len(raw_groups) != len(EVIDENCE_IDS):
-        raise CompileError("supporting_artifacts must contain the five canonical categories")
+        raise CompileError("supporting_artifacts must contain the six canonical categories")
     groups: Dict[str, List[Dict[str, str]]] = {}
     snapshots: Dict[str, FileSnapshot] = {}
     for index, (raw_group, expected_id) in enumerate(zip(raw_groups, EVIDENCE_IDS)):
@@ -778,6 +912,14 @@ def support_artifacts(
                 raise CompileError("supporting artifact path is duplicated: {}".format(record["path"]))
             snapshots[record["path"]] = snapshot
             records.append(record)
+        if expected_id in CONTROL_EVIDENCE_IDS and not any(
+            record["kind"] == "recording" for record in records
+        ):
+            raise CompileError(
+                "supporting artifact category {} requires a recording".format(
+                    expected_id
+                )
+            )
         groups[expected_id] = records
     return groups, snapshots
 
@@ -833,8 +975,12 @@ def update_status_rows(
         maps[section] = mapped
 
     used: Dict[str, set] = {key: set() for key in maps}
+    control_observations = []
     for observation in observations:
         section = observation["section"]
+        if section == "controls":
+            control_observations.append(observation)
+            continue
         key = (observation["id"], observation["mode"])
         row = maps[section].get(key)
         if row is None:
@@ -851,6 +997,27 @@ def update_status_rows(
     for section, mapped in maps.items():
         if set(mapped) != used[section]:
             raise CompileError("status.{} does not exactly match the token plan".format(section_names[section]))
+
+    expected_control_tokens = [
+        context["coverage_token"] for context in CONTROL_CONTEXT_REQUIREMENTS
+    ]
+    if [item["coverage_token"] for item in control_observations] != expected_control_tokens:
+        raise CompileError("control observations do not exactly match the token plan")
+    controls = require_object(
+        status.get("published_controls"), "status.published_controls"
+    )
+    if controls.get("id") != "published_controls_match":
+        raise CompileError("status.published_controls has the wrong id")
+    if controls.get("status") == "PASS":
+        raise CompileError("status.published_controls is already PASS")
+    controls["status"] = "PASS"
+    controls["tester"] = manifest["tester"]
+    controls["tested_at_utc"] = manifest["completed_at_utc"]
+    controls["evidence_ids"] = list(CONTROL_EVIDENCE_IDS)
+    controls["checks_confirmed"] = list(
+        PUBLISHED_CONTROL_CHECKS + ADVANCED_SETTINGS_CHECKS
+    )
+    controls["notes"] = manifest["review_notes"]
 
 
 def evidence_map(status: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:

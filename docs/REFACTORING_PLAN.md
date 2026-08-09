@@ -1136,3 +1136,19 @@ eighteen evidence-compiler, and fifteen performance-runner tests pass; the
 13/9/5 candidate rejection suites and both success paths remain green. Separate
 published-control and source-free Safari collectors, plus human QA and approval,
 remain release work.
+
+The fiftieth increment binds the published controls to the same candidate-bound
+interactive evidence pipeline without changing gameplay, maps, or assets. The
+v2 plan now contains 70 ordered observations across six evidence categories,
+adding unique main-menu, one-player, and two-player control tokens. Those three
+contexts require distinct >=64 KiB recordings, exact context-specific checks,
+one shared manifest identity, and matching event/session references; the
+compiler aggregates them into the 21-check `published_controls` result. The
+verifier requires dynamic status tokens, manifest tokens, event tokens, and
+coverage references to agree exactly, while legacy v1 remains isolated and
+superseded. Clean-Mac v2 now uses only its Gatekeeper evidence identity so it
+cannot conflict with the compiled main-menu session. Fifty-three
+release-verifier, fifteen v2-initializer, twenty-two evidence-compiler, and
+fifteen performance-runner tests pass; the 13/9/5 candidate rejection suites
+and both success paths remain green. Human one-/two-player, audio, 30-minute,
+and clean-Mac execution, plus approval and publication, remain release work.

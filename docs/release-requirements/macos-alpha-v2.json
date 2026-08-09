@@ -214,6 +214,63 @@
     "hp_1_disables_bandage_and_normal_hp_restores_it",
     "escape_preserves_selected_values"
   ],
+  "published_control_context_requirements": [
+    {
+      "context": "main_menu",
+      "coverage_token": "controls:main_menu",
+      "evidence_id": "main_menu_and_advanced_settings",
+      "checks": [
+        "menu_arrow_or_wasd_navigation",
+        "menu_enter_or_space_confirm",
+        "q_or_escape_exits_from_setup",
+        "default_hp_3_and_reset_restores_defaults",
+        "player_hp_range_1_to_6_step_1",
+        "enemy_speed_range_minus_30_to_plus_30_step_5",
+        "fire_frequency_range_minus_30_to_plus_30_step_5",
+        "spawn_pace_range_minus_30_to_plus_30_step_5",
+        "escape_preserves_selected_values"
+      ]
+    },
+    {
+      "context": "one_player",
+      "coverage_token": "controls:one_player",
+      "evidence_id": "one_player_gameplay",
+      "checks": [
+        "player_1_arrow_movement",
+        "player_1_fire_bindings",
+        "enter_pause_resume",
+        "escape_returns_to_setup",
+        "r_restarts_stage",
+        "f8_quality_toggle",
+        "f11_borderless_toggle",
+        "n_b_stage_navigation",
+        "selected_tuning_applies_after_start_and_restart",
+        "hp_1_disables_bandage_and_normal_hp_restores_it"
+      ]
+    },
+    {
+      "context": "two_player",
+      "coverage_token": "controls:two_player",
+      "evidence_id": "two_player_gameplay",
+      "checks": [
+        "player_1_arrow_movement",
+        "player_1_fire_bindings",
+        "player_2_wasd_movement",
+        "player_2_fire_bindings",
+        "enter_pause_resume",
+        "escape_returns_to_setup",
+        "r_restarts_stage",
+        "f8_quality_toggle",
+        "f11_borderless_toggle",
+        "n_b_stage_navigation",
+        "selected_tuning_applies_after_start_and_restart",
+        "hp_1_disables_bandage_and_normal_hp_restores_it"
+      ]
+    }
+  ],
+  "clean_mac_evidence_ids": [
+    "gatekeeper_launch"
+  ],
   "clean_mac_detail_keys": [
     "mac_model",
     "chip",
@@ -425,6 +482,7 @@
     "notes"
   ],
   "interactive_observation_evidence_ids": [
+    "main_menu_and_advanced_settings",
     "one_player_gameplay",
     "two_player_gameplay",
     "national_bases",

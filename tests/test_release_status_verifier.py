@@ -49,6 +49,14 @@ GAMEPLAY_EVIDENCE_IDS = (
     "pickup_and_minimap",
     "settlement_report",
 )
+OBSERVATION_EVIDENCE_IDS = (
+    "main_menu_and_advanced_settings",
+) + GAMEPLAY_EVIDENCE_IDS
+CONTROL_EVIDENCE_IDS = (
+    "main_menu_and_advanced_settings",
+    "one_player_gameplay",
+    "two_player_gameplay",
+)
 
 
 def digest(path):
@@ -384,7 +392,7 @@ class ReleaseFixture:
 
     def mutate_observation_manifest(self, mutation):
         evidence_by_id = {item["id"]: item for item in self.status["evidence"]}
-        first = evidence_by_id[GAMEPLAY_EVIDENCE_IDS[0]]
+        first = evidence_by_id[OBSERVATION_EVIDENCE_IDS[0]]
         manifest_artifact = next(
             item
             for item in first["artifacts"]
@@ -398,7 +406,7 @@ class ReleaseFixture:
             encoding="utf-8",
         )
         manifest_digest = digest(path)
-        for evidence_id in GAMEPLAY_EVIDENCE_IDS:
+        for evidence_id in OBSERVATION_EVIDENCE_IDS:
             evidence = evidence_by_id[evidence_id]
             shared = next(
                 item
@@ -459,6 +467,20 @@ class ReleaseFixture:
                 "signature": fixture_tester,
                 "coverage_refs": {},
             }
+        if profile == "v2":
+            for evidence_id in CONTROL_EVIDENCE_IDS:
+                recording = self.root / "evidence/{}-controls.mp4".format(
+                    evidence_id
+                )
+                recording.parent.mkdir(parents=True, exist_ok=True)
+                recording.write_bytes(
+                    ("fixture controls recording for {}\n".format(evidence_id)).encode(
+                        "utf-8"
+                    ).ljust(MINIMUM_RECORDING_BYTES, b"0")
+                )
+                self.append_evidence_artifact(
+                    evidence_by_id[evidence_id], recording, kind="recording"
+                )
 
         for record in self.status["gameplay"]:
             record["status"] = "PASS"
@@ -529,15 +551,27 @@ class ReleaseFixture:
             requirements.get("advanced_settings_checks", [])
         )
         controls["notes"] = (
-            "Every published control and advanced setting was exercised."
+            "Interactive evidence and release visuals reviewed."
+            if profile == "v2"
+            else "Every published control and advanced setting was exercised."
         )
-        for evidence_id in controls["evidence_ids"]:
-            evidence_by_id[evidence_id]["interactive"]["coverage_refs"][
-                "controls:published_controls_match"
-            ] = "00:20:00"
+        if profile == "v2":
+            for context in requirements["published_control_context_requirements"]:
+                evidence_by_id[context["evidence_id"]]["interactive"][
+                    "coverage_refs"
+                ][context["coverage_token"]] = "00:20:00"
+        else:
+            for evidence_id in controls["evidence_ids"]:
+                evidence_by_id[evidence_id]["interactive"]["coverage_refs"][
+                    "controls:published_controls_match"
+                ] = "00:20:00"
 
         gate_evidence = {
-            "clean_mac": ["main_menu_and_advanced_settings", "gatekeeper_launch"],
+            "clean_mac": (
+                list(requirements["clean_mac_evidence_ids"])
+                if profile == "v2"
+                else ["main_menu_and_advanced_settings", "gatekeeper_launch"]
+            ),
             "gatekeeper": ["gatekeeper_launch"],
             "extended_session": ["extended_session_metrics"],
         }
@@ -994,8 +1028,22 @@ class ReleaseFixture:
                         [settlement_id],
                     )
                 )
+            for control_context in requirements[
+                "published_control_context_requirements"
+            ]:
+                planned_tokens.append(
+                    (
+                        control_context["coverage_token"],
+                        control_context["evidence_id"],
+                        list(control_context["checks"]),
+                    )
+                )
             for token, evidence_id, checks in planned_tokens:
-                row = rows_by_token[token]
+                notes = (
+                    controls["notes"]
+                    if token.startswith("controls:")
+                    else rows_by_token[token]["notes"]
+                )
                 observations.append(
                     {
                         "coverage_token": token,
@@ -1004,7 +1052,7 @@ class ReleaseFixture:
                         "result": "PASS",
                         "observed_at_utc": UTC,
                         "checks_confirmed": checks,
-                        "notes": row["notes"],
+                        "notes": notes,
                     }
                 )
             manifest = {
@@ -1031,7 +1079,7 @@ class ReleaseFixture:
                             if item["kind"] in {"png", "recording"}
                         ],
                     }
-                    for evidence_id in GAMEPLAY_EVIDENCE_IDS
+                    for evidence_id in OBSERVATION_EVIDENCE_IDS
                 ],
                 "observations": observations,
             }
@@ -1041,7 +1089,7 @@ class ReleaseFixture:
                 encoding="utf-8",
             )
             manifest_digest = digest(manifest_path)
-            for evidence_id in GAMEPLAY_EVIDENCE_IDS:
+            for evidence_id in OBSERVATION_EVIDENCE_IDS:
                 self.append_evidence_artifact(
                     evidence_by_id[evidence_id], manifest_path, kind="report"
                 )
@@ -1050,9 +1098,14 @@ class ReleaseFixture:
             evidence_id: [
                 item for item in observations if item["evidence_id"] == evidence_id
             ]
-            for evidence_id in GAMEPLAY_EVIDENCE_IDS
+            for evidence_id in OBSERVATION_EVIDENCE_IDS
         }
-        for evidence_id in GAMEPLAY_EVIDENCE_IDS:
+        event_evidence_ids = (
+            OBSERVATION_EVIDENCE_IDS
+            if profile == "v2"
+            else GAMEPLAY_EVIDENCE_IDS
+        )
+        for evidence_id in event_evidence_ids:
             evidence = evidence_by_id[evidence_id]
             tokens = (
                 [item["coverage_token"] for item in observations_by_evidence[evidence_id]]
@@ -1373,7 +1426,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             (lambda status: status["bases"][0], ["one_player_gameplay"]),
             (lambda status: status["pickups"][0], ["settlement_report"]),
             (lambda status: status["settlement"][0], ["pickup_and_minimap"]),
-            (lambda status: status["clean_mac"], ["gatekeeper_launch"]),
+            (lambda status: status["clean_mac"], ["main_menu_and_advanced_settings"]),
             (lambda status: status["gatekeeper"], ["main_menu_and_advanced_settings"]),
             (lambda status: status["extended_session"], ["gatekeeper_launch"]),
         ]
@@ -1864,14 +1917,164 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             fixture.run(), "tester and reviewer must be different people"
         )
 
+    def test_v2_controls_require_exact_manifest_observations_and_aggregation(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_observation_manifest(
+            lambda payload: payload["observations"].pop()
+        )
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "observations do not exactly match the token plan"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+
+        def change_control_checks(payload):
+            observation = next(
+                item
+                for item in payload["observations"]
+                if item["coverage_token"] == "controls:main_menu"
+            )
+            observation["required_checks"] = observation["required_checks"][:-1]
+
+        fixture.mutate_observation_manifest(change_control_checks)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "does not match the canonical token plan")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status["published_controls"]["notes"] = (
+            "A different non-blocking controls summary."
+        )
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(),
+            "controls observations contradict status.published_controls",
+        )
+
+    def test_v2_main_menu_requires_manifest_event_session_and_compiler_producer(self):
+        removals = (
+            (
+                lambda item: Path(item["path"]).name == "observation-manifest.json",
+                "requires exactly one Alpha-v2 observation manifest report",
+            ),
+            (
+                lambda item: item["path"].endswith(
+                    "main_menu_and_advanced_settings-events.json"
+                ),
+                "requires exactly one Alpha-v2 compiler event log",
+            ),
+            (
+                lambda item: item["path"].endswith(
+                    "main_menu_and_advanced_settings-session.json"
+                ),
+                "requires exactly one structured interactive session report",
+            ),
+        )
+        for predicate, expected in removals:
+            with self.subTest(expected=expected):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                evidence = fixture.status["evidence"][0]
+                removed = next(
+                    item for item in evidence["artifacts"] if predicate(item)
+                )
+                evidence["artifacts"].remove(removed)
+                if not removed["path"].endswith("-session.json"):
+                    fixture.refresh_evidence_manifest(evidence)
+                fixture.write_status()
+                self.assert_failed(fixture.run(), expected)
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.mutate_gameplay_event_log(
+            "main_menu_and_advanced_settings",
+            lambda payload: payload.__setitem__("producer", "Fixture"),
+        )
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "was not produced by the Alpha-v2 evidence compiler"
+        )
+
+    def test_v2_controls_reject_extra_interactive_coverage_reference(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        main_coverage = fixture.status["evidence"][0]["interactive"][
+            "coverage_refs"
+        ]
+        del main_coverage["controls:main_menu"]
+        main_coverage["controls:forged"] = "event:1"
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "interactive evidence does not cover 'controls:main_menu'"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][0]
+        evidence["interactive"]["coverage_refs"]["controls:forged"] = "event:2"
+        session_artifact = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("-session.json")
+        )
+        session_path = fixture.root / session_artifact["path"]
+        session = json.loads(session_path.read_text(encoding="utf-8"))
+        session["categories"][0]["coverage_refs"] = evidence["interactive"][
+            "coverage_refs"
+        ]
+        session_path.write_text(
+            json.dumps(session, indent=2) + "\n", encoding="utf-8"
+        )
+        session_artifact["sha256"] = digest(session_path)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "interactive coverage references are not exact"
+        )
+
+    def test_v2_control_supporting_groups_each_require_a_recording(self):
+        for evidence_id in CONTROL_EVIDENCE_IDS:
+            with self.subTest(evidence_id=evidence_id):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+
+                def remove_recording(payload):
+                    group = next(
+                        item
+                        for item in payload["supporting_artifacts"]
+                        if item["evidence_id"] == evidence_id
+                    )
+                    group["artifacts"] = [
+                        item
+                        for item in group["artifacts"]
+                        if item["kind"] != "recording"
+                    ]
+
+                fixture.mutate_observation_manifest(remove_recording)
+                fixture.write_status()
+                self.assert_failed(
+                    fixture.run(), "requires a recording for controls verification"
+                )
+
     def test_compiler_output_is_accepted_end_to_end_and_producer_drift_is_rejected(self):
         fixture = self.new_fixture()
         fixture.status["requirements"] = (
             "docs/release-requirements/macos-alpha-v2.json"
         )
         for evidence in fixture.status["evidence"]:
-            if evidence["id"] in GAMEPLAY_EVIDENCE_IDS:
+            if evidence["id"] in OBSERVATION_EVIDENCE_IDS:
                 evidence["status"] = "NOT_RUN"
+            if evidence["id"] in CONTROL_EVIDENCE_IDS:
+                recording = fixture.root / "evidence/compiler-{}-controls.mp4".format(
+                    evidence["id"]
+                )
+                recording.parent.mkdir(parents=True, exist_ok=True)
+                recording.write_bytes(b"1" * MINIMUM_RECORDING_BYTES)
+                fixture.append_evidence_artifact(
+                    evidence, recording, kind="recording"
+                )
         fixture.write_status()
 
         plan_path = fixture.root / "observation-plan.json"
@@ -1897,6 +2100,14 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         )
 
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(plan["observations"]), 70)
+        self.assertEqual(
+            [
+                item["coverage_token"]
+                for item in plan["observations"][-3:]
+            ],
+            ["controls:main_menu", "controls:one_player", "controls:two_player"],
+        )
         plan.update(
             {
                 "candidate_sha256": fixture.status["release"]["artifact"][
@@ -1931,9 +2142,16 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
                 for artifact in evidence_by_id[support_group["evidence_id"]][
                     "artifacts"
                 ]
-                if artifact["kind"] == "png"
+                if artifact["kind"] in {"png", "recording"}
             ]
             self.assertTrue(support_group["artifacts"])
+            if support_group["evidence_id"] in CONTROL_EVIDENCE_IDS:
+                self.assertTrue(
+                    any(
+                        item["kind"] == "recording"
+                        for item in support_group["artifacts"]
+                    )
+                )
         plan_path.write_text(
             json.dumps(plan, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -1972,6 +2190,14 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         self.assertIn("Verified blocked Alpha status", valid_result.stdout)
 
         next_status = json.loads(next_status_path.read_text(encoding="utf-8"))
+        self.assertEqual(next_status["published_controls"]["status"], "PASS")
+        self.assertEqual(
+            next_status["published_controls"]["evidence_ids"],
+            list(CONTROL_EVIDENCE_IDS),
+        )
+        self.assertEqual(
+            len(next_status["published_controls"]["checks_confirmed"]), 21
+        )
         one_player = next(
             item
             for item in next_status["evidence"]

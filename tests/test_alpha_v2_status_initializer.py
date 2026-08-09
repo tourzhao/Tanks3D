@@ -230,6 +230,55 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         self.assertIn("Selected option: **NONE — BLOCKED**", qa)
         self.assertIn(fixture.qa_report.name, page)
         requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
+        self.assertEqual(
+            requirements["clean_mac_evidence_ids"], ["gatekeeper_launch"]
+        )
+        self.assertEqual(
+            requirements["interactive_observation_evidence_ids"],
+            [
+                "main_menu_and_advanced_settings",
+                "one_player_gameplay",
+                "two_player_gameplay",
+                "national_bases",
+                "pickup_and_minimap",
+                "settlement_report",
+            ],
+        )
+        self.assertEqual(
+            [
+                (
+                    item["context"],
+                    item["coverage_token"],
+                    item["evidence_id"],
+                )
+                for item in requirements[
+                    "published_control_context_requirements"
+                ]
+            ],
+            [
+                (
+                    "main_menu",
+                    "controls:main_menu",
+                    "main_menu_and_advanced_settings",
+                ),
+                ("one_player", "controls:one_player", "one_player_gameplay"),
+                ("two_player", "controls:two_player", "two_player_gameplay"),
+            ],
+        )
+        self.assertEqual(
+            set().union(
+                *(
+                    set(item["checks"])
+                    for item in requirements[
+                        "published_control_context_requirements"
+                    ]
+                )
+            ),
+            set(
+                requirements["published_control_checks"]
+                + requirements["advanced_settings_checks"]
+            ),
+        )
         for row in requirements["document_gate_rows"]:
             gate_row = "| {} | BLOCKED |".format(row)
             self.assertIn(gate_row, page)
@@ -341,7 +390,12 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         self.assert_failed(fixture, fixture.run(), "must show seven distinct images")
 
     def test_refuses_candidate_tamper_and_any_profile_drift(self):
-        for mutation in ("candidate", "profile_schema", "profile_semantics"):
+        for mutation in (
+            "candidate",
+            "profile_schema",
+            "profile_semantics",
+            "profile_control_context",
+        ):
             with self.subTest(mutation=mutation):
                 fixture = self.fixture()
                 if mutation == "candidate":
@@ -354,10 +408,18 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
                     profile["schema"] = "tanks3d-release-requirements-v1"
                     profile_path.write_text(json.dumps(profile), encoding="utf-8")
                     fragment = "does not match the canonical contract"
-                else:
+                elif mutation == "profile_semantics":
                     profile_path = fixture.root / "docs/release-requirements/macos-alpha-v2.json"
                     profile = json.loads(profile_path.read_text(encoding="utf-8"))
                     profile["gameplay_ids"][0] = "forged_gameplay_check"
+                    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+                    fragment = "does not match the canonical contract"
+                else:
+                    profile_path = fixture.root / "docs/release-requirements/macos-alpha-v2.json"
+                    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+                    profile["published_control_context_requirements"][0][
+                        "coverage_token"
+                    ] = "controls:forged"
                     profile_path.write_text(json.dumps(profile), encoding="utf-8")
                     fragment = "does not match the canonical contract"
                 self.assert_failed(fixture, fixture.run(), fragment)

@@ -141,6 +141,68 @@ ADVANCED_SETTINGS_CHECKS = [
     "hp_1_disables_bandage_and_normal_hp_restores_it",
     "escape_preserves_selected_values",
 ]
+PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS = [
+    {
+        "context": "main_menu",
+        "coverage_token": "controls:main_menu",
+        "evidence_id": "main_menu_and_advanced_settings",
+        "checks": [
+            "menu_arrow_or_wasd_navigation",
+            "menu_enter_or_space_confirm",
+            "q_or_escape_exits_from_setup",
+            "default_hp_3_and_reset_restores_defaults",
+            "player_hp_range_1_to_6_step_1",
+            "enemy_speed_range_minus_30_to_plus_30_step_5",
+            "fire_frequency_range_minus_30_to_plus_30_step_5",
+            "spawn_pace_range_minus_30_to_plus_30_step_5",
+            "escape_preserves_selected_values",
+        ],
+    },
+    {
+        "context": "one_player",
+        "coverage_token": "controls:one_player",
+        "evidence_id": "one_player_gameplay",
+        "checks": [
+            "player_1_arrow_movement",
+            "player_1_fire_bindings",
+            "enter_pause_resume",
+            "escape_returns_to_setup",
+            "r_restarts_stage",
+            "f8_quality_toggle",
+            "f11_borderless_toggle",
+            "n_b_stage_navigation",
+            "selected_tuning_applies_after_start_and_restart",
+            "hp_1_disables_bandage_and_normal_hp_restores_it",
+        ],
+    },
+    {
+        "context": "two_player",
+        "coverage_token": "controls:two_player",
+        "evidence_id": "two_player_gameplay",
+        "checks": [
+            "player_1_arrow_movement",
+            "player_1_fire_bindings",
+            "player_2_wasd_movement",
+            "player_2_fire_bindings",
+            "enter_pause_resume",
+            "escape_returns_to_setup",
+            "r_restarts_stage",
+            "f8_quality_toggle",
+            "f11_borderless_toggle",
+            "n_b_stage_navigation",
+            "selected_tuning_applies_after_start_and_restart",
+            "hp_1_disables_bandage_and_normal_hp_restores_it",
+        ],
+    },
+]
+CONTROL_EVIDENCE_IDS = [
+    item["evidence_id"] for item in PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS
+]
+V1_CLEAN_MAC_EVIDENCE_IDS = [
+    "main_menu_and_advanced_settings",
+    "gatekeeper_launch",
+]
+V2_CLEAN_MAC_EVIDENCE_IDS = ["gatekeeper_launch"]
 INTERACTIVE_EVIDENCE_KEYS = [
     "candidate_sha256",
     "tester",
@@ -354,13 +416,16 @@ OBSERVATION_KEYS = [
     "checks_confirmed",
     "notes",
 ]
-OBSERVATION_EVIDENCE_IDS = [
+V1_GAMEPLAY_EVIDENCE_IDS = [
     "one_player_gameplay",
     "two_player_gameplay",
     "national_bases",
     "pickup_and_minimap",
     "settlement_report",
 ]
+OBSERVATION_EVIDENCE_IDS = [
+    "main_menu_and_advanced_settings",
+] + V1_GAMEPLAY_EVIDENCE_IDS
 SUPPORTING_ARTIFACT_GROUP_KEYS = ["evidence_id", "artifacts"]
 SUPPORTING_ARTIFACT_KEYS = ["path", "kind"]
 COMMAND_LOG_SCHEMA = "tanks3d-command-log-v1"
@@ -574,6 +639,10 @@ CANONICAL_REQUIREMENTS_V2.update(
         "schema": "tanks3d-release-requirements-v2",
         "profile": "macos-alpha-v2",
         "advanced_settings_checks": ADVANCED_SETTINGS_CHECKS,
+        "published_control_context_requirements": (
+            PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS
+        ),
+        "clean_mac_evidence_ids": V2_CLEAN_MAC_EVIDENCE_IDS,
         "interactive_observation_manifest_schema": OBSERVATION_MANIFEST_SCHEMA,
         "interactive_observation_manifest_keys": OBSERVATION_MANIFEST_KEYS,
         "interactive_observation_keys": OBSERVATION_KEYS,
@@ -1514,6 +1583,7 @@ def require_interactive_coverage(
     coverage_token: str,
     candidate_sha256: str,
     evidence_map: Mapping[str, Mapping[str, Any]],
+    coverage_tokens_by_evidence: Optional[Mapping[str, str]] = None,
 ) -> None:
     record = require_object(raw_record, context)
     if record["status"] != "PASS":
@@ -1523,6 +1593,12 @@ def require_interactive_coverage(
         record["tested_at_utc"], "{}.tested_at_utc".format(context)
     )
     evidence_ids = require_array(record["evidence_ids"], "{}.evidence_ids".format(context))
+    if coverage_tokens_by_evidence is not None and set(evidence_ids) != set(
+        coverage_tokens_by_evidence
+    ):
+        raise VerificationError(
+            "{} interactive coverage mapping is not exact".format(context)
+        )
     for evidence_id in evidence_ids:
         evidence = evidence_map[evidence_id]
         evidence_context = "status.evidence.{}".format(evidence_id)
@@ -1554,10 +1630,15 @@ def require_interactive_coverage(
             interactive["coverage_refs"],
             "{}.interactive.coverage_refs".format(evidence_context),
         )
-        if coverage_token not in coverage:
+        expected_coverage_token = (
+            coverage_tokens_by_evidence[evidence_id]
+            if coverage_tokens_by_evidence is not None
+            else coverage_token
+        )
+        if expected_coverage_token not in coverage:
             raise VerificationError(
                 "{} interactive evidence does not cover {!r}".format(
-                    context, coverage_token
+                    context, expected_coverage_token
                 )
             )
         if not any(
@@ -1572,7 +1653,9 @@ def require_interactive_coverage(
         )
 
 
-def dynamic_evidence_tokens(status: Mapping[str, Any]) -> Dict[str, Set[str]]:
+def dynamic_evidence_tokens(
+    status: Mapping[str, Any], requirements_profile: str
+) -> Dict[str, Set[str]]:
     tokens: Dict[str, Set[str]] = {evidence_id: set() for evidence_id in EVIDENCE_IDS}
     definitions = (
         ("gameplay", lambda row: "gameplay:{}:{}".format(row["id"], row["mode"])),
@@ -1586,8 +1669,12 @@ def dynamic_evidence_tokens(status: Mapping[str, Any]) -> Dict[str, Set[str]]:
                 for evidence_id in row["evidence_ids"]:
                     tokens[evidence_id].add(token_builder(row))
     if status["published_controls"]["status"] == "PASS":
-        for evidence_id in status["published_controls"]["evidence_ids"]:
-            tokens[evidence_id].add("controls:published_controls_match")
+        if requirements_profile == "macos-alpha-v2":
+            for context in PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS:
+                tokens[context["evidence_id"]].add(context["coverage_token"])
+        else:
+            for evidence_id in status["published_controls"]["evidence_ids"]:
+                tokens[evidence_id].add("controls:published_controls_match")
     for gate_name in ("clean_mac", "gatekeeper", "extended_session"):
         if status[gate_name]["status"] == "PASS":
             for evidence_id in status[gate_name]["evidence_ids"]:
@@ -1651,6 +1738,17 @@ def observation_token_plan() -> List[Dict[str, Any]]:
             None,
             "settlement_report",
             [settlement_id],
+        )
+    for control_context in PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS:
+        plan.append(
+            {
+                "section": "controls",
+                "id": control_context["context"],
+                "mode": None,
+                "coverage_token": control_context["coverage_token"],
+                "evidence_id": control_context["evidence_id"],
+                "required_checks": list(control_context["checks"]),
+            }
         )
     return plan
 
@@ -1755,7 +1853,7 @@ def validate_observation_manifest(
     )
     if len(support_groups) != len(OBSERVATION_EVIDENCE_IDS):
         raise VerificationError(
-            "{}.supporting_artifacts must contain the five canonical categories".format(context)
+            "{}.supporting_artifacts must contain the six canonical categories".format(context)
         )
     support_paths: Set[str] = set()
     for index, (raw_group, expected_id) in enumerate(
@@ -1769,6 +1867,7 @@ def validate_observation_manifest(
         artifacts = require_array(group["artifacts"], group_context + ".artifacts")
         if not artifacts:
             raise VerificationError("{} must not be empty".format(group_context))
+        group_kinds: Set[str] = set()
         attached = {
             (item["path"], item["kind"])
             for item in evidence_map[expected_id]["artifacts"]
@@ -1793,6 +1892,7 @@ def validate_observation_manifest(
             kind = require_string(artifact["kind"], artifact_context + ".kind")
             if kind not in {"png", "recording"}:
                 raise VerificationError("{}.kind must be png or recording".format(artifact_context))
+            group_kinds.add(kind)
             if path in support_paths:
                 raise VerificationError("{} duplicates supporting artifact path {!r}".format(context, path))
             support_paths.add(path)
@@ -1804,6 +1904,12 @@ def validate_observation_manifest(
                             artifact_context, expected_id
                         )
                     )
+        if expected_id in CONTROL_EVIDENCE_IDS and "recording" not in group_kinds:
+            raise VerificationError(
+                "{} requires a recording for controls verification".format(
+                    group_context
+                )
+            )
 
     expected_plan = observation_token_plan()
     raw_observations = require_array(value["observations"], context + ".observations")
@@ -1811,6 +1917,7 @@ def validate_observation_manifest(
         raise VerificationError("{} observations do not exactly match the token plan".format(context))
     status_rows = observation_status_rows(status) if status is not None else {}
     observations: List[Mapping[str, Any]] = []
+    control_observations: List[Mapping[str, Any]] = []
     for index, (raw_observation, expected) in enumerate(
         zip(raw_observations, expected_plan)
     ):
@@ -1839,7 +1946,9 @@ def validate_observation_manifest(
             raise VerificationError("{} checks_confirmed are not exact".format(observation_context))
         require_nonplaceholder(observation["notes"], observation_context + ".notes")
         reject_blocking_language(observation["notes"], observation_context + ".notes")
-        if status is not None:
+        if status is not None and expected["section"] == "controls":
+            control_observations.append(observation)
+        elif status is not None:
             row = status_rows[expected["coverage_token"]]
             if (
                 row["status"] != observation["result"]
@@ -1853,6 +1962,36 @@ def validate_observation_manifest(
                     "{} contradicts its release-status row".format(observation_context)
                 )
         observations.append(observation)
+    if status is not None:
+        expected_control_tokens = [
+            item["coverage_token"]
+            for item in PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS
+        ]
+        if [item["coverage_token"] for item in control_observations] != (
+            expected_control_tokens
+        ):
+            raise VerificationError(
+                "Alpha-v2 controls observations do not exactly match the token plan"
+            )
+        controls = require_object(
+            status["published_controls"], "status.published_controls"
+        )
+        expected_evidence_ids = [
+            item["evidence_id"]
+            for item in PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS
+        ]
+        expected_checks = PUBLISHED_CONTROL_CHECKS + ADVANCED_SETTINGS_CHECKS
+        if (
+            controls["status"] != "PASS"
+            or controls["tester"] != value["tester"]
+            or controls["tested_at_utc"] != value["completed_at_utc"]
+            or controls["evidence_ids"] != expected_evidence_ids
+            or controls["checks_confirmed"] != expected_checks
+            or controls["notes"] != value["review_notes"]
+        ):
+            raise VerificationError(
+                "Alpha-v2 controls observations contradict status.published_controls"
+            )
     return observations
 
 
@@ -1978,6 +2117,15 @@ def validate_v2_gameplay_event_log(
         seen.add(token)
         if interactive is not None and interactive["coverage_refs"].get(token) != "event:{}".format(index + 1):
             raise VerificationError("{} is not bound to its event sequence".format(event_context))
+    if interactive is not None:
+        expected_refs = {
+            observation["coverage_token"]: "event:{}".format(index + 1)
+            for index, observation in enumerate(expected_observations)
+        }
+        if interactive["coverage_refs"] != expected_refs:
+            raise VerificationError(
+                "{} interactive coverage references are not exact".format(context)
+            )
     if expected_tokens is not None and seen != expected_tokens:
         raise VerificationError("{} event coverage is not exact".format(context))
 
@@ -1989,13 +2137,14 @@ def validate_structured_interactive_evidence(
     candidate_sha256: str,
     requirements_profile: str,
 ) -> None:
-    token_map = dynamic_evidence_tokens(status)
-    gameplay_categories = set(OBSERVATION_EVIDENCE_IDS)
+    token_map = dynamic_evidence_tokens(status, requirements_profile)
+    v1_gameplay_categories = set(V1_GAMEPLAY_EVIDENCE_IDS)
+    v2_observation_categories = set(OBSERVATION_EVIDENCE_IDS)
     manifest_binding: Optional[Tuple[str, str]] = None
     for evidence_id, expected_tokens in token_map.items():
         needs_v2_draft_lint = (
             requirements_profile == "macos-alpha-v2"
-            and evidence_id in gameplay_categories
+            and evidence_id in v2_observation_categories
         )
         if not expected_tokens and not needs_v2_draft_lint:
             continue
@@ -2124,7 +2273,10 @@ def validate_structured_interactive_evidence(
         ]
         if hashes != expected_hashes or not hashes:
             raise VerificationError("interactive session artifact hashes are not exact")
-        if evidence_id in gameplay_categories and requirements_profile == "macos-alpha-v1":
+        if (
+            evidence_id in v1_gameplay_categories
+            and requirements_profile == "macos-alpha-v1"
+        ):
             event_logs = [item for item in structured if item[1].get("schema") == GAMEPLAY_EVENT_LOG_SCHEMA]
             if len(event_logs) != 1:
                 raise VerificationError(
@@ -2147,7 +2299,10 @@ def validate_structured_interactive_evidence(
                 interactive,
                 expected_tokens,
             )
-        elif evidence_id in gameplay_categories:
+        elif (
+            evidence_id in v2_observation_categories
+            and requirements_profile == "macos-alpha-v2"
+        ):
             manifests = [
                 item
                 for item in structured
@@ -2176,7 +2331,7 @@ def validate_structured_interactive_evidence(
                 manifest_binding = binding
             elif manifest_binding != binding:
                 raise VerificationError(
-                    "all Alpha-v2 gameplay evidence must share one observation manifest file"
+                    "all Alpha-v2 observation evidence must share one observation manifest file"
                 )
             observations = validate_observation_manifest(
                 manifest,
@@ -2197,6 +2352,16 @@ def validate_structured_interactive_evidence(
                 raise VerificationError(
                     "gameplay event log interval does not match its interactive session"
                 )
+            manifest_tokens = {
+                observation["coverage_token"]
+                for observation in observations
+                if observation["evidence_id"] == evidence_id
+            }
+            if expected_tokens != manifest_tokens:
+                raise VerificationError(
+                    "evidence.{} dynamic coverage does not exactly match the "
+                    "Alpha-v2 observation manifest".format(evidence_id)
+                )
             validate_v2_gameplay_event_log(
                 event_log,
                 "Alpha-v2 gameplay event log",
@@ -2206,11 +2371,7 @@ def validate_structured_interactive_evidence(
                 manifest_artifact[1],
                 observations,
                 interactive=interactive,
-                expected_tokens={
-                    observation["coverage_token"]
-                    for observation in observations
-                    if observation["evidence_id"] == evidence_id
-                },
+                expected_tokens=manifest_tokens,
             )
 
 
@@ -3954,6 +4115,7 @@ def validate_interactive_coverage_matrix(
     status: Mapping[str, Any],
     evidence_map: Mapping[str, Mapping[str, Any]],
     candidate_sha256: str,
+    requirements_profile: str,
 ) -> None:
     section_tokens = (
         ("gameplay", lambda row: "gameplay:{}:{}".format(row["id"], row["mode"])),
@@ -3970,13 +4132,26 @@ def validate_interactive_coverage_matrix(
                 candidate_sha256,
                 evidence_map,
             )
-    require_interactive_coverage(
-        status["published_controls"],
-        "status.published_controls",
-        "controls:published_controls_match",
-        candidate_sha256,
-        evidence_map,
-    )
+    if requirements_profile == "macos-alpha-v2":
+        require_interactive_coverage(
+            status["published_controls"],
+            "status.published_controls",
+            "controls:published_controls_match",
+            candidate_sha256,
+            evidence_map,
+            {
+                item["evidence_id"]: item["coverage_token"]
+                for item in PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS
+            },
+        )
+    else:
+        require_interactive_coverage(
+            status["published_controls"],
+            "status.published_controls",
+            "controls:published_controls_match",
+            candidate_sha256,
+            evidence_map,
+        )
     for gate_name in ("clean_mac", "gatekeeper", "extended_session"):
         require_interactive_coverage(
             status[gate_name],
@@ -4363,7 +4538,11 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         status["clean_mac"],
         "status.clean_mac",
         CLEAN_MAC_DETAIL_KEYS,
-        ["main_menu_and_advanced_settings", "gatekeeper_launch"],
+        (
+            V2_CLEAN_MAC_EVIDENCE_IDS
+            if requirements_profile == "macos-alpha-v2"
+            else V1_CLEAN_MAC_EVIDENCE_IDS
+        ),
         evidence_map,
         blockers,
     )
@@ -4389,7 +4568,12 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         file_refs["artifact"][0].name,
         file_refs["artifact"][1],
     )
-    validate_interactive_coverage_matrix(status, evidence_map, file_refs["artifact"][1])
+    validate_interactive_coverage_matrix(
+        status,
+        evidence_map,
+        file_refs["artifact"][1],
+        requirements_profile,
+    )
     validate_structured_interactive_evidence(
         status,
         evidence_map,

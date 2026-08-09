@@ -152,7 +152,7 @@ startup smoke test is insufficient.
 | Classified end-stage K.O. rows and totals are correct | NOT RUN | NOT RUN | |
 | Grenade kills stay out of classified K.O. rows | NOT RUN | NOT RUN | |
 | Final report and next-stage/menu transition | NOT RUN | NOT RUN | |
-| F11 fullscreen toggle | NOT RUN | NOT RUN | |
+| F11 borderless toggle | NOT RUN | NOT RUN | |
 | Window resize, HUD, camera, and minimap | NOT RUN | NOT RUN | |
 | Music/audio cues and volume behavior | NOT RUN | NOT RUN | |
 | Complete stage without crash, hang, or soft lock | NOT RUN | NOT RUN | |
@@ -160,25 +160,28 @@ startup smoke test is insufficient.
 ## Advanced Settings
 
 Exercise the actual menu and start gameplay with the selected values; a menu
-screenshot alone is insufficient.
+screenshot alone is insufficient. Menu/range checks belong to the main-menu
+context, while effects that can exist only in play must pass independently in
+one- and two-player contexts.
 
-| Check | One player | Two players | Evidence / notes |
-| --- | --- | --- | --- |
-| Default HP is 3 and `R` restores all defaults | NOT RUN | NOT RUN | |
-| Player HP covers 1 through 6 in steps of 1 | NOT RUN | NOT RUN | |
-| Enemy speed covers -30% through +30% in steps of 5% | NOT RUN | NOT RUN | |
-| Fire frequency covers -30% through +30% in steps of 5% | NOT RUN | NOT RUN | |
-| Spawn pace covers -30% through +30% in steps of 5% | NOT RUN | NOT RUN | |
-| Selected HP and enemy tuning take effect after start/restart | NOT RUN | NOT RUN | |
-| HP 1 visibly disables Bandage and normal HP restores eligibility | NOT RUN | NOT RUN | |
-| `Esc` returns without losing the selected values | NOT RUN | NOT RUN | |
+| Check | Main menu | One player | Two players | Evidence / notes |
+| --- | --- | --- | --- | --- |
+| Default HP is 3 and `R` restores all defaults | NOT RUN | — | — | |
+| Player HP covers 1 through 6 in steps of 1 | NOT RUN | — | — | |
+| Enemy speed covers -30% through +30% in steps of 5% | NOT RUN | — | — | |
+| Fire frequency covers -30% through +30% in steps of 5% | NOT RUN | — | — | |
+| Spawn pace covers -30% through +30% in steps of 5% | NOT RUN | — | — | |
+| Selected HP and enemy tuning take effect after start/restart | — | NOT RUN | NOT RUN | |
+| HP 1 disables Bandage and normal HP restores eligibility | — | NOT RUN | NOT RUN | |
+| Advanced-menu `Esc` preserves every selected value | NOT RUN | — | — | |
 
 The v2 profile binds these eight checks through
 `advanced_settings_checks`; a `published_controls` PASS must confirm them in
 addition to every binding below. Do not treat
-`main_menu_and_advanced_settings` as covered by a menu image. The live-gameplay
-compiler does not create this main-menu/control attestation, so keep it blocked
-until its separate interactive session and supporting capture are complete.
+`main_menu_and_advanced_settings` as covered by a menu image. The v2 interactive
+compiler creates this attestation together with the five live-play categories;
+its main-menu, one-player, and two-player categories each require a distinct
+recording of at least 64 KiB.
 
 ## Published Controls
 
@@ -186,7 +189,24 @@ Exercise every binding printed in the release page: menu arrows/`WASD`,
 `Enter`/`Space`, both players' movement and fire keys, pause, `Esc`, `R`, `F8`,
 `F11`, `N`/`B`, and setup-screen `Q`/`Esc` exit.
 
-| Tester / UTC time | Candidate-bound recording or signed report | Result |
+The three contexts have fixed responsibilities:
+
+- Main menu: both Arrow/WASD navigation families, both confirmation keys, both
+  setup exit keys, every advanced range/default/reset check, and `Esc` value
+  preservation.
+- One player: every P1 movement/fire binding, all shared battle/display/stage
+  hotkeys, runtime tuning after start/restart, and Bandage eligibility.
+- Two players: repeat P1 and shared hotkeys, exercise every P2 movement/fire
+  binding, and repeat runtime tuning and Bandage eligibility with both players.
+
+Every `or` names alternatives that are all publicly promised and therefore all
+must be tested. `F11` means borderless, not exclusive fullscreen. Because `F8`
+has no persistent HUD label, capture its visual change and the `high-quality`
+2048x2048 / `balanced` 1024x1024 shadow-map line in the context recording, then
+repeat the line in the observation notes; do not add an unsupported standalone
+log artifact.
+
+| Tester / UTC time | Candidate-bound M/1P/2P recordings and sessions | Result |
 | --- | --- | --- |
 | NOT RECORDED | NOT ATTACHED | NOT RUN |
 
@@ -294,26 +314,29 @@ Required screenshots or recordings:
 | Extended-session metrics | NOT RECORDED | NO |
 
 Every dynamic PASS category needs a hashed `tanks3d-interactive-session-v1`
-artifact. One-player, two-player, national-base, pickup, and settlement
-categories also need their exact `tanks3d-gameplay-event-log-v2`; Gatekeeper
-needs the browser-acquisition and five-command records; the extended session
+artifact. Main-menu, one-player, two-player, national-base, pickup, and
+settlement categories also need their exact
+`tanks3d-gameplay-event-log-v2`; Gatekeeper needs the browser-acquisition and
+five-command records; the extended session
 needs its generated telemetry and receipt. These records bind the candidate
 SHA, tester, machine, intervals, coverage tokens, result, review time, and
 supporting artifact hashes. A static screenshot, arbitrary video, or free-form
 one-line report cannot substitute for the required structured records. The
 tester and reviewer must be different people.
 
-For the five live-play categories, run
+For the six compiled interactive categories, run
 `make init-alpha-v2-interactive-plan DIST_CHANNEL=alpha.N`, explicitly complete
-all 67 observations, and then run
+all 70 observations, and then run
 `make compile-alpha-v2-interactive-evidence DIST_CHANNEL=alpha.N` with a new
 persistent `ALPHA_INTERACTIVE_QA_OUTPUT_DIR`. The compiler has no bulk-PASS
 option, never changes the source status, and emits a reviewable
 `status.next.json`, one manifest, and candidate-bound v2 event/session records.
 The event logs identify `Tanks3D Alpha QA Evidence Compiler` as their producer
-and bind the exact manifest hash. Main-menu/published-control, Safari
-acquisition, and five-command collection are outside this compiler; do not use
-test fixtures or hand-change those gates to PASS.
+and bind the exact manifest hash. Safari acquisition and five-command collection
+remain outside this compiler; do not use test fixtures or hand-change those
+gates to PASS. Under v2, Clean-Mac status references only `gatekeeper_launch`,
+not the controls session; `main_menu_reached` remains a required Gatekeeper
+detail from the quarantined Finder-launch observation.
 
 Treat `build/release-evidence/<tag>/` as a temporary, ignored intake directory.
 Before marking evidence `PASS`, copy every referenced artifact into

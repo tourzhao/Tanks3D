@@ -30,7 +30,7 @@ REQUIREMENTS_PATH = Path("docs/release-requirements/macos-alpha-v2.json")
 REQUIREMENTS_SCHEMA = "tanks3d-release-requirements-v2"
 REQUIREMENTS_PROFILE = "macos-alpha-v2"
 CANONICAL_REQUIREMENTS_DIGEST = (
-    "aa1a207ca7ce8de7ce8ab79f3f644ecd2ff4698f6d461fd1ab0003374dce4b55"
+    "8b946206724aee814c427ed941deee8e1d49434f1ea2c5aa81d64358e2965e8a"
 )
 SCREENSHOT_NAMES = (
     "one-player.png",
@@ -594,6 +594,7 @@ def validate_requirements(root: Path) -> Mapping[str, Any]:
         "settlement_ids",
         "published_control_checks",
         "advanced_settings_checks",
+        "clean_mac_evidence_ids",
         "clean_mac_detail_keys",
         "gatekeeper_detail_keys",
         "extended_session_detail_keys",
@@ -614,6 +615,59 @@ def validate_requirements(root: Path) -> Mapping[str, Any]:
         raise InitError("requirements modes are not canonical")
     if profile["approval_roles"] != ["qa_lead", "release_owner"]:
         raise InitError("requirements approval roles are not canonical")
+    if profile["clean_mac_evidence_ids"] != ["gatekeeper_launch"]:
+        raise InitError("requirements clean-Mac evidence IDs are not canonical")
+    expected_observation_evidence = [
+        "main_menu_and_advanced_settings",
+        "one_player_gameplay",
+        "two_player_gameplay",
+        "national_bases",
+        "pickup_and_minimap",
+        "settlement_report",
+    ]
+    if profile["interactive_observation_evidence_ids"] != expected_observation_evidence:
+        raise InitError("requirements interactive observation evidence IDs are not canonical")
+
+    expected_control_contexts = [
+        ("main_menu", "controls:main_menu", "main_menu_and_advanced_settings"),
+        ("one_player", "controls:one_player", "one_player_gameplay"),
+        ("two_player", "controls:two_player", "two_player_gameplay"),
+    ]
+    raw_control_contexts = profile.get("published_control_context_requirements")
+    if not isinstance(raw_control_contexts, list) or len(raw_control_contexts) != 3:
+        raise InitError("requirements published control contexts are not canonical")
+    global_control_checks = (
+        profile["published_control_checks"] + profile["advanced_settings_checks"]
+    )
+    covered_control_checks = set()
+    for index, (raw_context, expected) in enumerate(
+        zip(raw_control_contexts, expected_control_contexts)
+    ):
+        context = require_object(
+            raw_context,
+            "requirements.published_control_context_requirements[{}]".format(index),
+        )
+        if set(context) != {"context", "coverage_token", "evidence_id", "checks"}:
+            raise InitError("published control context has invalid keys")
+        actual_identity = (
+            context["context"],
+            context["coverage_token"],
+            context["evidence_id"],
+        )
+        if actual_identity != expected:
+            raise InitError("published control context identity is not canonical")
+        checks = require_string_list(
+            context["checks"], "published control context checks"
+        )
+        try:
+            positions = [global_control_checks.index(check) for check in checks]
+        except ValueError:
+            raise InitError("published control context contains an unknown check")
+        if positions != sorted(positions):
+            raise InitError("published control context checks are not in profile order")
+        covered_control_checks.update(checks)
+    if covered_control_checks != set(global_control_checks):
+        raise InitError("published control contexts do not cover all 21 checks")
     expected_interactive_contract = {
         "interactive_observation_manifest_schema": (
             "tanks3d-alpha-v2-interactive-observation-manifest-v1"

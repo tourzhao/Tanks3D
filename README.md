@@ -96,6 +96,12 @@ The helper refuses existing outputs and never records manual PASS results. It
 rolls back ordinary failures on a best-effort basis; after a forced process
 termination, inspect and remove any partial versioned outputs manually before
 retrying. Commit and review its output before running the evidence checker.
+The v2 interactive compiler then turns 70 explicit observations into six
+candidate-bound evidence categories: main menu/advanced settings, one-player,
+two-player, national bases, pickups, and settlement. The first three contexts
+must each have their own recording of at least 64 KiB; a shared clip or a static
+menu image is not sufficient. Clean-Mac acquisition remains a separate
+Gatekeeper session so control testing never has to share its session identity.
 Collect candidate-generated performance telemetry and its launch receipt with:
 
 ```sh
@@ -120,6 +126,13 @@ signature.
 - During play: `Enter` pauses, `Esc` returns to setup, and `R` restarts.
   `F8` changes rendering quality, `F11` toggles borderless mode, and `N`/`B`
   changes stage.
+
+For release QA, “or” lists alternatives available to the player, not permission
+to sample only one: exercise every listed navigation, confirmation, firing,
+stage, and exit binding. Verify `F8` with the accompanying `high-quality`
+(2048x2048) / `balanced` (1024x1024) shadow-map log as well as the rendered
+scene; capture that line in the context recording and observation notes because
+the compiler does not accept a separate log attachment.
 
 Movement remains aligned to the map axes. Players select one or two tanks,
 national vehicle trees, stage, lives, and advanced enemy speed, firing, spawn,

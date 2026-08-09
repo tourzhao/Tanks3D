@@ -51,6 +51,11 @@ def write_png(path, width=2, height=2):
     path.write_bytes(data)
 
 
+def write_recording(path, seed=1):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes((seed,)) * compiler.MINIMUM_RECORDING_BYTES)
+
+
 def result_row(item_id, mode=None):
     row = {
         "id": item_id,
@@ -108,6 +113,22 @@ class CompilerFixture:
                 "completed_at_utc",
                 "events",
             ],
+            "published_control_checks": list(
+                compiler.PUBLISHED_CONTROL_CHECKS
+            ),
+            "advanced_settings_checks": list(
+                compiler.ADVANCED_SETTINGS_CHECKS
+            ),
+            "published_control_context_requirements": [
+                {
+                    "context": item["context"],
+                    "coverage_token": item["coverage_token"],
+                    "evidence_id": item["evidence_id"],
+                    "checks": list(item["checks"]),
+                }
+                for item in compiler.CONTROL_CONTEXT_REQUIREMENTS
+            ],
+            "clean_mac_evidence_ids": ["gatekeeper_launch"],
             "modes": ["one_player", "two_player"],
             "gameplay_ids": ["movement"],
             "base_ids": ["usa"],
@@ -125,6 +146,7 @@ class CompilerFixture:
             "bases": [result_row("usa", mode) for mode in self.profile["modes"]],
             "pickups": [result_row("star", mode) for mode in self.profile["modes"]],
             "settlement": [result_row("basic_tank_ko")],
+            "published_controls": result_row("published_controls_match"),
             "evidence": [
                 {
                     "id": evidence_id,
@@ -188,12 +210,25 @@ class CompilerFixture:
             observation["checks_confirmed"] = list(observation["required_checks"])
             observation["notes"] = "Explicitly exercised {}.".format(observation["coverage_token"])
         for group in manifest["supporting_artifacts"]:
-            artifact_path = self.root / "captures" / (group["evidence_id"] + ".png")
-            write_png(artifact_path)
+            if group["evidence_id"] in compiler.CONTROL_EVIDENCE_IDS:
+                artifact_path = self.root / "captures" / (
+                    group["evidence_id"] + ".mp4"
+                )
+                write_recording(
+                    artifact_path,
+                    compiler.EVIDENCE_IDS.index(group["evidence_id"]) + 1,
+                )
+                kind = "recording"
+            else:
+                artifact_path = self.root / "captures" / (
+                    group["evidence_id"] + ".png"
+                )
+                write_png(artifact_path)
+                kind = "png"
             group["artifacts"] = [
                 {
                     "path": artifact_path.relative_to(self.root).as_posix(),
-                    "kind": "png",
+                    "kind": kind,
                 }
             ]
         write_json(self.manifest_path, manifest)
@@ -236,6 +271,17 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         self.assertTrue(all(item["result"] == "NOT_RUN" for item in manifest["observations"]))
         self.assertTrue(all(item["checks_confirmed"] == [] for item in manifest["observations"]))
         self.assertTrue(all(item["observed_at_utc"] is None for item in manifest["observations"]))
+        self.assertEqual(
+            [
+                item["coverage_token"]
+                for item in manifest["observations"][-3:]
+            ],
+            ["controls:main_menu", "controls:one_player", "controls:two_player"],
+        )
+        self.assertEqual(
+            [item["evidence_id"] for item in manifest["supporting_artifacts"]],
+            list(compiler.EVIDENCE_IDS),
+        )
         before = self.fixture.manifest_path.read_bytes()
         self.assertEqual(
             compiler.main(
@@ -273,6 +319,20 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         )
         self.assertEqual(event_log["candidate_sha256"], CANDIDATE_SHA256)
         self.assertTrue(all(event["result"] == "PASS" for event in event_log["events"]))
+        self.assertEqual(
+            [event["coverage_token"] for event in event_log["events"]],
+            ["gameplay:movement:one_player", "controls:one_player"],
+        )
+        menu_event_log = json.loads(
+            (
+                self.fixture.output_dir
+                / "main_menu_and_advanced_settings-events.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            [event["coverage_token"] for event in menu_event_log["events"]],
+            ["controls:main_menu"],
+        )
 
         next_status = json.loads(
             (self.fixture.output_dir / "status.next.json").read_text(encoding="utf-8")
@@ -280,8 +340,34 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         self.assertEqual(next_status["untouched_marker"], self.fixture.status["untouched_marker"])
         for section in ("gameplay", "bases", "pickups", "settlement"):
             self.assertTrue(all(row["status"] == "PASS" for row in next_status[section]))
+        controls = next_status["published_controls"]
+        self.assertEqual(controls["status"], "PASS")
+        self.assertEqual(controls["tester"], "Alice Tester")
+        self.assertEqual(controls["tested_at_utc"], "2026-08-08T11:00:00Z")
+        self.assertEqual(controls["evidence_ids"], list(compiler.CONTROL_EVIDENCE_IDS))
+        self.assertEqual(
+            controls["checks_confirmed"],
+            list(
+                compiler.PUBLISHED_CONTROL_CHECKS
+                + compiler.ADVANCED_SETTINGS_CHECKS
+            ),
+        )
+        self.assertEqual(
+            controls["notes"],
+            "Interactive observations and captures reviewed.",
+        )
         self.assertTrue(
             all(item["status"] == "PASS" for item in next_status["evidence"])
+        )
+
+    def test_repository_profile_has_exactly_seventy_observations(self):
+        profile_path = SCRIPT.parents[1] / "docs/release-requirements/macos-alpha-v2.json"
+        _, profile = compiler.load_profile(profile_path)
+        plan = compiler.token_plan(profile)
+        self.assertEqual(len(plan), 70)
+        self.assertEqual(
+            [item["coverage_token"] for item in plan[-3:]],
+            ["controls:main_menu", "controls:one_player", "controls:two_player"],
         )
 
     def test_not_run_observation_is_rejected(self):
@@ -302,10 +388,55 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         write_json(self.fixture.manifest_path, manifest)
         self.fixture.assert_rejected_without_mutation()
 
+    def test_control_context_contract_drift_is_rejected(self):
+        mutations = (
+            lambda profile: profile["published_control_context_requirements"][0].__setitem__(
+                "coverage_token", "controls:forged"
+            ),
+            lambda profile: profile["published_control_context_requirements"][1][
+                "checks"
+            ].reverse(),
+            lambda profile: profile["published_control_context_requirements"][2][
+                "checks"
+            ].pop(),
+            lambda profile: profile.__setitem__(
+                "clean_mac_evidence_ids", ["main_menu_and_advanced_settings"]
+            ),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                fixture = CompilerFixture(self)
+                self.addCleanup(fixture.close)
+                profile = json.loads(
+                    fixture.requirements_path.read_text(encoding="utf-8")
+                )
+                mutation(profile)
+                write_json(fixture.requirements_path, profile)
+                self.assertEqual(
+                    compiler.main(
+                        [
+                            "init-plan",
+                            "--requirements",
+                            str(fixture.requirements_path),
+                            "--output",
+                            str(fixture.manifest_path),
+                        ]
+                    ),
+                    1,
+                )
+                self.assertFalse(fixture.manifest_path.exists())
+
     def test_candidate_mismatch_is_rejected(self):
         manifest = self.fixture.valid_manifest()
         manifest["candidate_sha256"] = "b" * 64
         write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
+    def test_existing_published_controls_pass_is_not_replaced(self):
+        self.fixture.valid_manifest()
+        self.fixture.status["published_controls"]["status"] = "PASS"
+        write_json(self.fixture.status_path, self.fixture.status)
+        self.fixture.original_status = self.fixture.status_path.read_bytes()
         self.fixture.assert_rejected_without_mutation()
 
     def test_non_chronological_observation_is_rejected(self):
@@ -358,7 +489,12 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
 
     def test_invalid_png_and_small_recording_are_rejected(self):
         manifest = self.fixture.valid_manifest()
-        first = manifest["supporting_artifacts"][0]["artifacts"][0]
+        png_group = next(
+            group
+            for group in manifest["supporting_artifacts"]
+            if group["evidence_id"] == "national_bases"
+        )
+        first = png_group["artifacts"][0]
         (self.fixture.root / first["path"]).write_bytes(b"not a PNG")
         write_json(self.fixture.manifest_path, manifest)
         self.fixture.assert_rejected_without_mutation()
@@ -376,6 +512,28 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         ]
         write_json(other.manifest_path, manifest)
         other.assert_rejected_without_mutation()
+
+    def test_each_control_context_requires_a_real_recording(self):
+        for evidence_id in compiler.CONTROL_EVIDENCE_IDS:
+            with self.subTest(evidence_id=evidence_id):
+                fixture = CompilerFixture(self)
+                self.addCleanup(fixture.close)
+                manifest = fixture.valid_manifest()
+                group = next(
+                    item
+                    for item in manifest["supporting_artifacts"]
+                    if item["evidence_id"] == evidence_id
+                )
+                image = fixture.root / "captures" / (evidence_id + "-only.png")
+                write_png(image)
+                group["artifacts"] = [
+                    {
+                        "path": image.relative_to(fixture.root).as_posix(),
+                        "kind": "png",
+                    }
+                ]
+                write_json(fixture.manifest_path, manifest)
+                fixture.assert_rejected_without_mutation()
 
     def test_supporting_and_existing_recordings_are_streamed(self):
         manifest = self.fixture.valid_manifest()
