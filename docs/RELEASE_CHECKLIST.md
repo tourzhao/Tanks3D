@@ -133,9 +133,17 @@ UTC test time, typed signature, and coverage references. Live gameplay also
 requires candidate-bound `tanks3d-interactive-session-v1` and
 `tanks3d-gameplay-event-log-v1` JSON artifacts with per-category results and
 supporting hashes; a screenshot or free-form report is insufficient. Clean-Mac
-and Gatekeeper commands use `tanks3d-command-log-v1`; the download entry must
-record the canonical `curl --fail --location --output` argv, and all six command
-intervals must follow their canonical non-overlapping order. Performance uses
+and Gatekeeper commands use `tanks3d-command-log-v1`. Under v2, acquire the
+exact HTTPS asset with Safari so the download receives genuine quarantine
+metadata; never synthesize that attribute. A
+`tanks3d-browser-acquisition-v1` record binds its client, URL, filename, ZIP
+quarantine agent, tester, machine, typed signature, and interval to the
+candidate. Its URL uses a public multi-label ASCII DNS host and standard HTTPS
+port; reserved/test domains, IP/numeric forms, and malformed host labels are
+rejected. The command log then records checksum, ZIP quarantine, app
+quarantine, `codesign`, and `spctl` as five canonical, non-overlapping command
+intervals. The containing interactive session begins before acquisition, which
+must complete before checksum. Performance uses
 candidate-generated `tanks3d-performance-log-v2` raw integer windows plus a
 `tanks3d-performance-qa-receipt-v1`. The receipt binds the tagged ZIP, embedded
 source identity, extracted executable hash, random nonce, exact argv,
@@ -149,10 +157,17 @@ artifact may support multiple categories only when its structured record names
 each one.
 
 Treat source-free launch QA and performance QA as separate gates. The Clean-Mac
-machine downloads only the published ZIP and must have no source checkout or
-Homebrew raylib. The named performance-QA Mac may have a clean tagged checkout
-and Python, but the runner executes only a private, hash-checked snapshot of the
-static candidate ZIP. These may be different Macs. If one physical Mac is used,
+machine downloads only the published ZIP in Safari and must have no source
+checkout or Homebrew raylib. Before the quarantined app's first Finder launch,
+retain and inspect the downloaded ZIP, then expand it with Finder/Archive
+Utility rather than Terminal tools so app-quarantine propagation is part of the
+test. If Safari expands it automatically, record that path. If macOS offers it
+after a blocked launch, test **System Settings > Privacy & Security > Open
+Anyway**, authenticate, and confirm **Open** without disabling Gatekeeper or
+deleting extended attributes. The named
+performance-QA Mac may have a clean tagged checkout and Python, but the runner
+executes only a private, hash-checked snapshot of the static candidate ZIP.
+These may be different Macs. If one physical Mac is used,
 finish and sign the Clean-Mac/Gatekeeper gate before installing or cloning the
 performance tooling; do not claim `source_checkout_absent` for the later
 performance phase.

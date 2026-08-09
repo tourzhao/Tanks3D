@@ -1105,3 +1105,15 @@ static distribution verifier, and a real GPU telemetry smoke pass. Overall
 production coverage is 51.52%/65.34%/46.70%/53.32%; the recorder is
 88.33%/95.45%/81.60%/73.50%, and its option parser is
 100%/100%/100%/96.72%.
+
+The forty-eighth increment corrects the v2 clean-Mac acquisition contract
+before any v2 candidate exists. Safari now performs the real HTTPS download so
+the ZIP receives genuine quarantine metadata; a signed, candidate-bound browser
+record captures its identity and interval before the five canonical checksum,
+quarantine, signature, and assessment commands. The verifier binds the ZIP's
+Safari agent while allowing Finder/Archive Utility to become the app's agent,
+and rejects reserved, numeric, malformed, Unicode, single-label, or nonstandard-
+port hosts. Legacy v1 keeps its six-command contract only for blocked historical
+records. Forty-one release-verifier, fifteen v2-initializer, and fifteen
+performance-runner tests now cover the Python release gate; the 13/9/5 candidate
+rejection suites and both candidate success paths remain green.

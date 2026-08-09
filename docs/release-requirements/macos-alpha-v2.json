@@ -420,6 +420,28 @@
     "started_at_utc",
     "completed_at_utc"
   ],
+  "clean_mac_download_client": "Safari",
+  "browser_acquisition_schema": "tanks3d-browser-acquisition-v1",
+  "browser_acquisition_keys": [
+    "schema",
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "client",
+    "url",
+    "filename",
+    "started_at_utc",
+    "completed_at_utc",
+    "zip_quarantine_agent",
+    "signature"
+  ],
+  "command_log_command_ids": [
+    "checksum",
+    "zip_quarantine",
+    "app_quarantine",
+    "codesign",
+    "spctl"
+  ],
   "performance_log_schema": "tanks3d-performance-log-v2",
   "performance_log_keys": [
     "schema",

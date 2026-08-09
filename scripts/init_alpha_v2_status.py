@@ -30,7 +30,7 @@ REQUIREMENTS_PATH = Path("docs/release-requirements/macos-alpha-v2.json")
 REQUIREMENTS_SCHEMA = "tanks3d-release-requirements-v2"
 REQUIREMENTS_PROFILE = "macos-alpha-v2"
 CANONICAL_REQUIREMENTS_DIGEST = (
-    "6b1bab417be615e95aa52c78319cb078dc46e25e76e56220dea779507fc1a137"
+    "7a0f5eaac3e8ec0bc4726cc7084a16e34f548735381c397f3c152a503d2cabf9"
 )
 SCREENSHOT_NAMES = (
     "one-player.png",

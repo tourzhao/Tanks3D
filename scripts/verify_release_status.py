@@ -11,6 +11,7 @@ validation.
 import argparse
 import datetime as _datetime
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -311,6 +312,37 @@ COMMAND_RESULT_KEYS = [
     "started_at_utc",
     "completed_at_utc",
 ]
+V1_CLEAN_MAC_DOWNLOAD_CLIENT = "curl"
+V1_COMMAND_LOG_COMMAND_IDS = [
+    "download",
+    "checksum",
+    "zip_quarantine",
+    "app_quarantine",
+    "codesign",
+    "spctl",
+]
+V2_CLEAN_MAC_DOWNLOAD_CLIENT = "Safari"
+V2_COMMAND_LOG_COMMAND_IDS = [
+    "checksum",
+    "zip_quarantine",
+    "app_quarantine",
+    "codesign",
+    "spctl",
+]
+BROWSER_ACQUISITION_SCHEMA = "tanks3d-browser-acquisition-v1"
+BROWSER_ACQUISITION_KEYS = [
+    "schema",
+    "candidate_sha256",
+    "tester",
+    "machine",
+    "client",
+    "url",
+    "filename",
+    "started_at_utc",
+    "completed_at_utc",
+    "zip_quarantine_agent",
+    "signature",
+]
 PERFORMANCE_LOG_SCHEMA = "tanks3d-performance-log-v1"
 PERFORMANCE_LOG_KEYS = [
     "schema",
@@ -479,6 +511,10 @@ CANONICAL_REQUIREMENTS_V2.update(
     {
         "schema": "tanks3d-release-requirements-v2",
         "profile": "macos-alpha-v2",
+        "clean_mac_download_client": V2_CLEAN_MAC_DOWNLOAD_CLIENT,
+        "browser_acquisition_schema": BROWSER_ACQUISITION_SCHEMA,
+        "browser_acquisition_keys": BROWSER_ACQUISITION_KEYS,
+        "command_log_command_ids": V2_COMMAND_LOG_COMMAND_IDS,
         "performance_thresholds": PERFORMANCE_THRESHOLDS_V2,
         "performance_log_schema": PERFORMANCE_LOG_V2_SCHEMA,
         "performance_log_keys": PERFORMANCE_LOG_V2_KEYS,
@@ -604,6 +640,12 @@ ISSUE_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$")
 UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 QUARANTINE_RE = re.compile(r"^[0-9A-Fa-f]{4};[^;\r\n]+;[^;\r\n]+(?:;[^\r\n]*)?$")
+LEGACY_NUMERIC_HOST_RE = re.compile(
+    r"^(?:0[xX][0-9A-Fa-f]+|[0-9]+)(?:\.(?:0[xX][0-9A-Fa-f]+|[0-9]+))*$"
+)
+DNS_LABEL_RE = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
+)
 PNG_KINDS = {"png"}
 ARTIFACT_KINDS = {"png", "log", "recording", "report"}
 
@@ -1599,6 +1641,7 @@ def validate_clean_mac_command_log(
     artifact_map: Mapping[str, Tuple[str, str, str, Path]],
     artifact_name: str,
     artifact_sha256: str,
+    requirements_profile: str,
 ) -> None:
     if status["clean_mac"]["status"] != "PASS" and status["gatekeeper"]["status"] != "PASS":
         return
@@ -1631,9 +1674,31 @@ def validate_clean_mac_command_log(
             "Gatekeeper interactive session.completed_at_utc",
         )
     )
-    expected_ids = ["download", "checksum", "zip_quarantine", "app_quarantine", "codesign", "spctl"]
+    if requirements_profile == "macos-alpha-v1":
+        expected_client = V1_CLEAN_MAC_DOWNLOAD_CLIENT
+        expected_ids = V1_COMMAND_LOG_COMMAND_IDS
+        acquisition = None
+    elif requirements_profile == "macos-alpha-v2":
+        expected_client = V2_CLEAN_MAC_DOWNLOAD_CLIENT
+        expected_ids = V2_COMMAND_LOG_COMMAND_IDS
+        acquisitions = [
+            value
+            for value in values
+            if value.get("schema") == BROWSER_ACQUISITION_SCHEMA
+        ]
+        if len(acquisitions) != 1:
+            raise VerificationError(
+                "v2 Clean-Mac PASS requires exactly one structured browser acquisition record"
+            )
+        acquisition = acquisitions[0]
+    else:
+        raise VerificationError("unsupported clean-Mac command-log profile")
     if len(commands) != len(expected_ids):
-        raise VerificationError("command log must contain the six canonical commands")
+        raise VerificationError(
+            "command log must contain the {} canonical commands".format(
+                len(expected_ids)
+            )
+        )
     command_map: Dict[str, Mapping[str, Any]] = {}
     previous_completed: Optional[_datetime.datetime] = None
     for index, raw_command in enumerate(commands):
@@ -1665,26 +1730,140 @@ def validate_clean_mac_command_log(
     clean = status["clean_mac"]["details"]
     gate = status["gatekeeper"]["details"]
     url = clean["download_url"].strip()
-    parsed_url = urlsplit(url)
-    host = (parsed_url.hostname or "").lower()
-    forbidden_hosts = {"example.com", "example.org", "example.net", "localhost", "127.0.0.1", "::1"}
+    try:
+        parsed_url = urlsplit(url)
+        raw_host = (parsed_url.hostname or "").lower()
+        parsed_port = parsed_url.port
+    except ValueError:
+        raise VerificationError(
+            "status.clean_mac.details.download_url must be a non-test HTTPS candidate URL"
+        )
+    try:
+        raw_host.encode("ascii")
+        host_is_ascii = True
+    except UnicodeEncodeError:
+        host_is_ascii = False
+    host = raw_host.rstrip(".")
+    dns_labels = host.split(".")
+    valid_dns_host = (
+        len(host) <= 253
+        and len(dns_labels) >= 2
+        and all(DNS_LABEL_RE.fullmatch(label) is not None for label in dns_labels)
+    )
+    try:
+        address_literal = ipaddress.ip_address(host)
+    except ValueError:
+        address_literal = None
+    forbidden_hosts = {
+        "example",
+        "example.com",
+        "example.org",
+        "example.net",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+    forbidden_host_suffixes = (
+        ".example",
+        ".example.com",
+        ".example.org",
+        ".example.net",
+        ".test",
+        ".invalid",
+        ".localhost",
+    )
     if (
         parsed_url.scheme != "https"
         or not host
+        or not host_is_ascii
+        or raw_host.endswith("..")
+        or not valid_dns_host
+        or parsed_port not in (None, 443)
+        or address_literal is not None
+        or LEGACY_NUMERIC_HOST_RE.fullmatch(host) is not None
         or host in forbidden_hosts
-        or host.endswith((".test", ".invalid", ".localhost"))
+        or host.endswith(forbidden_host_suffixes)
         or any(token in host for token in ("fixture", "placeholder"))
         or parsed_url.username is not None
         or parsed_url.fragment
         or unquote(Path(parsed_url.path).name) != artifact_name
     ):
         raise VerificationError("status.clean_mac.details.download_url must be a non-test HTTPS candidate URL")
-    if clean["download_client"].strip() != "curl":
+    if clean["download_client"].strip() != expected_client:
         raise VerificationError(
-            "status.clean_mac.details.download_client must be curl for reproducible command evidence"
+            "status.clean_mac.details.download_client must be {} for the {} acquisition contract".format(
+                expected_client, requirements_profile
+            )
         )
+    if acquisition is not None:
+        require_exact_keys(
+            acquisition,
+            set(BROWSER_ACQUISITION_KEYS),
+            "browser acquisition",
+        )
+        if acquisition["schema"] != BROWSER_ACQUISITION_SCHEMA:
+            raise VerificationError("browser acquisition schema is not canonical")
+        for key in ("candidate_sha256", "tester", "machine", "signature"):
+            if acquisition[key] != interactive[key]:
+                raise VerificationError(
+                    "browser acquisition {} does not match interactive evidence".format(
+                        key
+                    )
+                )
+        expected_acquisition_values = {
+            "client": expected_client,
+            "url": url,
+            "filename": artifact_name,
+            "zip_quarantine_agent": expected_client,
+        }
+        for key, expected in expected_acquisition_values.items():
+            if acquisition[key] != expected:
+                raise VerificationError(
+                    "browser acquisition {} is not candidate-bound".format(key)
+                )
+        acquisition_started = timestamp_value(
+            require_timestamp(
+                acquisition["started_at_utc"],
+                "browser acquisition.started_at_utc",
+            )
+        )
+        acquisition_completed = timestamp_value(
+            require_timestamp(
+                acquisition["completed_at_utc"],
+                "browser acquisition.completed_at_utc",
+            )
+        )
+        if not (
+            session_started
+            <= acquisition_started
+            <= acquisition_completed
+            <= session_completed
+        ):
+            raise VerificationError(
+                "browser acquisition lies outside the Gatekeeper interactive session"
+            )
+        checksum_started = timestamp_value(
+            command_map["checksum"]["started_at_utc"]
+        )
+        if acquisition_completed > checksum_started:
+            raise VerificationError(
+                "browser acquisition must complete before the checksum command"
+            )
+        for prefix in ("zip", "app"):
+            quarantine = gate["{}_quarantine_output".format(prefix)].strip()
+            if QUARANTINE_RE.fullmatch(quarantine) is None:
+                raise VerificationError(
+                    "{} quarantine output is not a quarantine record".format(prefix)
+                )
+            quarantine_agent = quarantine.split(";", 3)[2]
+            if (
+                prefix == "zip"
+                and quarantine_agent != acquisition["zip_quarantine_agent"]
+            ):
+                raise VerificationError(
+                    "ZIP quarantine agent does not match the Safari acquisition"
+                )
     expected_argv = {
-        "download": ["curl", "--fail", "--location", "--output", artifact_name, url],
         "checksum": ["shasum", "-a", "256", artifact_name],
         "zip_quarantine": ["xattr", "-p", "com.apple.quarantine", artifact_name],
         "app_quarantine": ["xattr", "-p", "com.apple.quarantine", "Tanks3D.app"],
@@ -1705,6 +1884,18 @@ def validate_clean_mac_command_log(
             "Tanks3D.app",
         ],
     }
+    if requirements_profile == "macos-alpha-v1":
+        expected_argv = {
+            "download": [
+                "curl",
+                "--fail",
+                "--location",
+                "--output",
+                artifact_name,
+                url,
+            ],
+            **expected_argv,
+        }
     detail_commands = {
         "checksum": clean["checksum_command"],
         "zip_quarantine": gate["zip_quarantine_command"],
@@ -1723,8 +1914,13 @@ def validate_clean_mac_command_log(
                 raise VerificationError("malformed {} command: {}".format(command_id, exc))
             if detail_argv != expected:
                 raise VerificationError("status details do not record exact {} arguments".format(command_id))
-    if command_map["download"]["exit_code"] != 0 or command_map["checksum"]["exit_code"] != 0:
-        raise VerificationError("download and checksum commands must exit 0")
+    if command_map["checksum"]["exit_code"] != 0:
+        raise VerificationError("checksum command must exit 0")
+    if (
+        requirements_profile == "macos-alpha-v1"
+        and command_map["download"]["exit_code"] != 0
+    ):
+        raise VerificationError("download command must exit 0")
     if artifact_sha256 not in command_map["checksum"]["stdout"] or artifact_name not in command_map["checksum"]["stdout"]:
         raise VerificationError("checksum command log does not bind the candidate digest")
     for command_id, output_key, exit_key in (
@@ -3563,6 +3759,7 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         artifact_map,
         file_refs["artifact"][0].name,
         file_refs["artifact"][1],
+        requirements_profile,
     )
     validate_performance_log(
         status,

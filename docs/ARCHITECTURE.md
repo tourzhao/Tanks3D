@@ -862,7 +862,11 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   or silently reinterpret the release tag. A separate machine-readable status
   gate binds manual evidence and approvals to that candidate. Interactive,
   command and gameplay-event records use strict JSON formats. The v2
-  performance path embeds source identity in the distribution binary, records
+  clean-Mac contract uses a real Safari HTTPS acquisition so quarantine is
+  observed rather than synthesized, binds that acquisition's identity and
+  interval in a structured record, then records the five post-download
+  checksum/quarantine/signature commands. The v2 performance path embeds source
+  identity in the distribution binary, records
   genuine frame/RSS windows plus active-gameplay, focused-window, and cleared-
   stage evidence, publishes with atomic no-replace output, and binds them to the
   tagged ZIP through a launch receipt. The runner hashes a no-follow private ZIP

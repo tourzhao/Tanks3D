@@ -508,7 +508,11 @@ class ReleaseFixture:
             "download_url": "https://github.com/tourzhao/tanks3d/releases/download/v0.1.0-alpha.3/{}".format(
                 Path(artifact["path"]).name
             ),
-            "download_client": "curl",
+            "download_client": (
+                requirements["clean_mac_download_client"]
+                if profile == "v2"
+                else "curl"
+            ),
             "downloaded_artifact_filename": Path(artifact["path"]).name,
             "downloaded_artifact_sha256": candidate_digest,
             "checksum_command": "shasum -a 256 {}".format(
@@ -529,14 +533,17 @@ class ReleaseFixture:
             "zip_quarantine_output": "0083;fixture;Safari;",
             "app_quarantine_command": "xattr -p com.apple.quarantine Tanks3D.app",
             "app_quarantine_exit_code": "0",
-            "app_quarantine_output": "0083;fixture;Safari;",
+            "app_quarantine_output": "0083;fixture;Archive Utility;",
             "codesign_command": "codesign --verify --deep --strict --verbose=4 Tanks3D.app",
             "codesign_exit_code": "0",
             "spctl_command": "spctl --assess --type execute --verbose=4 Tanks3D.app",
             "spctl_exit_code": "1",
             "first_finder_launch": "Finder launch observed",
             "dialog_text": "Observed dialog recorded verbatim",
-            "documented_launch_path": "Finder context menu, then Open",
+            "documented_launch_path": (
+                "Finder launch attempt, then System Settings > Privacy & "
+                "Security > Open Anyway"
+            ),
             "main_menu_reached": "yes",
             "signature_preserved": "yes",
             "conclusion": "PASS",
@@ -583,26 +590,41 @@ class ReleaseFixture:
             ),
         }
 
-        command_log = self.root / "evidence/command-log.json"
-        command_log.parent.mkdir(parents=True, exist_ok=True)
         artifact_name = Path(artifact["path"]).name
         clean_details = self.status["clean_mac"]["details"]
         gate_details = self.status["gatekeeper"]["details"]
+        if profile == "v2":
+            acquisition_log = self.root / "evidence/browser-acquisition.json"
+            acquisition_log.parent.mkdir(parents=True, exist_ok=True)
+            acquisition_log.write_text(
+                json.dumps(
+                    {
+                        "schema": requirements["browser_acquisition_schema"],
+                        "candidate_sha256": candidate_digest,
+                        "tester": fixture_tester,
+                        "machine": "Fixture Mac arm64",
+                        "client": requirements["clean_mac_download_client"],
+                        "url": clean_details["download_url"],
+                        "filename": artifact_name,
+                        "started_at_utc": "2020-01-01T16:30:00Z",
+                        "completed_at_utc": "2020-01-01T16:31:00Z",
+                        "zip_quarantine_agent": "Safari",
+                        "signature": fixture_tester,
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self.append_evidence_artifact(
+                evidence_by_id["gatekeeper_launch"],
+                acquisition_log,
+                kind="report",
+            )
+
+        command_log = self.root / "evidence/command-log.json"
+        command_log.parent.mkdir(parents=True, exist_ok=True)
         command_specs = [
-            (
-                "download",
-                [
-                    "curl",
-                    "--fail",
-                    "--location",
-                    "--output",
-                    artifact_name,
-                    clean_details["download_url"],
-                ],
-                0,
-                "downloaded {}".format(artifact_name),
-                "",
-            ),
             ("checksum", ["shasum", "-a", "256", artifact_name], 0, "{}  {}".format(candidate_digest, artifact_name), ""),
             ("zip_quarantine", ["xattr", "-p", "com.apple.quarantine", artifact_name], 0, gate_details["zip_quarantine_output"], ""),
             ("app_quarantine", ["xattr", "-p", "com.apple.quarantine", "Tanks3D.app"], 0, gate_details["app_quarantine_output"], ""),
@@ -635,6 +657,24 @@ class ReleaseFixture:
                 "Tanks3D.app: rejected\nsource=Unnotarized Developer ID",
             ),
         ]
+        if profile == "v1":
+            command_specs.insert(
+                0,
+                (
+                    "download",
+                    [
+                        "curl",
+                        "--fail",
+                        "--location",
+                        "--output",
+                        artifact_name,
+                        clean_details["download_url"],
+                    ],
+                    0,
+                    "downloaded {}".format(artifact_name),
+                    "",
+                ),
+            )
         command_log.write_text(
             json.dumps(
                 {
@@ -649,10 +689,10 @@ class ReleaseFixture:
                             "stdout": stdout,
                             "stderr": stderr,
                             "started_at_utc": "2020-01-01T16:{:02d}:00Z".format(
-                                30 + index
+                                32 + index
                             ),
                             "completed_at_utc": "2020-01-01T16:{:02d}:00Z".format(
-                                31 + index
+                                33 + index
                             ),
                         }
                         for index, (
@@ -1019,6 +1059,20 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         requirements["gameplay_ids"].pop()
         path.write_text(json.dumps(requirements), encoding="utf-8")
         self.assert_failed(fixture.run(allow_blocked=True), "exactly 15 entries")
+
+        fixture = self.new_fixture()
+        fixture.status["requirements"] = (
+            "docs/release-requirements/macos-alpha-v2.json"
+        )
+        fixture.write_status()
+        path = fixture.root / fixture.status["requirements"]
+        requirements = json.loads(path.read_text(encoding="utf-8"))
+        requirements["clean_mac_download_client"] = "curl"
+        path.write_text(json.dumps(requirements), encoding="utf-8")
+        self.assert_failed(
+            fixture.run(allow_blocked=True),
+            "requirements.clean_mac_download_client does not match",
+        )
 
     def test_candidate_hash_and_attestation_identity_are_rejected(self):
         fixture = self.new_fixture()
@@ -1527,6 +1581,29 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             fixture.run(), "tester and reviewer must be different people"
         )
 
+    def test_v2_command_log_uses_safari_and_five_post_download_commands(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        self.assertEqual(
+            fixture.status["clean_mac"]["details"]["download_client"],
+            "Safari",
+        )
+        evidence = fixture.status["evidence"][6]
+        command = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("command-log.json")
+        )
+        payload = json.loads(
+            (fixture.root / command["path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            [record["id"] for record in payload["commands"]],
+            fixture.requirements()["command_log_command_ids"],
+        )
+        result = fixture.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_command_log_rejects_test_url_wrong_args_and_false_spctl_outcome(self):
         fixture = self.new_fixture()
         fixture.make_all_pass()
@@ -1534,6 +1611,161 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.status["clean_mac"]["details"]["download_url"] = "https://example.com/" + artifact_name
         fixture.write_status()
         self.assert_failed(fixture.run(), "non-test HTTPS candidate URL")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status["clean_mac"]["details"]["download_url"] = (
+            "https://download.example.com/" + artifact_name
+        )
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "non-test HTTPS candidate URL")
+
+        for host in (
+            "download.example.com.",
+            "github.com..",
+            "localhost.",
+            "127.1",
+            "2130706433",
+            "0x7f000001",
+            "download。example。com",
+            "not a host",
+            "github..com",
+            "-github.com",
+            "github-.com",
+            "github_com",
+            "github",
+            "github.com:abc",
+            "github.com:99999",
+            "github.com:444",
+        ):
+            with self.subTest(forbidden_download_host=host):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                fixture.status["clean_mac"]["details"]["download_url"] = (
+                    "https://{}/{}".format(host, artifact_name)
+                )
+                fixture.write_status()
+                self.assert_failed(
+                    fixture.run(), "non-test HTTPS candidate URL"
+                )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status["clean_mac"]["details"]["download_client"] = "curl"
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "download_client must be Safari"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][6]
+        command = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("command-log.json")
+        )
+        path = fixture.root / command["path"]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["commands"].insert(
+            0,
+            {
+                "id": "download",
+                "argv": [
+                    "curl",
+                    "--fail",
+                    "--location",
+                    "--output",
+                    artifact_name,
+                    fixture.status["clean_mac"]["details"]["download_url"],
+                ],
+                "exit_code": 0,
+                "stdout": "downloaded {}".format(artifact_name),
+                "stderr": "",
+                "started_at_utc": "2020-01-01T16:29:00Z",
+                "completed_at_utc": "2020-01-01T16:30:00Z",
+            },
+        )
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, command)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "must contain the 5 canonical commands"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][6]
+        command = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("command-log.json")
+        )
+        path = fixture.root / command["path"]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["commands"][0], payload["commands"][1] = (
+            payload["commands"][1],
+            payload["commands"][0],
+        )
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, command)
+        fixture.write_status()
+        self.assert_failed(fixture.run(), "command order is not canonical")
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][6]
+        acquisition = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("browser-acquisition.json")
+        )
+        evidence["artifacts"].remove(acquisition)
+        fixture.refresh_evidence_manifest(evidence)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "requires exactly one structured browser acquisition"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][6]
+        acquisition = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("browser-acquisition.json")
+        )
+        path = fixture.root / acquisition["path"]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["completed_at_utc"] = "2020-01-01T16:33:00Z"
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, acquisition)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "must complete before the checksum command"
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        gate = fixture.status["gatekeeper"]["details"]
+        gate["zip_quarantine_output"] = "0083;fixture;ManualWriter;"
+        evidence = fixture.status["evidence"][6]
+        command = next(
+            item
+            for item in evidence["artifacts"]
+            if item["path"].endswith("command-log.json")
+        )
+        path = fixture.root / command["path"]
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for record in payload["commands"]:
+            if record["id"] == "zip_quarantine":
+                record["stdout"] = gate["zip_quarantine_output"]
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        fixture.refresh_artifact(evidence, command)
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "ZIP quarantine agent does not match the Safari acquisition"
+        )
 
         fixture = self.new_fixture()
         fixture.make_all_pass()

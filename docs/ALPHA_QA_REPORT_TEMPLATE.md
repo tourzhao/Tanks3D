@@ -60,12 +60,20 @@ and must not depend on the source checkout or Homebrew raylib.
 | Meets filename minimum macOS version | NOT VERIFIED — BLOCKED |
 | Source checkout absent / Homebrew raylib unused | NOT VERIFIED — BLOCKED |
 
-Attach a hashed `tanks3d-command-log-v1` JSON record for the checksum command.
-Its candidate SHA, machine, exact argument vector, timestamps, stdout/stderr,
-and exit code must describe the downloaded archive named above. Reserved or
-placeholder download hosts are invalid. Use the reproducible download command
-`curl --fail --location --output <artifact>.zip <https-url>` and record `curl`
-as the download client.
+Download the exact HTTPS release asset with Safari and record `Safari` as the
+download client. This is intentional: command-line `curl` does not create the
+`com.apple.quarantine` attribute needed for a genuine downloaded-artifact test.
+Do not add quarantine metadata manually. Attach a hashed
+`tanks3d-browser-acquisition-v1` record with the candidate SHA, tester, machine,
+exact client/URL/filename, interval, ZIP quarantine agent, and typed signature.
+The acquisition interval must be inside the Gatekeeper session and finish
+before checksum verification. Also attach a hashed `tanks3d-command-log-v1`
+record beginning with the independent checksum command. Its candidate SHA,
+machine, exact argument vectors, timestamps, stdout/stderr, and exit codes must
+describe the Safari-downloaded archive named above. Reserved domains, their
+subdomains, placeholder hosts, raw IP/numeric forms, single-label names, and
+nonstandard HTTPS ports are invalid; use a normal public multi-label ASCII DNS
+host on port 443.
 
 ## Quarantine and Gatekeeper
 
@@ -83,16 +91,25 @@ notarization.
 | Documented launch path | Exact player steps tested from a fresh account | NOT RUN |
 | Successful launch | App reaches the main menu without removing its signature | NOT RUN |
 
-Record the four quarantine/signature commands in the candidate-bound
-`tanks3d-command-log-v1` JSON artifact; prose copied into this table is not
-command evidence. Download, checksum, ZIP quarantine, app quarantine,
-`codesign`, and `spctl` entries must have non-overlapping timestamps in that
-order and remain inside the same Gatekeeper session.
+Record checksum, ZIP quarantine, app quarantine, `codesign`, and `spctl` in the
+candidate-bound `tanks3d-command-log-v1` JSON artifact; prose copied into this
+table is not command evidence. These five entries must have non-overlapping
+timestamps in that order and remain inside the same Gatekeeper session, which
+must begin before the Safari download. The Safari action itself is documented
+by the structured acquisition record and interactive capture, not fabricated
+as a shell command. Keep the original ZIP, verify its checksum and quarantine,
+then expand it with Finder/Archive Utility and verify the app's inherited
+quarantine. If Safari expands it automatically, record that fact and still
+retain and inspect the downloaded ZIP. Do not substitute Terminal extraction.
 
 For this ad-hoc-signed Alpha, a Gatekeeper rejection is an observed limitation,
 not something to hide. The gate may pass only when the actual behavior and a
 working, narrowly scoped launch path are documented consistently in the release
-notes. Record the conclusion and evidence:
+notes. On current macOS, test the first Finder launch; if it is blocked and
+**Open Anyway** is offered, open **System Settings > Privacy & Security**, use
+that control, authenticate, and confirm **Open** in the follow-up dialog. Never
+disable Gatekeeper or remove quarantine attributes. Record the actual
+conclusion and evidence:
 
 - Gatekeeper conclusion: NOT RECORDED — BLOCKED
 - Release-note wording verified against observation: NOT VERIFIED — BLOCKED
