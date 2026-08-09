@@ -17,6 +17,7 @@ production_root=$(CDPATH= cd "$production_root" 2>/dev/null && pwd -P) || {
 production_builder="$production_root/scripts/build_alpha_candidate.sh"
 production_verifier="$production_root/scripts/verify_alpha_candidate.sh"
 production_tagged_verifier="$production_root/scripts/verify_tagged_alpha_candidate.sh"
+production_bounded_tagged_verifier="$production_root/scripts/tagged_candidate_verifier.py"
 
 fail()
 {
@@ -28,10 +29,26 @@ fail()
 [ -f "$production_verifier" ] || fail "candidate verifier is missing"
 [ -f "$production_tagged_verifier" ] || \
     fail "tagged candidate verifier is missing"
+[ -f "$production_bounded_tagged_verifier" ] || \
+    fail "bounded tagged candidate verifier is missing"
 command -v git >/dev/null 2>&1 || fail "git is required"
+command -v make >/dev/null 2>&1 || fail "make is required"
 command -v zip >/dev/null 2>&1 || fail "zip is required"
 command -v shasum >/dev/null 2>&1 || fail "shasum is required"
 real_shasum=$(command -v shasum)
+
+tagged_make_recipe=$(make -s -n -C "$production_root" \
+    verify-tagged-alpha-candidate DIST_CHANNEL=alpha.4) || \
+    fail "bounded tagged-verifier Make recipe cannot be rendered"
+case "$tagged_make_recipe" in
+    *"python3 -B scripts/tagged_candidate_verifier.py"*) ;;
+    *) fail "Make target bypasses the bounded tagged-verifier entry point" ;;
+esac
+case "$tagged_make_recipe" in
+    *"sh scripts/verify_tagged_alpha_candidate.sh"*) \
+        fail "Make target still executes the unbounded shell verifier directly" ;;
+    *) ;;
+esac
 
 test_root=$(mktemp -d "${TMPDIR:-/tmp}/tanks3d-alpha-gate-test.XXXXXX") || \
     fail "temporary test directory cannot be created"

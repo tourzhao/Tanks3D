@@ -504,14 +504,36 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         verifier.write_text("#!/bin/sh\necho rejected >&2\nexit 9\n", encoding="utf-8")
         self.assert_failed(fixture, fixture.run(), "tagged candidate verifier failed")
 
+    def test_refuses_oversized_tagged_verifier_before_reading_it(self):
+        fixture = self.fixture()
+        verifier = fixture.root / "scripts/verify_tagged_alpha_candidate.sh"
+        verifier.write_bytes(
+            b"#" * (
+                INITIALIZER_MODULE.tagged_candidate_verifier.MAX_VERIFIER_SOURCE_BYTES
+                + 1
+            )
+        )
+        self.assert_failed(
+            fixture,
+            fixture.run(),
+            "tagged candidate verifier exceeds the 1048576-byte safety limit",
+        )
+
     def test_executes_the_captured_tagged_verifier_bytes(self):
         fixture = self.fixture()
         verifier = fixture.root / "scripts/verify_tagged_alpha_candidate.sh"
         verifier.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
         original_read = INITIALIZER_MODULE.read_regular_file_at
 
-        def swap_after_read(directory_fd, name, label):
-            data = original_read(directory_fd, name, label)
+        def swap_after_read(
+            directory_fd, name, label, maximum_bytes=None
+        ):
+            data = original_read(
+                directory_fd,
+                name,
+                label,
+                maximum_bytes=maximum_bytes,
+            )
             if name == verifier.name and label == "tagged candidate verifier":
                 verifier.write_text(
                     "#!/bin/sh\n"

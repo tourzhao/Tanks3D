@@ -106,6 +106,20 @@ evidence commit remains compatible with ordinary GitHub Git storage. Clean-Mac
 acquisition remains a separate Gatekeeper session so control testing never has
 to share its session identity.
 
+All production callers, including `make verify-tagged-alpha-candidate`, run the
+tagged verifier in a private process group with a 600-second execution deadline
+and separate 1 MiB stdout/stderr limits, followed by bounded cleanup. Timeout,
+output overflow, or an interrupt terminates and reaps the whole group and
+produces no receipt. The seven canonical screenshots live directly below
+`docs/assets/releases/<tag>/`; every other PASS artifact, including the audio
+decision report, must be committed below its `evidence/` subdirectory. The
+three canonical audio notices remain at `ASSET_LICENSES.md`,
+`THIRD_PARTY_NOTICES.md`, and `LICENSES/MIT-upstream.txt`. For every promoted
+file, the verifier requires a regular blob in Git `HEAD` and recomputes its Git
+object ID from stable, no-follow worktree bytes. Ignored, filtered/smudged,
+`assume-unchanged`, or `skip-worktree` divergence cannot masquerade as
+publishable evidence.
+
 Clean-Mac evidence uses a two-machine workflow. On the release workstation,
 stage the exact candidate at a recordable HTTPS URL, then create a new transfer
 kit:

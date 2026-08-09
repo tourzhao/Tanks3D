@@ -48,6 +48,10 @@ The tagged verifier requires a clean worktree, copies the exact five candidate
 files into a private clone of the attested commit, runs that commit's strict
 verifier, detects concurrent candidate/tag/`HEAD` changes, and always removes
 the clone. Never move an attested tag to accommodate later documentation.
+The Make target and all Python release callers also enforce a 600-second
+execution deadline and independent 1 MiB stdout/stderr ceilings, followed by
+bounded cleanup. Timeout, overflow, or interruption terminates and reaps the
+verifier's private process group and cannot yield a candidate receipt.
 
 The directory contains the ZIP, `.sha256`, build configuration, gate log, and
 `attestation.txt`. The v3 attestation binds all of them to one clean commit,
@@ -437,6 +441,16 @@ No committed recording may exceed 95 MB.
 Update the artifact paths and SHA-256 values in the status JSON, then commit
 those files with the versioned report and page. The seven publication PNGs are
 already copied into `docs/assets/releases/<tag>/` by the initializer.
+The verifier enforces the exact `evidence/` prefix for every non-screenshot PASS
+artifact and for the audio decision report. Each promoted file must be a
+regular blob in current Git `HEAD`; the verifier recomputes its Git object ID
+from stable, no-follow worktree bytes. It rejects ignored, filtered/smudged,
+`assume-unchanged`, or `skip-worktree` divergence. The canonical
+`ASSET_LICENSES.md`, `THIRD_PARTY_NOTICES.md`, and
+`LICENSES/MIT-upstream.txt` references remain at their repository paths. A fully
+ready status must itself be the committed
+`docs/releases/<tag>-status.json`; `--allow-blocked` cannot approve an ignored
+`status.next.json`.
 
 All committed evidence must be safe for public distribution: exclude secrets
 and obtain consent for recorded tester/machine information. If an artifact

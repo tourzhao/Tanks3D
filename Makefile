@@ -116,6 +116,8 @@ ALPHA_CANDIDATE_BUILD_SCRIPT := scripts/build_alpha_candidate.sh
 ALPHA_CANDIDATE_VERIFY_SCRIPT := scripts/verify_alpha_candidate.sh
 ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT := \
 	scripts/verify_tagged_alpha_candidate.sh
+TAGGED_CANDIDATE_VERIFIER := scripts/tagged_candidate_verifier.py
+TAGGED_CANDIDATE_VERIFIER_TEST := tests/test_tagged_candidate_verifier.py
 ALPHA_CANDIDATE_GATE_TEST := tests/test_alpha_candidate_gate.sh
 CLEAN_PRESERVATION_TEST := tests/test_clean_preserves_release_outputs.sh
 RELEASE_REQUIREMENTS_PROFILE := \
@@ -646,6 +648,8 @@ dist: test test-dist
 test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(RELEASE_REQUIREMENTS_PROFILE_V2) \
 		$(RELEASE_PERFORMANCE_CONTRACT) \
+		$(TAGGED_CANDIDATE_VERIFIER) \
+		$(TAGGED_CANDIDATE_VERIFIER_TEST) \
 		$(RELEASE_STATUS_VERIFY_SCRIPT) $(RELEASE_STATUS_TEST) \
 		$(ALPHA_V2_STATUS_INIT_SCRIPT) $(ALPHA_V2_STATUS_INIT_TEST) \
 		$(ALPHA_V2_INTERACTIVE_COMPILER) \
@@ -661,6 +665,8 @@ test-release-status: $(RELEASE_REQUIREMENTS_PROFILE) \
 		$(MEDIA_RECORDING_FIXTURE) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER) \
 		$(RELEASE_PERFORMANCE_QA_RUNNER_TEST)
+	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
+		$(TAGGED_CANDIDATE_VERIFIER_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error $(RELEASE_STATUS_TEST)
 	PYTHONDONTWRITEBYTECODE=1 python3 -W error \
 		$(ALPHA_V2_STATUS_INIT_TEST)
@@ -690,9 +696,11 @@ verify-alpha-candidate: $(ALPHA_CANDIDATE_VERIFY_SCRIPT)
 	sh $(ALPHA_CANDIDATE_VERIFY_SCRIPT) "$(abspath .)" \
 		"$(ALPHA_CANDIDATE_DIR)"
 
-verify-tagged-alpha-candidate: $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT)
-	sh $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) "$(abspath .)" \
-		"$(ALPHA_CANDIDATE_DIR)"
+verify-tagged-alpha-candidate: $(ALPHA_CANDIDATE_TAGGED_VERIFY_SCRIPT) \
+		$(TAGGED_CANDIDATE_VERIFIER)
+	python3 -B $(TAGGED_CANDIDATE_VERIFIER) \
+		--project-root "$(abspath .)" \
+		--candidate-dir "$(ALPHA_CANDIDATE_DIR)"
 
 # One-shot helper for an honest BLOCKED v2 baseline. It is deliberately not a
 # prerequisite of candidate construction or either release-approval gate.
@@ -849,6 +857,7 @@ test-release-performance-smoke: all
 # Create the output directory once. The runner refuses non-empty destinations,
 # re-verifies the immutable candidate, and writes evidence without replacement.
 run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER) \
+		$(TAGGED_CANDIDATE_VERIFIER) \
 		$(RELEASE_PERFORMANCE_CONTRACT)
 	install -d -m 700 $(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)
 	python3 -B $(RELEASE_PERFORMANCE_QA_RUNNER) \

@@ -871,7 +871,15 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
 - Post-tag verification clones the attested source commit privately and runs
   that commit's strict candidate verifier, so later documentation cannot move
   or silently reinterpret the release tag. A separate machine-readable status
-  gate binds manual evidence and approvals to that candidate. Interactive,
+  gate binds manual evidence and approvals to that candidate. The Make entry
+  point, initializer, performance runner, and final verifier share one bounded
+  tagged-verifier supervisor: private process group, 600-second execution
+  deadline, independent 1 MiB output ceilings, deterministic cleanup, and an
+  exact five-file receipt. Promoted status, requirements, PASS/audio artifacts,
+  and final documents must use their canonical versioned locations and be
+  regular blobs in current Git `HEAD`. Their object IDs are recomputed from
+  stable, no-follow worktree bytes, so ignored files, filters, or index flags
+  cannot make a fresh clone disagree with the approved record. Interactive,
   command and gameplay-event records use strict JSON formats. The v2
   interactive evidence path starts from an all-`NOT_RUN` observation plan;
   its standard-library compiler accepts only 70 explicitly passed rows across

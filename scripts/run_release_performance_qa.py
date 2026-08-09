@@ -35,6 +35,7 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
 
 import release_performance_contract as performance_contract  # noqa: E402
+import tagged_candidate_verifier  # noqa: E402
 
 
 TELEMETRY_SCHEMA = performance_contract.PERFORMANCE_LOG_V2_SCHEMA
@@ -613,51 +614,17 @@ def invoke_tagged_verifier(project_root: Path, candidate_dir: Path) -> Dict[str,
             Path(verifier.name),
             "tagged candidate verifier",
             directory_fd=verifier_parent_fd,
+            maximum_bytes=tagged_candidate_verifier.MAX_VERIFIER_SOURCE_BYTES,
         )
     finally:
         os.close(verifier_parent_fd)
     try:
-        completed = subprocess.run(
-            ["sh", "-s", "--", str(project_root), str(candidate_dir)],
-            input=verifier_data,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        result = tagged_candidate_verifier.invoke(
+            verifier_data, project_root, candidate_dir
         )
-    except OSError as exc:
-        raise RunnerError("cannot run tagged candidate verifier: {}".format(exc))
-    if completed.returncode != 0:
-        diagnostic = (completed.stderr or completed.stdout).decode(
-            "utf-8", errors="replace"
-        ).strip()
-        if len(diagnostic) > 800:
-            diagnostic = diagnostic[-800:]
-        raise RunnerError(
-            "tagged candidate verifier failed (exit {}): {}".format(
-                completed.returncode, diagnostic or "no diagnostic"
-            )
-        )
-    try:
-        verifier_stdout = completed.stdout.decode("utf-8")
-    except UnicodeError as exc:
-        raise RunnerError("tagged verifier output is not UTF-8: {}".format(exc))
-    prefix = "VERIFIED CANDIDATE FILE SHA256 "
-    receipt: Dict[str, str] = {}
-    for line in verifier_stdout.splitlines():
-        if not line.startswith(prefix):
-            continue
-        fields = line[len(prefix) :].split(" ", 1)
-        if len(fields) != 2:
-            raise RunnerError("tagged verifier emitted a malformed candidate receipt")
-        digest, name = fields
-        if SHA256_RE.fullmatch(digest) is None or TAG_RE.fullmatch(name) is None:
-            raise RunnerError("tagged verifier emitted an invalid candidate receipt")
-        if name in receipt:
-            raise RunnerError("tagged verifier emitted a duplicate candidate receipt")
-        receipt[name] = digest
-    if len(receipt) != 5:
-        raise RunnerError("tagged verifier did not emit an exact five-file receipt")
-    return receipt
+    except tagged_candidate_verifier.TaggedVerifierError as exc:
+        raise RunnerError(str(exc)) from exc
+    return dict(result.receipt)
 
 
 def parse_candidate(project_root: Path, candidate_argument: Path) -> CandidateIdentity:

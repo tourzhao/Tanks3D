@@ -1306,3 +1306,30 @@ strict-verifier rejections, five tagged-verifier rejections, and two success
 paths. The C++ suite/check and coverage ledgers remain unchanged because no
 production C++ changed. No real candidate, tag, push, or publication was
 created.
+
+The fifty-eighth increment closes the post-tag verifier supervision and
+publishable-evidence persistence gaps without changing gameplay, maps, assets,
+rendering, or telemetry. A shared stdlib-only supervisor now serves the Make
+entry point, v2 initializer, performance runner, and final status verifier. It
+runs captured verifier source in a private process group, concurrently drains
+stdout/stderr under independent 1 MiB ceilings, applies a 600-second execution
+deadline, reacts to terminal signals even after both pipes close, performs
+bounded TERM/KILL/reap cleanup, and accepts only an exact five-file receipt.
+The final status gate now restricts PASS artifacts to the seven canonical
+screenshots or the versioned `evidence/` directory, preserves only the three
+canonical repository audio-notice exceptions, requires the final status at its
+canonical path, and refuses `--allow-blocked` as a publication bypass. Every
+promoted status, requirements file, PASS/audio artifact, and final document
+must be a regular blob in current Git `HEAD`; the verifier recomputes its Git
+object ID from stable parent-dirfd/no-follow worktree bytes. Regression fixtures
+cover output boundaries and floods, timeouts, interrupts, descendants, late
+signals, malformed receipts, symlinked source, ignored files, clean/smudge
+filters, `assume-unchanged`, and `skip-worktree` divergence. Temporary Git
+fixtures also ignore host signing, hook, and line-ending configuration. The
+shared helper, final verifier, initializer, and performance runner pass
+12/68/18/46 tests;
+the remaining release-tool suites pass 22/10/4/13/11. `make test`, the Alpha-4
+distribution gate with 16 rejection cases, and Alpha candidate tooling with 18
+build rejections, 14 strict-verifier rejections, five tagged-verifier
+rejections, and two success paths all pass. No real candidate, tag, push, or
+publication was created.

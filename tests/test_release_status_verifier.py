@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import re
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 import zlib
 
@@ -109,6 +111,7 @@ class ReleaseFixture:
         self._write_screenshots()
         self._write_documents()
         self.write_status()
+        self.commit_tree()
 
     def requirements(self):
         return json.loads(
@@ -222,10 +225,20 @@ class ReleaseFixture:
 
     def _write_documents(self, ready=False):
         release = self.status["release"]
+        publication_asset_prefix = "docs/assets/releases/{}/".format(
+            release["tag"]
+        )
         screenshots = []
         for evidence in self.status["evidence"]:
             for artifact in evidence["artifacts"]:
-                if artifact["path"].startswith("docs/assets/releases/"):
+                relative_asset = artifact["path"].removeprefix(
+                    publication_asset_prefix
+                )
+                if (
+                    artifact["kind"] == "png"
+                    and artifact["path"].startswith(publication_asset_prefix)
+                    and "/" not in relative_asset
+                ):
                     screenshots.append(artifact)
         references = [
             "../assets/releases/{}/{}".format(release["tag"], Path(item["path"]).name)
@@ -314,6 +327,19 @@ class ReleaseFixture:
             json.dumps(self.status, indent=2, sort_keys=False) + "\n", encoding="utf-8"
         )
 
+    def persistent_evidence_path(self, name):
+        path = (
+            self.root
+            / "docs"
+            / "assets"
+            / "releases"
+            / self.status["release"]["tag"]
+            / "evidence"
+            / name
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
     def replace_build_config(self, text):
         release = self.status["release"]
         build_config = self.root / release["build_config"]["path"]
@@ -357,11 +383,69 @@ class ReleaseFixture:
         ]
         if allow_blocked:
             command.insert(2, "--allow-blocked")
-        return subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return subprocess.run(
+            command,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self.git_test_environment(),
+        )
+
+    @staticmethod
+    def git_test_environment():
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("GIT_")
+        }
+        environment.update(
+            {
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "LC_ALL": "C",
+            }
+        )
+        return environment
+
+    def git(self, *arguments, text=False):
+        return subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.root),
+                "-c",
+                "commit.gpgSign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "core.autocrlf=false",
+                "-c",
+                "user.name=Release Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+            ]
+            + list(arguments),
+            check=True,
+            text=text,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=self.git_test_environment(),
+        )
+
+    def commit_tree(self):
+        if not (self.root / ".git").is_dir():
+            self.git("init", "-q")
+        self.git("add", "-A")
+        self.git(
+            "commit",
+            "--allow-empty",
+            "-q",
+            "-m",
+            "fixture release evidence",
+        )
 
     def add_evidence_artifact(self, evidence, name, kind="report"):
-        path = self.root / "evidence" / name
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = self.persistent_evidence_path(name)
         if kind == "png":
             write_png(path)
         else:
@@ -634,11 +718,9 @@ class ReleaseFixture:
                 "gatekeeper_launch",
             }:
                 if profile == "v2" and evidence["id"] == "gatekeeper_launch":
-                    recording = (
-                        self.root
-                        / "evidence/gatekeeper-launch-recording.mov"
+                    recording = self.persistent_evidence_path(
+                        "gatekeeper-launch-recording.mov"
                     )
-                    recording.parent.mkdir(parents=True, exist_ok=True)
                     recording.write_bytes(
                         make_recording(minimum_bytes=MINIMUM_RECORDING_BYTES)
                     )
@@ -663,10 +745,9 @@ class ReleaseFixture:
             }
         if profile == "v2":
             for evidence_id in CONTROL_EVIDENCE_IDS:
-                recording = self.root / "evidence/{}-controls.mp4".format(
-                    evidence_id
+                recording = self.persistent_evidence_path(
+                    "{}-controls.mp4".format(evidence_id)
                 )
-                recording.parent.mkdir(parents=True, exist_ok=True)
                 recording.write_bytes(
                     ("fixture controls recording for {}\n".format(evidence_id)).encode(
                         "utf-8"
@@ -915,8 +996,9 @@ class ReleaseFixture:
         clean_details = self.status["clean_mac"]["details"]
         gate_details = self.status["gatekeeper"]["details"]
         if profile == "v2":
-            acquisition_log = self.root / "evidence/browser-acquisition.json"
-            acquisition_log.parent.mkdir(parents=True, exist_ok=True)
+            acquisition_log = self.persistent_evidence_path(
+                "browser-acquisition.json"
+            )
             acquisition_log.write_text(
                 json.dumps(
                     {
@@ -943,8 +1025,7 @@ class ReleaseFixture:
                 kind="report",
             )
 
-        command_log = self.root / "evidence/command-log.json"
-        command_log.parent.mkdir(parents=True, exist_ok=True)
+        command_log = self.persistent_evidence_path("command-log.json")
         command_paths = (
             requirements["clean_mac_system_command_paths"]
             if profile == "v2"
@@ -1045,7 +1126,9 @@ class ReleaseFixture:
             for command_id, _, _, stdout, stderr in command_specs:
                 prefix = command_id.replace("_", "-")
                 for stream, contents in (("stdout", stdout), ("stderr", stderr)):
-                    path = self.root / "evidence/{}.{}".format(prefix, stream)
+                    path = self.persistent_evidence_path(
+                        "{}.{}".format(prefix, stream)
+                    )
                     path.write_text(contents, encoding="utf-8")
                     self.append_evidence_artifact(
                         evidence_by_id["gatekeeper_launch"], path, kind="log"
@@ -1054,7 +1137,7 @@ class ReleaseFixture:
         if profile == "v2":
             gatekeeper_evidence = evidence_by_id["gatekeeper_launch"]
             raw_files = {
-                name: self.root / "evidence" / name
+                name: self.persistent_evidence_path(name)
                 for name in (
                     "clean-mac-plan.plist",
                     "clean-mac-intake.plist",
@@ -1186,7 +1269,9 @@ class ReleaseFixture:
                     for file_id, path in raw_command_files.items()
                 }
             )
-            receipt_path = self.root / "evidence/clean-mac-compiler-receipt.json"
+            receipt_path = self.persistent_evidence_path(
+                "clean-mac-compiler-receipt.json"
+            )
             receipt_path.write_text(
                 json.dumps(
                     {
@@ -1222,7 +1307,9 @@ class ReleaseFixture:
 
         performance_evidence = evidence_by_id["extended_session_metrics"]
         if profile == "v2":
-            performance_log = self.root / "evidence/performance-log-v2.json"
+            performance_log = self.persistent_evidence_path(
+                "performance-log-v2.json"
+            )
             memory_start = 220 * 1048576
             memory_growth = 5 * 1048576
             performance_log.write_text(
@@ -1281,7 +1368,9 @@ class ReleaseFixture:
                 + "\n",
                 encoding="utf-8",
             )
-            stdout_log = self.root / "evidence/performance-stdout.log"
+            stdout_log = self.persistent_evidence_path(
+                "performance-stdout.log"
+            )
             stdout_log.write_text(
                 "fixture candidate boot\n"
                 "TANKS3D_PERFORMANCE_START {}\n"
@@ -1291,9 +1380,13 @@ class ReleaseFixture:
                 ),
                 encoding="utf-8",
             )
-            stderr_log = self.root / "evidence/performance-stderr.log"
+            stderr_log = self.persistent_evidence_path(
+                "performance-stderr.log"
+            )
             stderr_log.write_text("", encoding="utf-8")
-            receipt_path = self.root / "evidence/performance-qa-receipt.json"
+            receipt_path = self.persistent_evidence_path(
+                "performance-qa-receipt.json"
+            )
             receipt_path.write_text(
                 json.dumps(
                     {
@@ -1357,7 +1450,9 @@ class ReleaseFixture:
                     performance_evidence, path, kind=kind
                 )
         else:
-            performance_log = self.root / "evidence/performance-log.json"
+            performance_log = self.persistent_evidence_path(
+                "performance-log.json"
+            )
             performance_log.write_text(
                 json.dumps(
                     {
@@ -1497,7 +1592,9 @@ class ReleaseFixture:
                 ],
                 "observations": observations,
             }
-            manifest_path = self.root / "evidence/observation-manifest.json"
+            manifest_path = self.persistent_evidence_path(
+                "observation-manifest.json"
+            )
             manifest_path.write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
@@ -1528,7 +1625,9 @@ class ReleaseFixture:
             )
             for sequence, token in enumerate(tokens, 1):
                 evidence["interactive"]["coverage_refs"][token] = "event:{}".format(sequence)
-            event_log = self.root / "evidence/{}-events.json".format(evidence_id)
+            event_log = self.persistent_evidence_path(
+                "{}-events.json".format(evidence_id)
+            )
             event_payload = {
                 "schema": (
                     GAMEPLAY_EVENT_LOG_V2_SCHEMA
@@ -1565,7 +1664,9 @@ class ReleaseFixture:
             self.append_evidence_artifact(evidence, event_log, kind="log")
 
         for evidence in self.status["evidence"]:
-            session_report = self.root / "evidence/{}-session.json".format(evidence["id"])
+            session_report = self.persistent_evidence_path(
+                "{}-session.json".format(evidence["id"])
+            )
             session_report.write_text(
                 json.dumps(
                     {
@@ -1593,8 +1694,7 @@ class ReleaseFixture:
             )
             self.append_evidence_artifact(evidence, session_report, kind="report")
 
-        audio_path = self.root / "evidence/audio-decision.txt"
-        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_path = self.persistent_evidence_path("audio-decision.txt")
         audio_path.write_text("audio decision evidence\n", encoding="utf-8")
         audio_evidence = []
         for relative in (
@@ -1654,6 +1754,7 @@ class ReleaseFixture:
             approval["notes"] = "Release evidence reviewed and approved."
         self._write_documents(ready=True)
         self.write_status()
+        self.commit_tree()
 
 
 class ReleaseStatusVerifierTests(unittest.TestCase):
@@ -1685,6 +1786,262 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("all required Alpha gates PASS", result.stdout)
 
+    def test_fixture_git_operations_ignore_global_signing_and_hooks(self):
+        with tempfile.TemporaryDirectory(
+            prefix="tanks3d-hostile-git-config-"
+        ) as temporary:
+            configuration_root = Path(temporary)
+            hook_directory = configuration_root / "hooks"
+            hook_directory.mkdir()
+            hook_marker = configuration_root / "hook-ran"
+            hook = hook_directory / "pre-commit"
+            hook.write_text(
+                "#!/bin/sh\nprintf 'unexpected\\n' > {!r}\nexit 97\n".format(
+                    str(hook_marker)
+                ),
+                encoding="utf-8",
+            )
+            hook.chmod(0o700)
+            global_configuration = configuration_root / "global.gitconfig"
+            global_configuration.write_text(
+                "[commit]\n"
+                "\tgpgSign = true\n"
+                "[core]\n"
+                "\thooksPath = {}\n"
+                "\tautocrlf = true\n".format(hook_directory),
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "GIT_CONFIG_GLOBAL": str(global_configuration),
+                    "GIT_CONFIG_NOSYSTEM": "0",
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "commit.gpgSign",
+                    "GIT_CONFIG_VALUE_0": "true",
+                },
+            ):
+                fixture = self.new_fixture()
+                fixture.make_all_pass()
+                result = fixture.run()
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(hook_marker.exists())
+
+    def test_final_ready_evidence_must_be_persistent_but_blocked_intake_may_be_ignored(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        evidence = fixture.status["evidence"][0]
+        session = next(
+            artifact
+            for artifact in evidence["artifacts"]
+            if artifact["path"].endswith("-session.json")
+        )
+        source = fixture.root / session["path"]
+        ignored = (
+            fixture.root
+            / "build"
+            / "release-evidence"
+            / fixture.status["release"]["tag"]
+            / source.name
+        )
+        ignored.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(source, ignored)
+        session["path"] = ignored.relative_to(fixture.root).as_posix()
+        fixture.write_status()
+
+        expected = "PASS evidence main_menu_and_advanced_settings.artifacts["
+        self.assert_failed(fixture.run(), expected)
+        self.assert_failed(fixture.run(allow_blocked=True), expected)
+
+        blocked = self.new_fixture()
+        local_diagnostic = (
+            blocked.root
+            / "build"
+            / "release-evidence"
+            / blocked.status["release"]["tag"]
+            / "local-diagnostic.log"
+        )
+        local_diagnostic.parent.mkdir(parents=True, exist_ok=True)
+        local_diagnostic.write_text("blocked diagnostic\n", encoding="utf-8")
+        blocked.append_evidence_artifact(
+            blocked.status["evidence"][-1], local_diagnostic, kind="log"
+        )
+        blocked.write_status()
+        (blocked.root / ".gitignore").write_text("build/\n", encoding="utf-8")
+        blocked.commit_tree()
+        result = blocked.run(allow_blocked=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Verified blocked Alpha status", result.stdout)
+
+    def test_final_ready_audio_decision_report_must_be_persistent(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        canonical_notices = {
+            "ASSET_LICENSES.md",
+            "THIRD_PARTY_NOTICES.md",
+            "LICENSES/MIT-upstream.txt",
+        }
+        decision_report = next(
+            artifact
+            for artifact in fixture.status["audio"]["evidence"]
+            if artifact["path"] not in canonical_notices
+        )
+        source = fixture.root / decision_report["path"]
+        ignored = (
+            fixture.root
+            / "build"
+            / "release-evidence"
+            / fixture.status["release"]["tag"]
+            / source.name
+        )
+        ignored.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(source, ignored)
+        decision_report["path"] = ignored.relative_to(fixture.root).as_posix()
+        fixture.write_status()
+
+        expected = "selected status.audio.evidence["
+        self.assert_failed(fixture.run(), expected)
+        self.assert_failed(fixture.run(allow_blocked=True), expected)
+
+    def test_final_ready_status_must_be_canonical_and_evidence_committed(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        draft = (
+            fixture.root
+            / "build"
+            / "release-evidence"
+            / fixture.status["release"]["tag"]
+            / "status.next.json"
+        )
+        draft.parent.mkdir(parents=True, exist_ok=True)
+        draft.write_text(
+            json.dumps(fixture.status, indent=2) + "\n", encoding="utf-8"
+        )
+        self.assert_failed(
+            fixture.run(status_path=draft),
+            "release-ready status must be the canonical",
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        uncommitted = fixture.persistent_evidence_path(
+            "uncommitted-audio-decision-detail.txt"
+        )
+        uncommitted.write_text("uncommitted evidence\n", encoding="utf-8")
+        relative = uncommitted.relative_to(fixture.root).as_posix()
+        (fixture.root / ".git/info/exclude").write_text(
+            relative + "\n", encoding="utf-8"
+        )
+        fixture.status["audio"]["evidence"].append(
+            {
+                "path": relative,
+                "sha256": digest(uncommitted),
+                "kind": "report",
+            }
+        )
+        fixture.write_status()
+        expected = "release evidence is not committed in HEAD: {}".format(relative)
+        self.assert_failed(fixture.run(), expected)
+        self.assert_failed(fixture.run(allow_blocked=True), expected)
+
+    def test_promoted_status_and_evidence_bytes_must_match_head(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status_path.write_text(
+            fixture.status_path.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        status_relative = fixture.status_path.relative_to(fixture.root).as_posix()
+        fixture.git(
+            "update-index",
+            "--skip-worktree",
+            "--",
+            status_relative,
+        )
+        clean = fixture.git("status", "--porcelain", text=True)
+        self.assertEqual(clean.stdout, "")
+        expected = "release evidence bytes do not match HEAD: {}".format(
+            status_relative
+        )
+        self.assert_failed(fixture.run(), expected)
+        self.assert_failed(fixture.run(allow_blocked=True), expected)
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        canonical_notices = {
+            "ASSET_LICENSES.md",
+            "THIRD_PARTY_NOTICES.md",
+            "LICENSES/MIT-upstream.txt",
+        }
+        artifact = next(
+            item
+            for item in fixture.status["audio"]["evidence"]
+            if item["path"] not in canonical_notices
+        )
+        evidence_path = fixture.root / artifact["path"]
+        evidence_path.write_text(
+            evidence_path.read_text(encoding="utf-8") + "locally smudged\n",
+            encoding="utf-8",
+        )
+        artifact["sha256"] = digest(evidence_path)
+        fixture.write_status()
+        fixture.git(
+            "update-index",
+            "--assume-unchanged",
+            "--",
+            artifact["path"],
+        )
+        fixture.git("add", "--", status_relative)
+        fixture.git(
+            "commit",
+            "-q",
+            "-m",
+            "update fixture status only",
+        )
+        clean = fixture.git("status", "--porcelain", text=True)
+        self.assertEqual(clean.stdout, "")
+        self.assert_failed(
+            fixture.run(),
+            "release evidence bytes do not match HEAD: {}".format(
+                artifact["path"]
+            ),
+        )
+
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        artifact = next(
+            item
+            for item in fixture.status["audio"]["evidence"]
+            if item["path"] not in canonical_notices
+        )
+        evidence_path = fixture.root / artifact["path"]
+        evidence_path.write_text(
+            evidence_path.read_text(encoding="utf-8")
+            + "worktree filter marker\n",
+            encoding="utf-8",
+        )
+        artifact["sha256"] = digest(evidence_path)
+        fixture.write_status()
+        (fixture.root / ".gitattributes").write_text(
+            "{} filter=fixture-smudge\n".format(artifact["path"]),
+            encoding="utf-8",
+        )
+        for key, value in (
+            ("filter.fixture-smudge.clean", "sed s/worktree/committed/g"),
+            ("filter.fixture-smudge.smudge", "cat"),
+            ("filter.fixture-smudge.required", "true"),
+        ):
+            fixture.git("config", key, value)
+        fixture.commit_tree()
+        clean = fixture.git("status", "--porcelain", text=True)
+        self.assertEqual(clean.stdout, "")
+        self.assert_failed(
+            fixture.run(),
+            "release evidence bytes do not match HEAD: {}".format(
+                artifact["path"]
+            ),
+        )
+
     def test_v2_status_requires_current_candidate_and_performance_contract(self):
         def make_blocked_v2(candidate_fixture):
             candidate_fixture.make_all_pass()
@@ -1704,12 +2061,14 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             }
             candidate_fixture._write_documents(ready=False)
             candidate_fixture.write_status()
+            candidate_fixture.commit_tree()
             result = candidate_fixture.run(allow_blocked=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
         fixture = self.new_fixture()
         fixture.make_all_pass()
         fixture.replace_build_config("fixture=true\n")
+        fixture.commit_tree()
         self.assert_failed(
             fixture.run(),
             "macos-alpha-v2 candidate build configuration lacks the current performance-capability-schema contract",
@@ -1718,6 +2077,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         historical = self.new_fixture()
         make_blocked_v2(historical)
         historical.replace_build_config("fixture=true\n")
+        historical.commit_tree()
         self.assert_failed(
             historical.run(allow_blocked=True),
             "macos-alpha-v2 candidate build configuration lacks the current performance-capability-schema contract",
@@ -1726,6 +2086,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         legacy_candidate = self.new_fixture()
         legacy_candidate.make_all_pass()
         legacy_candidate.replace_attestation_schema("tanks3d-alpha-candidate-v2")
+        legacy_candidate.commit_tree()
         self.assert_failed(
             legacy_candidate.run(),
             "macos-alpha-v2 candidate must use tanks3d-alpha-candidate-v3",
@@ -1736,6 +2097,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         historical_candidate.replace_attestation_schema(
             "tanks3d-alpha-candidate-v2"
         )
+        historical_candidate.commit_tree()
         self.assert_failed(
             historical_candidate.run(allow_blocked=True),
             "macos-alpha-v2 candidate must use tanks3d-alpha-candidate-v3",
@@ -2023,12 +2385,19 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
     def test_release_pngs_must_have_seven_distinct_pixel_images(self):
         fixture = self.new_fixture()
         fixture.make_all_pass()
+        publication_prefix = "docs/assets/releases/{}/".format(
+            fixture.status["release"]["tag"]
+        )
         release_pngs = []
         for evidence in fixture.status["evidence"]:
             for artifact in evidence["artifacts"]:
+                relative_asset = artifact["path"].removeprefix(
+                    publication_prefix
+                )
                 if (
                     artifact["kind"] == "png"
-                    and artifact["path"].startswith("docs/assets/releases/")
+                    and artifact["path"].startswith(publication_prefix)
+                    and "/" not in relative_asset
                 ):
                     release_pngs.append((evidence, artifact))
         self.assertEqual(len(release_pngs), 7)
@@ -2153,7 +2522,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
                 for artifact in evidence["artifacts"]
                 if artifact["kind"] != "png"
             ]
-            recording = fixture.root / "evidence/menu-{}.mp4".format(size)
+            recording = fixture.persistent_evidence_path(
+                "menu-{}.mp4".format(size)
+            )
             recording.write_bytes(b"0" * size)
             fixture.append_evidence_artifact(
                 evidence, recording, kind="recording"
@@ -2174,7 +2545,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             for artifact in evidence["artifacts"]
             if artifact["kind"] != "png"
         ]
-        recording = fixture.root / "evidence/menu-too-large.mp4"
+        recording = fixture.persistent_evidence_path("menu-too-large.mp4")
         with recording.open("wb") as stream:
             stream.truncate(MAXIMUM_RECORDING_BYTES + 1)
         fixture.append_evidence_artifact(evidence, recording, kind="recording")
@@ -2339,6 +2710,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             path.write_text(text + "ISSUE-1\n", encoding="utf-8")
             reference["sha256"] = digest(path)
         fixture.write_status()
+        fixture.commit_tree()
         result = fixture.run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -2413,7 +2785,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             if item["path"].endswith("-events.json")
         )
         evidence["artifacts"].remove(event)
-        fake_recording = fixture.root / "evidence/fake.mp4"
+        fake_recording = fixture.persistent_evidence_path("fake.mp4")
         fake_recording.write_bytes(b"\0" * 65536)
         fixture.append_evidence_artifact(
             evidence, fake_recording, kind="recording"
@@ -2583,10 +2955,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             if evidence["id"] in OBSERVATION_EVIDENCE_IDS:
                 evidence["status"] = "NOT_RUN"
             if evidence["id"] in CONTROL_EVIDENCE_IDS:
-                recording = fixture.root / "evidence/compiler-{}-controls.mp4".format(
-                    evidence["id"]
+                recording = fixture.persistent_evidence_path(
+                    "compiler-{}-controls.mp4".format(evidence["id"])
                 )
-                recording.parent.mkdir(parents=True, exist_ok=True)
                 recording.write_bytes(b"1" * MINIMUM_RECORDING_BYTES)
                 fixture.append_evidence_artifact(
                     evidence, recording, kind="recording"
@@ -2594,9 +2965,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.write_status()
 
         plan_path = fixture.root / "observation-plan.json"
-        output_parent = fixture.root / "evidence"
-        output_parent.mkdir(parents=True, exist_ok=True)
-        output_dir = output_parent / "compiled-v2"
+        output_dir = fixture.persistent_evidence_path(
+            "interactive-compiled"
+        )
         init_result = subprocess.run(
             [
                 sys.executable,
@@ -2697,6 +3068,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             compile_result.stdout + compile_result.stderr,
         )
         next_status_path = output_dir / "status.next.json"
+        fixture.commit_tree()
         valid_result = fixture.run(
             allow_blocked=True, status_path=next_status_path
         )
@@ -3186,7 +3558,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         gatekeeper_evidence["notes"] = "Gatekeeper launch not observed."
         fixture.write_status()
 
-        output_dir = fixture.root / "compiled-clean-mac"
+        output_dir = fixture.persistent_evidence_path("clean-mac-compiled")
         command = [
             sys.executable,
             str(CLEAN_MAC_COMPILER),
@@ -3220,7 +3592,15 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         self.assertEqual(
             compiled.returncode, 0, compiled.stdout + compiled.stderr
         )
-        result = fixture.run(status_path=output_dir / "status.next.json")
+        next_status = output_dir / "status.next.json"
+        fixture.commit_tree()
+        self.assert_failed(
+            fixture.run(status_path=next_status),
+            "release-ready status must be the canonical",
+        )
+        shutil.copyfile(next_status, fixture.status_path)
+        fixture.commit_tree()
+        result = fixture.run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_v2_clean_mac_requires_continuous_recording_container(self):
@@ -3953,7 +4333,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             for item in fixture.status["evidence"]
             if item["id"] == "extended_session_metrics"
         )
-        path = fixture.root / "evidence/renamed-performance-output.log"
+        path = fixture.persistent_evidence_path(
+            "renamed-performance-output.log"
+        )
         with path.open("wb") as stream:
             stream.truncate(32 * 1024 * 1024 + 1)
         fixture.append_evidence_artifact(evidence, path, kind="log")
@@ -3998,7 +4380,9 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         requirements = fixture.requirements()
         audio = fixture.status["audio"]
         independent = audio["evidence"][-1]
-        confirmation_path = fixture.root / "evidence/rights-confirmation.json"
+        confirmation_path = fixture.persistent_evidence_path(
+            "rights-confirmation.json"
+        )
         confirmation_path.write_text(
             json.dumps(
                 {
@@ -4018,7 +4402,11 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             encoding="utf-8",
         )
         audio["evidence"].append(
-            {"path": "evidence/rights-confirmation.json", "sha256": digest(confirmation_path), "kind": "report"}
+            {
+                "path": confirmation_path.relative_to(fixture.root).as_posix(),
+                "sha256": digest(confirmation_path),
+                "kind": "report",
+            }
         )
         audio["decision"] = "CONFIRM"
         audio["authority"] = "Authorized audio licensor"

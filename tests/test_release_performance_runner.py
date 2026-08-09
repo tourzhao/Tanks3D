@@ -2,6 +2,7 @@
 """Focused, dependency-free tests for the release performance QA runner."""
 
 import copy
+import contextlib
 import datetime
 import hashlib
 import io
@@ -10,7 +11,6 @@ import json
 import os
 from pathlib import Path
 import re
-import stat
 import subprocess
 import sys
 import tempfile
@@ -281,6 +281,42 @@ class RunnerFixture:
             )
         raise AssertionError("unexpected subprocess.run argv: {!r}".format(argv))
 
+    def fake_tagged_invoke(
+        self, verifier_bytes, project_root, candidate_dir, **_kwargs
+    ):
+        self.calls.append(
+            ["bounded-tagged-verifier", str(project_root), str(candidate_dir)]
+        )
+        self.verifier_input = verifier_bytes
+        if self.verify_returncode != 0:
+            raise RUNNER.tagged_candidate_verifier.TaggedVerifierError(
+                "tagged candidate verifier failed (exit {}): forced verifier "
+                "failure".format(self.verify_returncode)
+            )
+        receipt = {}
+        candidate_files = sorted(self.candidate.iterdir())
+        for index, candidate_file in enumerate(candidate_files):
+            if (
+                self.verifier_receipt_mode == "missing"
+                and index == len(candidate_files) - 1
+            ):
+                continue
+            value = digest(candidate_file)
+            if self.verifier_receipt_mode == "wrong" and index == 0:
+                value = "0" * 64
+            receipt[candidate_file.name] = value
+        if self.verifier_receipt_mode == "missing":
+            raise RUNNER.tagged_candidate_verifier.TaggedVerifierError(
+                "tagged verifier did not emit an exact five-file receipt"
+            )
+        if self.verifier_receipt_mode == "duplicate":
+            raise RUNNER.tagged_candidate_verifier.TaggedVerifierError(
+                "tagged verifier emitted a duplicate candidate receipt"
+            )
+        return RUNNER.tagged_candidate_verifier.TaggedVerifierResult(
+            stdout=b"", stderr=b"", receipt=receipt
+        )
+
     @staticmethod
     def argument(argv, prefix):
         return next(value[len(prefix) :] for value in argv if value.startswith(prefix))
@@ -452,9 +488,20 @@ class RunnerFixture:
         )
         return self.last_process
 
+    @contextlib.contextmanager
+    def command_patches(self):
+        with mock.patch.object(
+            RUNNER.subprocess, "run", side_effect=self.fake_run
+        ), mock.patch.object(
+            RUNNER.tagged_candidate_verifier,
+            "invoke",
+            side_effect=self.fake_tagged_invoke,
+        ):
+            yield
+
     def patches(self):
         return (
-            mock.patch.object(RUNNER.subprocess, "run", side_effect=self.fake_run),
+            self.command_patches(),
             mock.patch.object(RUNNER.subprocess, "Popen", side_effect=self.fake_popen),
             mock.patch.object(RUNNER.secrets, "token_hex", return_value=NONCE),
             mock.patch.object(RUNNER, "utc_now", side_effect=[STARTED, COMPLETED]),
@@ -823,7 +870,7 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
                 ]
             ),
         )
-        self.assertEqual(fixture.calls[0][0], "sh")
+        self.assertEqual(fixture.calls[0][0], "bounded-tagged-verifier")
         self.assertEqual(
             fixture.verifier_input,
             (fixture.root / "scripts/verify_tagged_alpha_candidate.sh").read_bytes(),
@@ -1077,11 +1124,7 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
                 return fixture.fake_popen(argv, **kwargs)
             raise subprocess.SubprocessError("fixture preexec failure")
 
-        with mock.patch.object(
-            RUNNER.subprocess,
-            "run",
-            side_effect=fixture.fake_run,
-        ), mock.patch.object(
+        with fixture.command_patches(), mock.patch.object(
             RUNNER.subprocess,
             "Popen",
             side_effect=fail_long_process,
@@ -1569,8 +1612,15 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
         verifier.write_text("#!/bin/sh\nexit 91\n", encoding="utf-8")
         original_read = RUNNER.read_regular_file_no_follow
 
-        def swap_after_read(path, label, directory_fd=None):
-            data = original_read(path, label, directory_fd=directory_fd)
+        def swap_after_read(
+            path, label, directory_fd=None, maximum_bytes=None
+        ):
+            data = original_read(
+                path,
+                label,
+                directory_fd=directory_fd,
+                maximum_bytes=maximum_bytes,
+            )
             if Path(path).name == verifier.name and label == "tagged candidate verifier":
                 verifier.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             return data
@@ -1582,6 +1632,19 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
                 RUNNER.RunnerError, r"tagged candidate verifier failed \(exit 91\)"
             ):
                 RUNNER.invoke_tagged_verifier(fixture.root, fixture.candidate)
+
+    def test_verifier_source_is_bounded_during_secure_read(self):
+        fixture = self.new_fixture()
+        verifier = fixture.root / "scripts/verify_tagged_alpha_candidate.sh"
+        verifier.write_bytes(
+            b"#" * (
+                RUNNER.tagged_candidate_verifier.MAX_VERIFIER_SOURCE_BYTES + 1
+            )
+        )
+        with self.assertRaisesRegex(
+            RUNNER.RunnerError, "tagged candidate verifier exceeds the safety limit"
+        ):
+            RUNNER.invoke_tagged_verifier(fixture.root, fixture.candidate)
 
     def test_verifier_rejects_a_symlinked_scripts_ancestor(self):
         fixture = self.new_fixture()
@@ -1697,7 +1760,7 @@ class ReleasePerformanceRunnerTests(unittest.TestCase):
                 )
 
         fixture = self.new_fixture()
-        with mock.patch.object(RUNNER.subprocess, "run", side_effect=fixture.fake_run), mock.patch.object(
+        with fixture.command_patches(), mock.patch.object(
             RUNNER.subprocess, "Popen", side_effect=fixture.fake_popen
         ), mock.patch.object(RUNNER.secrets, "token_hex", return_value="not-a-nonce"), mock.patch.object(
             RUNNER, "utc_now", side_effect=[STARTED, COMPLETED]

@@ -35,6 +35,7 @@ if str(SCRIPT_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIRECTORY))
 
 import release_performance_contract as performance_contract  # noqa: E402
+import tagged_candidate_verifier  # noqa: E402
 import validate_media_recording as recording_validator  # noqa: E402
 
 
@@ -2070,6 +2071,293 @@ def validate_evidence(
     if actual_ids != EVIDENCE_IDS:
         raise VerificationError("status.evidence IDs/order do not match the fixed profile")
     return evidence_map, artifact_map
+
+
+def validate_persistent_pass_evidence(
+    evidence_map: Mapping[str, Mapping[str, Any]],
+    audio: Mapping[str, Any],
+    release_tag: str,
+) -> None:
+    """Require every PASS artifact to use its versioned publication location."""
+
+    release_asset_prefix = "docs/assets/releases/{}/".format(release_tag)
+    persistent_prefix = release_asset_prefix + "evidence/"
+    release_screenshots = {
+        release_asset_prefix + name
+        for name in (
+            "one-player.png",
+            "two-player.png",
+            "base-usa.png",
+            "base-ussr.png",
+            "base-germany.png",
+            "bonuses.png",
+            "settlement.png",
+        )
+    }
+    for evidence_id in EVIDENCE_IDS:
+        evidence = evidence_map[evidence_id]
+        if evidence["status"] != "PASS":
+            continue
+        for artifact_index, artifact in enumerate(evidence["artifacts"]):
+            path = artifact["path"]
+            if path not in release_screenshots and not path.startswith(
+                persistent_prefix
+            ):
+                raise VerificationError(
+                    "PASS evidence {}.artifacts[{}] must be a canonical release "
+                    "screenshot or be stored under {}; ignored, nonversioned, "
+                    "and non-evidence paths are not publishable".format(
+                        evidence_id,
+                        artifact_index,
+                        persistent_prefix,
+                    )
+                )
+    repository_audio_notices = {
+        "ASSET_LICENSES.md",
+        "THIRD_PARTY_NOTICES.md",
+        "LICENSES/MIT-upstream.txt",
+    }
+    for artifact_index, artifact in enumerate(audio["evidence"]):
+        path = artifact["path"]
+        if path in repository_audio_notices:
+            continue
+        if not path.startswith(persistent_prefix):
+            raise VerificationError(
+                "selected status.audio.evidence[{}] must be stored under {}; "
+                "only the three canonical repository notice files may remain "
+                "outside the versioned release assets".format(
+                    artifact_index, persistent_prefix
+                )
+            )
+
+
+def validate_committed_publication_files(
+    root: Path,
+    status_relative: str,
+    status: Mapping[str, Any],
+    evidence_map: Mapping[str, Mapping[str, Any]],
+    audio: Mapping[str, Any],
+    release_tag: str,
+    final_ready: bool,
+) -> None:
+    """Prove promoted evidence exactly matches regular blobs in current HEAD."""
+
+    canonical_status = "docs/releases/{}-status.json".format(release_tag)
+    release_asset_prefix = "docs/assets/releases/{}/".format(release_tag)
+    if final_ready and status_relative != canonical_status:
+        raise VerificationError(
+            "release-ready status must be the canonical {} file".format(
+                canonical_status
+            )
+        )
+
+    tracked_paths = {status_relative, status["requirements"]}
+    has_promoted_evidence = final_ready
+    for evidence_id in EVIDENCE_IDS:
+        evidence = evidence_map[evidence_id]
+        if evidence["status"] != "PASS":
+            continue
+        has_promoted_evidence = True
+        tracked_paths.update(
+            artifact["path"] for artifact in evidence["artifacts"]
+        )
+    if audio["decision"] != "NONE":
+        has_promoted_evidence = True
+        tracked_paths.update(artifact["path"] for artifact in audio["evidence"])
+    if final_ready:
+        tracked_paths.update(
+            status["documents"][key]["path"]
+            for key in ("release_page", "qa_report")
+        )
+    if not has_promoted_evidence:
+        return
+    if status_relative != canonical_status and not status_relative.startswith(
+        release_asset_prefix + "evidence/"
+    ):
+        raise VerificationError(
+            "a status carrying PASS evidence must be the canonical status or a "
+            "versioned draft below {}evidence/".format(release_asset_prefix)
+        )
+
+    command = [
+        "git",
+        "--literal-pathspecs",
+        "-C",
+        str(root),
+        "ls-tree",
+        "-z",
+        "HEAD",
+        "--",
+    ] + sorted(tracked_paths)
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise VerificationError(
+            "cannot prove release evidence is committed: {}".format(exc)
+        )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        if len(detail) > 600:
+            detail = detail[-600:]
+        raise VerificationError(
+            "cannot inspect committed release evidence (exit {}): {}".format(
+                completed.returncode, detail or "no diagnostic"
+            )
+        )
+    maximum_output = sum(
+        len(path.encode("utf-8")) + 100 for path in tracked_paths
+    )
+    if len(completed.stdout) > maximum_output:
+        raise VerificationError(
+            "Git returned unexpected data while proving committed release evidence"
+        )
+    fields = completed.stdout.split(b"\0")
+    if fields and fields[-1] == b"":
+        fields.pop()
+    committed_oids: Dict[str, Tuple[str, str]] = {}
+    try:
+        for field in fields:
+            metadata, path_bytes = field.split(b"\t", 1)
+            mode_bytes, object_type, oid_bytes = metadata.split(b" ", 2)
+            path = path_bytes.decode("utf-8")
+            mode = mode_bytes.decode("ascii")
+            kind = object_type.decode("ascii")
+            oid = oid_bytes.decode("ascii")
+            if path in committed_oids:
+                raise VerificationError(
+                    "Git returned duplicate committed release evidence: {}".format(
+                        path
+                    )
+                )
+            if kind != "blob" or mode not in {"100644", "100755"}:
+                raise VerificationError(
+                    "release evidence HEAD entry is not a regular blob: {}".format(
+                        path
+                    )
+                )
+            if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid) is None:
+                raise VerificationError(
+                    "Git returned an invalid release evidence object ID"
+                )
+            committed_oids[path] = (oid, mode)
+    except VerificationError:
+        raise
+    except (UnicodeError, ValueError) as exc:
+        raise VerificationError(
+            "Git returned malformed committed release evidence: {}".format(exc)
+        )
+    missing = sorted(tracked_paths - set(committed_oids))
+    if missing:
+        raise VerificationError(
+            "release evidence is not committed in HEAD: {}".format(
+                ", ".join(missing)
+            )
+        )
+
+    mismatched = []
+    for relative in sorted(tracked_paths):
+        oid = committed_oids[relative][0]
+        algorithm = "sha1" if len(oid) == 40 else "sha256"
+        path = resolve_repository_file(
+            root, relative, "committed release evidence {}".format(relative)
+        )
+        flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
+        no_follow = getattr(os, "O_NOFOLLOW", None)
+        if no_follow is None:
+            raise VerificationError(
+                "O_NOFOLLOW is required to prove committed release evidence"
+            )
+        descriptor = -1
+        parent_descriptor = -1
+        try:
+            parent_descriptor = open_repository_directory_no_follow(
+                root,
+                path.parent,
+                "committed release evidence parent {}".format(relative),
+            )
+            descriptor = os.open(
+                path.name,
+                flags | no_follow,
+                dir_fd=parent_descriptor,
+            )
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise VerificationError(
+                    "committed release evidence must be a regular file: {}".format(
+                        relative
+                    )
+                )
+            if before.st_size > MAXIMUM_RECORDING_BYTES:
+                raise VerificationError(
+                    "committed release evidence {} exceeds the {}-byte limit".format(
+                        relative, MAXIMUM_RECORDING_BYTES
+                    )
+                )
+            digest = hashlib.new(algorithm)
+            digest.update(
+                "blob {}\0".format(before.st_size).encode("ascii")
+            )
+            total = 0
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAXIMUM_RECORDING_BYTES:
+                    raise VerificationError(
+                        "committed release evidence {} exceeds the {}-byte limit".format(
+                            relative, MAXIMUM_RECORDING_BYTES
+                        )
+                    )
+                digest.update(chunk)
+            after = os.fstat(descriptor)
+            identity_before = (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            identity_after = (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+            if identity_before != identity_after or total != after.st_size:
+                raise VerificationError(
+                    "committed release evidence changed while hashing: {}".format(
+                        relative
+                    )
+                )
+        except VerificationError:
+            raise
+        except OSError as exc:
+            raise VerificationError(
+                "cannot hash committed release evidence {}: {}".format(
+                    relative, exc
+                )
+            )
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            if parent_descriptor >= 0:
+                os.close(parent_descriptor)
+        if digest.hexdigest() != oid:
+            mismatched.append(relative)
+    if mismatched:
+        raise VerificationError(
+            "release evidence bytes do not match HEAD: {}".format(
+                ", ".join(mismatched)
+            )
+        )
 
 
 def validate_result_record(
@@ -4591,48 +4879,17 @@ def invoke_tagged_candidate_verifier(
             Path(verifier.name),
             "scripts/verify_tagged_alpha_candidate.sh",
             directory_fd=verifier_parent_fd,
+            maximum_bytes=tagged_candidate_verifier.MAX_VERIFIER_SOURCE_BYTES,
         )
     finally:
         os.close(verifier_parent_fd)
     try:
-        completed = subprocess.run(
-            ["sh", "-s", "--", str(root), str(candidate_dir)],
-            input=verifier_data,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        result = tagged_candidate_verifier.invoke(
+            verifier_data, root, candidate_dir
         )
-    except OSError as exc:
-        raise VerificationError("cannot run tagged candidate verifier: {}".format(exc))
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).decode(
-            "utf-8", errors="replace"
-        ).strip()
-        if len(detail) > 600:
-            detail = detail[-600:]
-        raise VerificationError(
-            "tagged candidate verifier failed (exit {}): {}".format(
-                completed.returncode, detail or "no diagnostic"
-            )
-        )
-    try:
-        verifier_stdout = completed.stdout.decode("utf-8")
-    except UnicodeError as exc:
-        raise VerificationError("tagged verifier output is not UTF-8: {}".format(exc))
-    prefix = "VERIFIED CANDIDATE FILE SHA256 "
-    receipt: Dict[str, str] = {}
-    for line in verifier_stdout.splitlines():
-        if not line.startswith(prefix):
-            continue
-        fields = line[len(prefix) :].split(" ", 1)
-        if len(fields) != 2:
-            raise VerificationError("tagged verifier emitted a malformed candidate receipt")
-        digest, name = fields
-        if SHA256_RE.fullmatch(digest) is None or TOKEN_RE.fullmatch(name) is None:
-            raise VerificationError("tagged verifier emitted an invalid candidate receipt")
-        if name in receipt:
-            raise VerificationError("tagged verifier emitted a duplicate candidate receipt")
-        receipt[name] = digest
+    except tagged_candidate_verifier.TaggedVerifierError as exc:
+        raise VerificationError(str(exc)) from exc
+    receipt = dict(result.receipt)
     expected_receipt = {
         file_refs[key][0].name: file_refs[key][1]
         for key in ("artifact", "checksum", "attestation", "gate_log", "build_config")
@@ -5484,6 +5741,16 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         known_issues,
         approvals,
         report["release_date"],
+    )
+    validate_persistent_pass_evidence(evidence_map, audio, release["tag"])
+    validate_committed_publication_files(
+        root,
+        status_relative,
+        status,
+        evidence_map,
+        audio,
+        release["tag"],
+        not blockers,
     )
     if requirements_profile == "macos-alpha-v2":
         validate_current_v2_candidate_contract(

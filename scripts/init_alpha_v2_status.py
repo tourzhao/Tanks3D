@@ -18,11 +18,17 @@ from pathlib import Path
 import re
 import stat
 import struct
-import subprocess
 import sys
 import tempfile
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 import zlib
+
+
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+if str(SCRIPT_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIRECTORY))
+
+import tagged_candidate_verifier  # noqa: E402
 
 
 STATUS_SCHEMA = "tanks3d-release-status-v1"
@@ -279,52 +285,20 @@ def run_tagged_verifier(root: Path, candidate_dir: Path) -> Dict[str, str]:
     )
     try:
         verifier_data = read_regular_file_at(
-            verifier_parent_fd, verifier.name, "tagged candidate verifier"
+            verifier_parent_fd,
+            verifier.name,
+            "tagged candidate verifier",
+            maximum_bytes=tagged_candidate_verifier.MAX_VERIFIER_SOURCE_BYTES,
         )
     finally:
         os.close(verifier_parent_fd)
     try:
-        completed = subprocess.run(
-            ["sh", "-s", "--", str(root), str(candidate_dir)],
-            input=verifier_data,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
+        result = tagged_candidate_verifier.invoke(
+            verifier_data, root, candidate_dir
         )
-    except OSError as exc:
-        raise InitError("cannot run tagged candidate verifier: {}".format(exc))
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).decode(
-            "utf-8", errors="replace"
-        ).strip()
-        if len(detail) > 800:
-            detail = detail[-800:]
-        raise InitError(
-            "tagged candidate verifier failed (exit {}): {}".format(
-                completed.returncode, detail or "no diagnostic"
-            )
-        )
-    try:
-        verifier_stdout = completed.stdout.decode("utf-8")
-    except UnicodeError as exc:
-        raise InitError("tagged verifier output is not UTF-8: {}".format(exc))
-    receipt: Dict[str, str] = {}
-    prefix = "VERIFIED CANDIDATE FILE SHA256 "
-    for line in verifier_stdout.splitlines():
-        if not line.startswith(prefix):
-            continue
-        fields = line[len(prefix) :].split(" ", 1)
-        if len(fields) != 2:
-            raise InitError("tagged verifier emitted a malformed candidate receipt")
-        digest, name = fields
-        if SHA256_RE.fullmatch(digest) is None or TOKEN_RE.fullmatch(name) is None:
-            raise InitError("tagged verifier emitted an invalid candidate receipt")
-        if name in receipt:
-            raise InitError("tagged verifier emitted a duplicate candidate receipt")
-        receipt[name] = digest
-    if len(receipt) != 5:
-        raise InitError("tagged verifier did not emit an exact five-file receipt")
-    return receipt
+    except tagged_candidate_verifier.TaggedVerifierError as exc:
+        raise InitError(str(exc)) from exc
+    return dict(result.receipt)
 
 
 def capture_candidate_files(candidate_dir: Path) -> Dict[str, bytes]:
@@ -1270,7 +1244,12 @@ def open_repository_directory_no_follow(root: Path, path: Path, label: str) -> i
     return descriptor
 
 
-def read_regular_file_at(directory_fd: int, name: str, label: str) -> bytes:
+def read_regular_file_at(
+    directory_fd: int,
+    name: str,
+    label: str,
+    maximum_bytes: Optional[int] = None,
+) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(name, flags, dir_fd=directory_fd)
@@ -1280,11 +1259,25 @@ def read_regular_file_at(directory_fd: int, name: str, label: str) -> bytes:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             raise InitError("{} must be a regular non-symlink file".format(label))
+        if maximum_bytes is not None and metadata.st_size > maximum_bytes:
+            raise InitError(
+                "{} exceeds the {}-byte safety limit".format(
+                    label, maximum_bytes
+                )
+            )
         chunks = []
+        total_bytes = 0
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
             if not chunk:
                 break
+            total_bytes += len(chunk)
+            if maximum_bytes is not None and total_bytes > maximum_bytes:
+                raise InitError(
+                    "{} exceeds the {}-byte safety limit".format(
+                        label, maximum_bytes
+                    )
+                )
             chunks.append(chunk)
         final_metadata = os.fstat(descriptor)
         if (
