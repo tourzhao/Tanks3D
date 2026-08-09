@@ -1,6 +1,16 @@
 CXX ?= clang++
 RAYLIB_PREFIX ?= $(shell brew --prefix raylib 2>/dev/null)
+RAYLIB_HEADER := $(RAYLIB_PREFIX)/include/raylib.h
 RAYLIB_STATIC := $(RAYLIB_PREFIX)/lib/libraylib.a
+RAYLIB_REQUIRED_VERSION := 6.0
+RAYLIB_VERSION := $(shell awk \
+	'$$2 == "RAYLIB_VERSION" { \
+		gsub(/"/, "", $$3); print $$3 \
+	}' "$(RAYLIB_HEADER)" 2>/dev/null)
+RAYLIB_LICENSE_SHA256 := $(shell shasum -a 256 \
+	LICENSES/Zlib-raylib.txt 2>/dev/null | awk '{print $$1}')
+RAYLIB_REQUIRED_LICENSE_SHA256 := \
+	882a5a819cf562aa3583aae3af3f2211dda15c63de9fc8cc4b399a2f9e78d799
 RAYLIB_MACOS_MINS := $(shell otool -l "$(RAYLIB_STATIC)" 2>/dev/null | \
 	awk '/minos/{print $$2}' | LC_ALL=C sort -u)
 RAYLIB_MACOS_MIN := $(firstword $(RAYLIB_MACOS_MINS))
@@ -425,7 +435,8 @@ TEXTURE_FILES := \
 PROBE_MODEL := resources/models/tank_basic.glb
 RUNTIME_RESOURCES := $(SOUND_FILES) $(TEXTURE_FILES) $(PROBE_MODEL)
 DIST_LICENSE_FILES := LICENSE NOTICE README.md THIRD_PARTY_NOTICES.md \
-	ASSET_LICENSES.md LICENSES/CC0-1.0.txt LICENSES/MIT-upstream.txt \
+	ASSET_LICENSES.md LICENSES/Apache-2.0.txt LICENSES/CC0-1.0.txt \
+	LICENSES/MIT-upstream.txt LICENSES/Raylib-6.0-dependencies.txt \
 	LICENSES/Zlib-raylib.txt
 
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic $(MACOS_TARGET_FLAG)
@@ -484,7 +495,11 @@ $(APP_EXECUTABLE): $(TARGET) macos/Info.plist $(RUNTIME_RESOURCES)
 	codesign --force --sign - --timestamp=none $(APP)
 
 check-dist-prereqs:
+	test -f "$(RAYLIB_HEADER)"
 	test -f "$(RAYLIB_STATIC)"
+	test "$(RAYLIB_VERSION)" = "$(RAYLIB_REQUIRED_VERSION)"
+	test "$(RAYLIB_LICENSE_SHA256)" = \
+		"$(RAYLIB_REQUIRED_LICENSE_SHA256)"
 	test -n "$(APP_VERSION)"
 	printf '%s\n' "$(DIST_SOURCE_COMMIT)" | \
 		grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$$'
@@ -510,6 +525,7 @@ $(DIST_CONFIG_FILE): force-dist-config | check-dist-prereqs
 			'source-commit=$(DIST_SOURCE_COMMIT)' \
 			'source-tag=$(DIST_SOURCE_TAG)' \
 			'raylib-prefix=$(abspath $(RAYLIB_PREFIX))' \
+			'raylib-version=$(RAYLIB_VERSION)' \
 			'raylib-sha256=$(DIST_RAYLIB_SHA256)' \
 			'arch=$(DIST_ARCH)' 'macos-min=$(DIST_MACOS_MIN)' \
 			'compile-flags=$(DIST_COMPILE_FLAGS)' \
@@ -558,11 +574,17 @@ $(DIST_APP_STAMP): $(DIST_TARGET) macos/Info.plist $(RUNTIME_RESOURCES) \
 	ditto --norsrc --noextattr --noqtn --noacl \
 		ASSET_LICENSES.md $(DIST_APP_RESOURCES)/licenses/ASSET_LICENSES.md
 	ditto --norsrc --noextattr --noqtn --noacl \
+		LICENSES/Apache-2.0.txt \
+		$(DIST_APP_RESOURCES)/licenses/LICENSES/Apache-2.0.txt
+	ditto --norsrc --noextattr --noqtn --noacl \
 		LICENSES/CC0-1.0.txt \
 		$(DIST_APP_RESOURCES)/licenses/LICENSES/CC0-1.0.txt
 	ditto --norsrc --noextattr --noqtn --noacl \
 		LICENSES/MIT-upstream.txt \
 		$(DIST_APP_RESOURCES)/licenses/LICENSES/MIT-upstream.txt
+	ditto --norsrc --noextattr --noqtn --noacl \
+		LICENSES/Raylib-6.0-dependencies.txt \
+		$(DIST_APP_RESOURCES)/licenses/LICENSES/Raylib-6.0-dependencies.txt
 	ditto --norsrc --noextattr --noqtn --noacl \
 		LICENSES/Zlib-raylib.txt \
 		$(DIST_APP_RESOURCES)/licenses/LICENSES/Zlib-raylib.txt

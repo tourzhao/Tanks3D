@@ -227,6 +227,15 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         self.assertIn("**Overall Alpha gate: BLOCKED.**", qa)
         self.assertIn("Author: **tourzhao**", page)
         self.assertIn("Gatekeeper conclusion: **BLOCKED**", page)
+        self.assertIn(
+            "[PolyForm Noncommercial License 1.0.0](../../LICENSE)", page
+        )
+        self.assertIn("statically links raylib 6.0 and its embedded dependencies", page)
+        self.assertIn("[`LICENSES/`](../../LICENSES/)", page)
+        self.assertIn(
+            "Required notice: `Required Notice: Copyright (c) 2026 tourzhao.`",
+            page,
+        )
         self.assertIn("Selected option: **NONE — BLOCKED**", qa)
         self.assertIn(fixture.qa_report.name, page)
         requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))

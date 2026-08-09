@@ -292,12 +292,19 @@ cmp "$project_root/THIRD_PARTY_NOTICES.md" \
     "$resources/licenses/THIRD_PARTY_NOTICES.md"
 cmp "$project_root/ASSET_LICENSES.md" \
     "$resources/licenses/ASSET_LICENSES.md"
+cmp -s "$project_root/LICENSES/Apache-2.0.txt" \
+    "$resources/licenses/LICENSES/Apache-2.0.txt" || \
+    fail "bundled Apache 2.0 license does not match the source notice"
 cmp "$project_root/LICENSES/CC0-1.0.txt" \
     "$resources/licenses/LICENSES/CC0-1.0.txt"
 cmp "$project_root/LICENSES/MIT-upstream.txt" \
     "$resources/licenses/LICENSES/MIT-upstream.txt"
-cmp "$project_root/LICENSES/Zlib-raylib.txt" \
-    "$resources/licenses/LICENSES/Zlib-raylib.txt"
+cmp -s "$project_root/LICENSES/Raylib-6.0-dependencies.txt" \
+    "$resources/licenses/LICENSES/Raylib-6.0-dependencies.txt" || \
+    fail "bundled raylib dependency notices do not match the source notice"
+cmp -s "$project_root/LICENSES/Zlib-raylib.txt" \
+    "$resources/licenses/LICENSES/Zlib-raylib.txt" || \
+    fail "bundled raylib license does not match the official source notice"
 
 forbidden_metadata=$(xattr -lr "$app" 2>/dev/null | \
     awk '/com\.apple\.quarantine|com\.nextdlp\./ {print; exit}')

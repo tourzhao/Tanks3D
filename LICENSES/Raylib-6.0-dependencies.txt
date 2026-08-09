@@ -1,0 +1,258 @@
+raylib 6.0 Embedded Dependency Notices
+======================================
+
+Tanks 3D macOS release builds statically link raylib 6.0. The resulting
+executable therefore contains code from raylib's embedded dependencies even
+though their source files are not vendored in this repository.
+
+The inventory and notices below were taken from the exact raylib 6.0 tag:
+https://github.com/raysan5/raylib/tree/6.0/src/external
+
+Tag commit:
+dbc56a87da87d973a9c5baa4e7438a9d20121d28
+
+Official source archive SHA-256:
+2b3ee1e2120c7a0796b33062c7e9a694dd8a8caa56a96319ac8c8ecf54a90d0b
+
+This inventory covers the default macOS desktop modules present in the
+statically linked release: GLFW 3.4; GLAD 2.0.0-beta and Khronos material;
+sdefl/sinfl; rprand; stb_image, stb_image_resize2, stb_image_write,
+stb_perlin, stb_rect_pack, stb_truetype, and stb_vorbis; QOI; rltexgpu;
+miniaudio; dr_wav; dr_mp3; jar_mod; jar_xm; QOA and qoaplay; par_shapes;
+tinyobj_loader_c; cgltf and its embedded jsmn parser; vox_loader; and m3d.
+Platform-specific or disabled raylib sources are not claimed as part of this
+macOS inventory.
+In particular, the default raylib 6.0 macOS configuration leaves
+SUPPORT_FILEFORMAT_GLTF_WRITE and SUPPORT_FILEFORMAT_FLAC disabled, so
+cgltf_write.h and dr_flac.h are intentionally absent from this binary-specific
+inventory.
+
+raylib-owned helpers
+--------------------
+
+rprand v1.0 (`src/external/rprand.h`):
+Copyright (c) 2023 Ramon Santamaria (@raysan5)
+
+rltexgpu v1.2 (`src/external/rltexgpu.h`):
+Copyright (c) 2013-2026 Ramon Santamaria (@raysan5)
+
+These helpers use the same zlib/libpng terms reproduced in the sibling file
+Zlib-raylib.txt.
+
+rprand also embeds xoshiro128** 1.1, written in 2018 by David Blackman and
+Sebastiano Vigna, and SplitMix64, written in 2015 by Sebastiano Vigna. Their
+source comments dedicate the code to the public domain under CC0; the complete
+CC0 1.0 legal code is reproduced in the sibling file CC0-1.0.txt.
+
+GLFW 3.4 (`src/external/glfw/`)
+--------
+
+Copyright (c) 2002-2006 Marcus Geelnard
+
+Copyright (c) 2006-2019 Camilla Löwy
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would
+   be appreciated but is not required.
+
+2. Altered source versions must be plainly marked as such, and must not
+   be misrepresented as being the original software.
+
+3. This notice may not be removed or altered from any source
+   distribution.
+
+GLAD and Khronos material (`src/external/glad.h`)
+-------------------------
+
+The glad source code:
+
+The MIT License (MIT)
+
+Copyright (c) 2013-2022 David Herberth
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+GLAD's generated loader is separately offered under a public-domain
+dedication, WTFPL, or CC0. This distribution uses the CC0 alternative, whose
+complete legal code is reproduced in the sibling file CC0-1.0.txt.
+
+The Khronos Specifications:
+
+Copyright (c) 2013-2020 The Khronos Group Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. The complete license is reproduced in the
+sibling file Apache-2.0.txt.
+
+The generated GLAD header also embeds Khronos platform definitions under this
+notice:
+
+Copyright (c) 2008-2018 The Khronos Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and/or associated documentation files (the
+"Materials"), to deal in the Materials without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Materials, and to
+permit persons to whom the Materials are furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Materials.
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+
+MIT-licensed embedded libraries
+-------------------------------
+
+The raylib 6.0 sources offer the following components under the MIT terms
+below. Dual-licensed sdefl/sinfl and stb components use their MIT alternative.
+
+sdefl and sinfl (`src/external/sdefl.h`, `src/external/sinfl.h`):
+Copyright (c) 2020-2023 Micha Mettke
+
+stb_image, stb_image_resize2, stb_image_write, stb_perlin, stb_rect_pack,
+stb_truetype, and stb_vorbis (`src/external/stb_image.h`,
+`stb_image_resize2.h`, `stb_image_write.h`, `stb_perlin.h`,
+`stb_rect_pack.h`, `stb_truetype.h`, and `stb_vorbis.c`):
+Copyright (c) 2017 Sean Barrett
+
+QOI (`src/external/qoi.h`):
+Copyright (c) 2021, Dominic Szablewski - https://phoboslab.org
+
+QOA (`src/external/qoa.h`):
+Copyright (c) 2023, Dominic Szablewski - https://phoboslab.org
+
+qoaplay (`src/external/qoaplay.c`):
+Copyright (c) 2023 Dominic Szablewski (@phoboslab), reviewed by Ramon Santamaria (@raysan5)
+
+par_shapes (`src/external/par_shapes.h`):
+Copyright (c) 2019 Philip Rideout
+
+tinyobj_loader_c (`src/external/tinyobj_loader_c.h`):
+Copyright (c) 2016 - 2019 Syoyo Fujita and many contributors.
+
+cgltf (`src/external/cgltf.h`):
+Copyright (c) 2018-2021 Johannes Kuhlmann
+
+jsmn, embedded in `src/external/cgltf.h`:
+Copyright (c) 2010 Serge A. Zaitsev
+
+vox_loader (`src/external/vox_loader.h`):
+Copyright (c) 2021 Johann Nadalutti.
+
+m3d (`src/external/m3d.h`):
+Copyright (C) 2020 bzt (bztsrc@gitlab)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+MIT No Attribution embedded libraries
+-------------------------------------
+
+The raylib 6.0 sources offer miniaudio, dr_wav, and dr_mp3 under a choice of
+public-domain dedication or MIT No Attribution. This distribution uses their
+MIT No Attribution alternative.
+
+miniaudio (`src/external/miniaudio.h`):
+Copyright 2025 David Reid
+
+dr_wav and dr_mp3 (`src/external/dr_wav.h`, `src/external/dr_mp3.h`):
+Copyright 2023 David Reid
+
+dr_mp3 incorporates minimp3 code whose source comment dedicates it to the
+public domain under CC0. The complete CC0 1.0 legal code is reproduced in the
+sibling file CC0-1.0.txt.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+jar_mod and jar_xm
+------------------
+
+jar_mod identifies Joshua Reisenauer's wrapper as public-domain C0. Its
+underlying HxCModPlayer code was written by Jean-François DEL NERO and adapted
+by Joshua Adam Reisenauer. jar_xm identifies Romain "Artefact2" Dalmaso as
+author, Dan Spencer as contributor, and Joshua Adam Reisenauer as the person
+who repackaged libxm. Both source headers state that their underlying code is
+available under the Do What The Fuck You Want To Public License, Version 2:
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.

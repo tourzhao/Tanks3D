@@ -26,6 +26,8 @@ fail()
 [ -f "$verifier" ] || fail "distribution verifier is missing"
 command -v zip >/dev/null 2>&1 || fail "zip is required"
 command -v unzip >/dev/null 2>&1 || fail "unzip is required"
+command -v codesign >/dev/null 2>&1 || fail "codesign is required"
+[ -x /usr/bin/ditto ] || fail "ditto is required"
 
 fixture_root=
 escape_root=
@@ -197,4 +199,44 @@ write_checksum "$signature_archive"
 expect_rejection signature-tamper "app signature integrity check failed" \
     "$signature_archive" Tanks3D-signature-tamper
 
-echo "Distribution verifier negative tests passed: 11 rejection cases."
+dependency_notice_archive="$fixture_root/Tanks3D-dependency-notice-tamper.zip"
+dependency_notice_payload="$fixture_root/dependency-notice-payload"
+mkdir -p "$dependency_notice_payload"
+unzip -q "$valid_archive" -d "$dependency_notice_payload"
+dependency_notice_app="$dependency_notice_payload/Tanks3D.app"
+dependency_notice_file="$dependency_notice_app/Contents/Resources/licenses/\
+LICENSES/Raylib-6.0-dependencies.txt"
+printf '%s\n' 'dependency notice mutation' >> "$dependency_notice_file"
+codesign --force --sign - --timestamp=none "$dependency_notice_app" \
+    >/dev/null 2>&1 || fail "dependency notice fixture could not be signed"
+(
+    cd "$dependency_notice_payload"
+    /usr/bin/ditto -c -k --keepParent --norsrc --noextattr --noqtn \
+        --noacl Tanks3D.app "$dependency_notice_archive"
+)
+write_checksum "$dependency_notice_archive"
+expect_rejection dependency-notice-tamper \
+    "bundled raylib dependency notices do not match the source notice" \
+    "$dependency_notice_archive" Tanks3D-dependency-notice-tamper
+
+raylib_license_archive="$fixture_root/Tanks3D-raylib-license-tamper.zip"
+raylib_license_payload="$fixture_root/raylib-license-payload"
+mkdir -p "$raylib_license_payload"
+unzip -q "$valid_archive" -d "$raylib_license_payload"
+raylib_license_app="$raylib_license_payload/Tanks3D.app"
+raylib_license_file="$raylib_license_app/Contents/Resources/licenses/\
+LICENSES/Zlib-raylib.txt"
+printf '%s\n' 'raylib license mutation' >> "$raylib_license_file"
+codesign --force --sign - --timestamp=none "$raylib_license_app" \
+    >/dev/null 2>&1 || fail "raylib license fixture could not be signed"
+(
+    cd "$raylib_license_payload"
+    /usr/bin/ditto -c -k --keepParent --norsrc --noextattr --noqtn \
+        --noacl Tanks3D.app "$raylib_license_archive"
+)
+write_checksum "$raylib_license_archive"
+expect_rejection raylib-license-tamper \
+    "bundled raylib license does not match the official source notice" \
+    "$raylib_license_archive" Tanks3D-raylib-license-tamper
+
+echo "Distribution verifier negative tests passed: 13 rejection cases."

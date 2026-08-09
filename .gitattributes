@@ -1,0 +1,2 @@
+# Preserve the exact upstream raylib 6.0 license bytes.
+LICENSES/Zlib-raylib.txt whitespace=-trailing-space

@@ -1,8 +1,8 @@
 # Asset Sources and License Scope
 
-Third-party licenses apply to their files even when the repository as a whole
-uses PolyForm Noncommercial 1.0.0. The project license cannot revoke rights
-already granted by MIT, zlib, or CC0.
+The root PolyForm Noncommercial 1.0.0 license governs only project-owned
+portions. Third-party licenses continue to govern their files, and the project
+license cannot revoke rights already granted by MIT, zlib, or CC0.
 
 ## Project-authored content
 

@@ -17,6 +17,7 @@ fi
 
 project_root=$1
 candidate_dir=$2
+required_raylib_version=6.0
 
 fail()
 {
@@ -279,6 +280,8 @@ config_source_commit=$(config_value source-commit) || \
     fail "build configuration source commit is missing or ambiguous"
 config_source_tag=$(config_value source-tag) || \
     fail "build configuration source tag is missing or ambiguous"
+config_raylib_version=$(config_value raylib-version) || \
+    fail "build configuration raylib version is missing or ambiguous"
 [ "$config_arch" = "$dist_arch" ] || \
     fail "build configuration architecture does not match the attestation"
 [ "$config_macos_min" = "$dist_macos_min" ] || \
@@ -287,6 +290,8 @@ config_source_tag=$(config_value source-tag) || \
     fail "build configuration source commit does not match the attestation"
 [ "$config_source_tag" = "$source_tag" ] || \
     fail "build configuration source tag does not match the attestation"
+[ "$config_raylib_version" = "$required_raylib_version" ] || \
+    fail "build configuration raylib version is unsupported"
 
 dist_verifier="$project_root/scripts/verify_macos_dist.sh"
 [ -f "$dist_verifier" ] && [ ! -L "$dist_verifier" ] || \

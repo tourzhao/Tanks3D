@@ -59,13 +59,21 @@ set together.
 deployment-target mismatch. It verifies the ZIP checksum and structure,
 exact resource and license manifest, bundle metadata, system-only dynamic
 dependencies, ad-hoc signature integrity, absence of quarantine/DLP metadata or
-local paths, and all integrated self-tests after extraction. Eleven isolated
+local paths, and all integrated self-tests after extraction. Thirteen isolated
 negative fixtures cover checksum-name/content mismatches, a checksum symlink,
 input and resolved newline-bearing paths, lexical and symlink-parent path
 escapes, an archive symlink, an extra top-level payload, an archived symbolic
-link, and a checksum-updated mutation of a signature-sealed runtime resource.
-The last case proves accidental-tamper detection by the ad-hoc resource seal; it
-does not authenticate the publisher or replace Developer ID signing.
+link, a checksum-updated mutation of a signature-sealed runtime resource, and
+re-signed mutations of both raylib notice files. The runtime-resource case
+proves accidental-tamper detection by the ad-hoc resource seal; the notice
+cases prove the independent byte comparisons. Neither mechanism authenticates
+the publisher or replaces Developer ID signing.
+
+The release path accepts only raylib 6.0 and verifies that the repository's
+raylib license is the exact official 6.0 text before compiling. It also ships
+and byte-compares the version-locked embedded-dependency notices. A raylib
+upgrade therefore requires an explicit notice audit and a newly attested
+candidate; do not bypass the version check.
 
 The release object cache carries a configuration fingerprint. Changing the
 compiler identity, raylib prefix or archive contents, architecture, deployment

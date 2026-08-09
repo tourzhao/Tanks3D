@@ -1178,3 +1178,25 @@ and fifteen performance-runner tests pass. The Alpha candidate gate also passes
 rejections, and both success paths. Real candidate construction, human
 one-/two-player and audio QA, the 30-minute run, clean-Mac execution, approvals,
 and publication remain deliberately external release work.
+
+The fifty-second increment closes the statically linked raylib notice gap
+without changing gameplay, maps, assets, or runtime code. The distribution now
+requires raylib 6.0, records that version in the hashed build configuration,
+and rejects a missing, different, or ambiguous version in both candidate
+construction and strict verification. The official raylib 6.0 zlib text is
+preserved byte-for-byte and pinned to SHA-256
+`882a5a819cf562aa3583aae3af3f2211dda15c63de9fc8cc4b399a2f9e78d799`.
+A tag/commit/archive-bound dependency inventory preserves the separate GLFW,
+MIT, MIT-0, CC0, WTFPL, GLAD/Khronos, and Apache 2.0 notices for code present in
+the macOS static executable. The dependency inventory, exact raylib notice, and
+full Apache license are copied into the signed app, named by the exact
+distribution manifest, and byte-compared after extraction. Two re-signed
+notice mutations prove those
+checks are independent of the resource signature, bringing the distribution
+verifier to 13 rejection cases. Candidate tooling now passes 14 build
+rejections, ten strict-verifier rejections, five tagged-verifier rejections,
+and both success paths. `make test`, `make test-dist DIST_CHANNEL=alpha.4`, the
+59/15/22/10/4/13/11/15 release-tool suites, and the focused initializer rerun
+pass. The C++ ledger remains 221 suites and 8,580 checks because this increment
+does not alter production C++ behavior. No candidate, tag, or publication was
+created.

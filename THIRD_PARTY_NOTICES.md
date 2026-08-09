@@ -18,14 +18,21 @@ in
 [`krystiankaluzny/Tanks` pull request 35](https://github.com/krystiankaluzny/Tanks/pull/35).
 See `ASSET_LICENSES.md` for the audio provenance limitation.
 
-## raylib and shadow-map example
+## raylib 6.0, embedded dependencies, and shadow-map example
 
 This project links against [raylib](https://www.raylib.com/) and adapts parts of
 raylib's official shadow-map example. raylib and its examples use the
 unmodified zlib/libpng license. Copyright (c) 2013-2026 Ramon Santamaria
-(@raysan5). The notice is reproduced in `LICENSES/Zlib-raylib.txt`.
+(@raysan5). The exact raylib 6.0 notice is reproduced in
+`LICENSES/Zlib-raylib.txt`.
 
-raylib is a build dependency and is not vendored in this source repository.
+Source builds use a separately installed raylib; its sources are not vendored
+in this repository. macOS release artifacts statically link raylib 6.0, so the
+raylib code and its compiled-in `src/external` components are part of the
+executable and are not covered by the project's PolyForm terms. Their
+version-locked notices are reproduced in
+`LICENSES/Raylib-6.0-dependencies.txt`; the Apache 2.0 text referenced by the
+GLAD/Khronos notice is in `LICENSES/Apache-2.0.txt`.
 
 ## Quaternius QA model
 

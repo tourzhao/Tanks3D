@@ -1,7 +1,9 @@
 ./licenses/ASSET_LICENSES.md
 ./licenses/LICENSE
+./licenses/LICENSES/Apache-2.0.txt
 ./licenses/LICENSES/CC0-1.0.txt
 ./licenses/LICENSES/MIT-upstream.txt
+./licenses/LICENSES/Raylib-6.0-dependencies.txt
 ./licenses/LICENSES/Zlib-raylib.txt
 ./licenses/NOTICE
 ./licenses/README.md

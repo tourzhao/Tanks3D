@@ -11,6 +11,7 @@ fi
 
 project_root=${1:-.}
 dist_channel=${2:-alpha.1}
+required_raylib_version=6.0
 
 fail()
 {
@@ -186,6 +187,8 @@ dist_source_commit=$(read_config_value source-commit) || \
     fail "distribution source commit is missing or ambiguous"
 dist_source_tag=$(read_config_value source-tag) || \
     fail "distribution source tag is missing or ambiguous"
+dist_raylib_version=$(read_config_value raylib-version) || \
+    fail "distribution raylib version is missing or ambiguous"
 [ "$dist_arch" = arm64 ] || \
     fail "Alpha candidates must target arm64, not '$dist_arch'"
 printf '%s\n' "$dist_macos_min" | \
@@ -195,6 +198,8 @@ printf '%s\n' "$dist_macos_min" | \
     fail "distribution build configuration names a different source commit"
 [ "$dist_source_tag" = "$release_tag" ] || \
     fail "distribution build configuration names a different source tag"
+[ "$dist_raylib_version" = "$required_raylib_version" ] || \
+    fail "distribution build configuration names an unsupported raylib version"
 
 artifact_basename="Tanks3D-$app_version-$dist_channel-macos-$dist_arch-macos$dist_macos_min"
 artifact_filename="$artifact_basename.zip"

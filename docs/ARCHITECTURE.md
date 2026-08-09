@@ -852,11 +852,12 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
   driver is also instrumented for inline event value semantics. Ten pure-rule
   and seven app-layer executables now contribute to eighteen profiles, which
   merge without duplicate-map warnings.
-- The macOS Alpha distribution path statically links the installed raylib,
-  matches its real deployment target, carries all project and third-party
-  notices, applies an ad-hoc integrity signature, and verifies the ZIP checksum,
-  manifest, system-only dependencies, signature, and full self-test after a
-  clean extraction. Developer ID signing and notarization remain release work.
+- The macOS Alpha distribution path requires and statically links raylib 6.0,
+  matches its real deployment target, carries the exact raylib license and the
+  version-locked embedded-dependency notices, applies an ad-hoc integrity
+  signature, and verifies the ZIP checksum, manifest, system-only dependencies,
+  signature, and full self-test after a clean extraction. Developer ID signing
+  and notarization remain release work.
 - Post-tag verification clones the attested source commit privately and runs
   that commit's strict candidate verifier, so later documentation cannot move
   or silently reinterpret the release tag. A separate machine-readable status

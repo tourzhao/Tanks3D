@@ -58,5 +58,6 @@ rules or assets explicitly and update `ASSET_LICENSES.md` and
 ## Licensing
 
 New project-owned contributions must be compatible with PolyForm
-Noncommercial 1.0.0. Third-party MIT, zlib, and CC0 portions retain their own
-terms; never relabel them as PolyForm-only or remove required notices.
+Noncommercial 1.0.0. Third-party MIT, MIT-0, zlib, Apache-2.0, WTFPL,
+public-domain, and CC0 portions retain their own terms; never relabel them as
+PolyForm-only or remove required notices.

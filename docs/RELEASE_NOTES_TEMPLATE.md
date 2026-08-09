@@ -116,7 +116,9 @@ not substitute concept art or an older build.
 ## Licensing and Audio Decision
 
 This is a non-commercial, source-available fan project; third-party materials
-retain their own terms. Link the notices shipped inside the exact artifact.
+retain their own terms. Project-owned portions use PolyForm Noncommercial;
+release artifacts statically link raylib 6.0 and its embedded dependencies
+under their separate terms. Link the notices shipped inside the exact artifact.
 
 - Project license and required notice: NOT VERIFIED — BLOCKED
 - Third-party notices and asset provenance: NOT VERIFIED — BLOCKED

@@ -46,10 +46,11 @@ operation after verifying that they are archived elsewhere.
 ## macOS Alpha package
 
 `make dist` builds and verifies a self-contained ZIP for the current Mac
-architecture. It statically links the installed raylib, copies all required
-notices into the app, applies an ad-hoc integrity signature, generates a SHA-256
-file, extracts the ZIP into a temporary directory, and reruns the complete
-self-test from that extracted app. Outputs are written under `build/dist/`.
+architecture. It requires and statically links raylib 6.0, copies the
+version-locked raylib and embedded-dependency notices into the app, applies an
+ad-hoc integrity signature, generates a SHA-256 file, extracts the ZIP into a
+temporary directory, and reruns the complete self-test from that extracted app.
+Outputs are written under `build/dist/`.
 
 The archive name records the architecture and the real deployment target, for
 example `Tanks3D-0.1.0-alpha.3-macos-arm64-macos26.0.zip`. That target is read
@@ -326,11 +327,12 @@ and direct-fire streaks reset when the player tank is destroyed.
 - `macos/` contains application-bundle metadata.
 - `scripts/verify_macos_dist.sh` validates the extracted Alpha archive rather
   than trusting the staging directory.
-- `tests/test_macos_dist_verifier.sh` exercises eleven isolated rejection paths:
+- `tests/test_macos_dist_verifier.sh` exercises thirteen isolated rejection paths:
   checksum-name/content mismatches, a checksum symlink, input and resolved
   newline-bearing paths, lexical and symlink-parent path escapes, an archive
   symlink, an extra top-level payload, an archived symbolic link, and a
-  checksum-updated signed-resource mutation.
+  checksum-updated signed-resource mutation, plus re-signed mutations of the
+  raylib dependency notice and official raylib license.
 
 Run the importer check with:
 
@@ -382,11 +384,14 @@ Project-owned source and assets are provided under the
 [PolyForm Noncommercial License 1.0.0](LICENSE). Commercial use is not granted.
 This is source-available software and is not advertised as OSI open source.
 The recorded author identity is **tourzhao**; the required notice line is
-`Copyright (c) 2026 tourzhao.` and is preserved in [NOTICE](NOTICE).
+`Required Notice: Copyright (c) 2026 tourzhao.` and is preserved in
+[NOTICE](NOTICE).
 
 Third-party portions keep their own licenses, which take precedence over the
-project license: upstream MIT material, raylib/zlib example material, and the
-CC0 QA model are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-and `LICENSES/`. Asset provenance and the conservative audio caveat are in
-[ASSET_LICENSES.md](ASSET_LICENSES.md). No license here grants trademark,
-publicity, or other third-party rights.
+project license: upstream MIT material, statically linked raylib 6.0 and its
+embedded dependencies, and the CC0 QA model are documented in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `LICENSES/`. Those terms
+may grant rights independently of PolyForm. Asset provenance and the
+conservative audio caveat are in [ASSET_LICENSES.md](ASSET_LICENSES.md). No
+license here grants trademark, character, publicity, or other third-party IP
+rights; this is an independent, unaffiliated fan project.

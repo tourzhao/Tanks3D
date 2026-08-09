@@ -169,6 +169,7 @@ case "$target" in
         dist_channel=alpha.1
         dist_source_commit=
         dist_source_tag=
+        dist_raylib_version=6.0
         for make_argument do
             case "$make_argument" in
                 DIST_CHANNEL=*) dist_channel=${make_argument#DIST_CHANNEL=} ;;
@@ -190,6 +191,9 @@ case "$target" in
         if [ -n "${FAKE_CONFIG_SOURCE_TAG:-}" ]; then
             dist_source_tag=$FAKE_CONFIG_SOURCE_TAG
         fi
+        if [ -n "${FAKE_CONFIG_RAYLIB_VERSION:-}" ]; then
+            dist_raylib_version=$FAKE_CONFIG_RAYLIB_VERSION
+        fi
         dist_dir="$fixture_root/build/dist"
         payload_dir="$dist_dir/payload"
         artifact_basename="Tanks3D-0.1.0-$dist_channel-macos-arm64-macos26.0"
@@ -197,6 +201,7 @@ case "$target" in
         mkdir -p "$payload_dir"
         printf '%s\n' "source-commit=$dist_source_commit" \
             "source-tag=$dist_source_tag" 'arch=arm64' 'macos-min=26.0' \
+            "raylib-version=$dist_raylib_version" \
             'compiler=controlled-test-compiler' > "$dist_dir/.build-config"
         printf '%s\n' 'controlled ZIP payload' > "$payload_dir/payload.txt"
         (
@@ -381,6 +386,11 @@ expect_build_rejection mismatched-build-config-tag \
     "distribution build configuration names a different source tag" \
     "$fixture_dir" FAKE_CONFIG_SOURCE_TAG=v0.1.0-alpha.other
 
+prepare_fixture unsupported-build-config-raylib correct
+expect_build_rejection unsupported-build-config-raylib \
+    "distribution build configuration names an unsupported raylib version" \
+    "$fixture_dir" FAKE_CONFIG_RAYLIB_VERSION=6.1
+
 prepare_fixture valid-candidate correct
 valid_fixture=$fixture_dir
 seed_preserved_release_outputs "$valid_fixture"
@@ -445,6 +455,19 @@ sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256
 mv "$attestation.tmp" "$attestation"
 expect_verifier_rejection config-source-tag \
     "build configuration source tag does not match the attestation" \
+    "$valid_fixture" "$valid_candidate"
+cp "$build_config_backup" "$build_config"
+cp "$attestation_backup" "$attestation"
+
+sed 's/^raylib-version=.*/raylib-version=6.1/' \
+    "$build_config" > "$build_config.tmp"
+mv "$build_config.tmp" "$build_config"
+modified_build_config_sha256=$(shasum -a 256 "$build_config" | awk '{print $1}')
+sed "s/^build_config_sha256=.*/build_config_sha256=$modified_build_config_sha256/" \
+    "$attestation" > "$attestation.tmp"
+mv "$attestation.tmp" "$attestation"
+expect_verifier_rejection config-raylib-version \
+    "build configuration raylib version is unsupported" \
     "$valid_fixture" "$valid_candidate"
 cp "$build_config_backup" "$build_config"
 cp "$attestation_backup" "$attestation"
@@ -599,4 +622,4 @@ env TMPDIR="$tagged_temporary_root" \
     fail "restored post-tag candidate did not verify"
 assert_no_tagged_temporary_snapshot
 
-echo "Alpha candidate gate tests passed: 13 build rejections, 9 strict verifier rejections, 5 tagged verifier rejections, 2 successes."
+echo "Alpha candidate gate tests passed: 14 build rejections, 10 strict verifier rejections, 5 tagged verifier rejections, 2 successes."

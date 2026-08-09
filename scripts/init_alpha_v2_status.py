@@ -871,16 +871,22 @@ Audio decision: **NONE — BLOCKED**
 This draft remains blocked until quarantined-download Gatekeeper behavior,
 one-/two-player QA, hardware audio, a 30-minute performance session, known
 issues, and independent approvals are recorded. Project-owned code and assets
-use the PolyForm Noncommercial License 1.0.0. Third-party materials retain their
-own terms in `NOTICE`, `THIRD_PARTY_NOTICES.md`, and `ASSET_LICENSES.md`.
-This independent fan project is not affiliated with or endorsed by any
-publisher, manufacturer, government, or other rights holder.
+use the [PolyForm Noncommercial License 1.0.0](../../LICENSE); commercial use of
+those portions is not licensed. The exact project notice is in
+[`NOTICE`](../../NOTICE). Third-party materials are not relicensed under
+PolyForm: the release statically links raylib 6.0 and its embedded dependencies,
+and their terms are shipped under [`LICENSES/`](../../LICENSES/) and summarized
+in [`THIRD_PARTY_NOTICES.md`](../../THIRD_PARTY_NOTICES.md). Asset provenance is
+recorded in [`ASSET_LICENSES.md`](../../ASSET_LICENSES.md). Those third-party
+terms may grant rights independently of PolyForm. No included license grants
+trademark, character, publicity, or other third-party IP rights; this is an
+independent, unaffiliated fan project.
 
 ## Author
 
 Author: **tourzhao**
 
-Required notice: `Copyright (c) 2026 tourzhao.`
+Required notice: `Required Notice: Copyright (c) 2026 tourzhao.`
 """.format(
         tag=tag,
         artifact=artifact,
