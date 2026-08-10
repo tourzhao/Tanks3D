@@ -718,6 +718,23 @@ void StageMap::resetTerrainDamageState()
 
 bool StageMap::generatedStageIsPlayable() const
 {
+    // The fixed Battle City stage deliberately shields the base approach with
+    // destructible brickwork.  Keep its spawn/player routes validated, but do
+    // not require that protected approach to be open before combat begins.
+    if (stage_ == 1)
+    {
+        for (XZ spawn : kEnemySpawnPoints)
+            if (collidesWithTank(spawn, kTankRadius) ||
+                !hasTankRoute(spawn, kPlayerSpawnPoints[0]) ||
+                !hasTankRoute(spawn, kPlayerSpawnPoints[1]))
+                return false;
+        for (XZ spawn : kPlayerSpawnPoints)
+            if (collidesWithTank(spawn, kTankRadius))
+                return false;
+        return hasTankRoute(kPlayerSpawnPoints[0], kPlayerSpawnPoints[1]) &&
+               !collidesWithTank({13.0f, 20.0f}, kTankRadius);
+    }
+
     for (XZ spawn : kEnemySpawnPoints)
         if (collidesWithTank(spawn, kTankRadius) ||
             !hasTankRoute(spawn, kPlayerSpawnPoints[0]) ||

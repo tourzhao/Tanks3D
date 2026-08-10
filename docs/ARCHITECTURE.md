@@ -572,13 +572,19 @@ app/        lifecycle/setup target; owned command values/mappers and sync sink
 core/       coordinates, directions, settings, shared value types
 game/       entities, BonusSystem, StageGenerator, StageMap, CombatSystem,
             SettlementSystem, incremental EnemySystem, GameSession
-platform/   raylib input adapter
+platform/   macOS GameController backend behind a C++ snapshot boundary
 audio/      shared cue values and runtime output interface; mapping target
 render/     Renderer, HUD, lighting, models, GPU resources
 tests/      focused rule and session tests
 ```
 
-The current input adapter produces commands for `Game3D`, which now records
+The raylib-free input adapter converts gamepad snapshots, deadzones, and stable
+P1/P2 assignments into the same player commands as the keyboard adapter. On
+macOS, the Objective-C++ platform edge receives `GameController.framework`
+callbacks on a serial user-interactive queue and latches edges for frame-loop
+consumption. This avoids both the silent Bluetooth Switch Pro path in GLFW and
+main-thread render stalls while keeping Apple types out of application and
+gameplay code. `Game3D` records
 `GameEvent` values such as `ShellFired`, `TankDamaged`, and `BonusCollected`.
 The target `GameSession` keeps that contract while rendering reads a const
 snapshot and audio/effects consume events. Code eventually moved into `core/`
@@ -665,7 +671,7 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
 3. **Migrate event consumers.** Replace the temporary event plus presentation
    dual-write only after audio/effect mappings have dedicated tests. Keep the
    existing renderer consuming a compatibility snapshot during this phase.
-4. **Split platform services.** Move `AudioBank`, raylib input, render targets,
+4. **Split remaining platform services.** Move `AudioBank`, render targets,
    lighting, and resource owners into implementation files with move-only RAII.
 5. **Migrate visual modules unchanged.** Move procedural tanks, national bases,
    shaders, and effects only after screenshot and gameplay checks exist. Redesign
@@ -679,9 +685,11 @@ with `core::XZ`; only the renderer creates local `Vector3` heights.
 - A typed scripted `RandomSource` exercises the same production spawn and
   pickup paths while checking distribution ranges, lazy draw consumption,
   strict probability boundaries, Bandage weighting, and base-position retries.
-- `Game3D` consumes data-only two-player input frames. A thin raylib adapter
-  preserves the existing bindings, while headless production-path tests lock
-  direction priority, ice travel, held fire, shell caps, and player isolation.
+- `Game3D` consumes data-only two-player input frames. Thin keyboard and
+  gamepad adapters preserve the existing bindings and add cardinal D-pad/stick
+  input, hot-plug detection, and stable two-pad assignment. Headless tests lock
+  direction priority, deadzone hysteresis, disconnect behavior, ice travel,
+  held fire, shell caps, and player isolation.
 - `Game3D` records ten data-only rule event types for each update. A 69-check
   suite verifies event causes, ordering, authoritative state, and non-repetition
   across combat, pickups, player lifecycle, base damage, and settlement.

@@ -17,6 +17,7 @@
 #include <rlgl.h>
 
 #include "app/command_side_effect_dispatch.h"
+#include "app/input_adapter.h"
 #include "app/release_performance_capabilities.h"
 #include "app/release_performance_log.h"
 #include "app/release_performance_options.h"
@@ -41,6 +42,7 @@
 #include "game/player_system.h"
 #include "game/settlement_system.h"
 #include "game/stage_map.h"
+#include "platform/gamepad_backend.h"
 #include "post_process.h"
 #include "tank_assets.h"
 #include "../tests/test_support.h"
@@ -91,12 +93,17 @@ using tanks3d::app::CommitTankShellImpactAction;
 using tanks3d::app::CommandSideEffectDisposition;
 using tanks3d::app::CommandSideEffectSink;
 using tanks3d::app::Float3;
+using tanks3d::app::GamepadActionFrame;
+using tanks3d::app::GamepadAssignments;
+using tanks3d::app::GamepadInputState;
+using tanks3d::app::GamepadStickOrientation;
 using tanks3d::app::RequestTankAudioAction;
 using tanks3d::app::RequestMapCoreAudioAction;
 using tanks3d::app::Rgba8;
 using tanks3d::app::ReleasePerformanceOptions;
 using tanks3d::app::ReleasePerformanceRecorder;
 using tanks3d::app::ReleaseScreenshotOptions;
+using tanks3d::app::UiInputFrame;
 using tanks3d::app::checkReleasePerformanceCapabilities;
 using tanks3d::app::kReleasePerformanceCapabilitiesArgument;
 using tanks3d::app::kReleasePerformanceCompleteMarker;
@@ -126,6 +133,10 @@ using tanks3d::app::parseReleasePerformanceOptions;
 using tanks3d::app::parseReleaseScreenshotOptions;
 using tanks3d::app::writeReleasePerformanceCapabilities;
 using tanks3d::app::dispatchCommandSideEffect;
+using tanks3d::app::kPhysicalGamepadSlotCount;
+using tanks3d::app::mapGamepadInput;
+using tanks3d::app::mergePlayerControlFrame;
+using tanks3d::app::mergeUiInputFrame;
 using tanks3d::app::shellMapCorePresentationStep;
 using tanks3d::app::shellTankPresentationStep;
 using tanks3d::audio::AudioCue;
@@ -392,11 +403,13 @@ float enemyCreationScale(int frame)
                : 0.0f;
 }
 
+constexpr std::chrono::nanoseconds kInteractiveFrameBudget{8'333'333};
+
 class LaptopFramePacer
 {
 public:
     explicit LaptopFramePacer(std::chrono::steady_clock::time_point start)
-        : deadline_(start + std::chrono::microseconds(16667))
+        : deadline_(start + kInteractiveFrameBudget)
     {
     }
 
@@ -1172,14 +1185,16 @@ void main() { }
     }
 
     template <typename DrawCasters>
-    void updateShadowMap(DrawCasters &&drawCasters, int playerCount)
+    void updateShadowMap(DrawCasters &&drawCasters)
     {
         if (!shadowAvailable_ || !IsShaderValid(depthShader_))
             return;
 
-        // High keeps moving silhouettes temporally coherent. Balanced trades
-        // shadow refresh rate for CPU headroom, especially in split screen.
-        const int interval = highQuality_ ? 1 : (playerCount > 1 ? 3 : 2);
+        // The main loop targets 120 Hz, but a 60 Hz shadow refresh is already
+        // temporally coherent and preserves High's previous visual cadence.
+        // Balanced keeps its previous 30 Hz budget instead of paying for the
+        // 2048-square depth pass twice as often after the frame-rate increase.
+        const int interval = highQuality_ ? 2 : 4;
         const bool shouldUpdate = !hasRenderedShadow_ ||
                                   (shadowFrameCounter_ % static_cast<unsigned int>(interval) == 0U);
         ++shadowFrameCounter_;
@@ -5787,7 +5802,8 @@ void drawStreakPopups(const Game3D &game, const Camera3D &camera,
     }
 }
 
-void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport)
+void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport,
+                     bool showFrameRate)
 {
     const Player &player = game.players()[playerIndex];
     const Color accent = playerColor(playerIndex);
@@ -5808,6 +5824,10 @@ void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport)
 
     const std::string nationLine = "P" + std::to_string(playerIndex + 1) +
                                    "  " + nationName(player.nation);
+    const bool drawFrameRate = showFrameRate && playerIndex == 0;
+    const std::string fpsLine = drawFrameRate
+                                    ? "FPS " + std::to_string(GetFPS())
+                                    : std::string{};
     const std::string statusLine = "STAGE " + std::to_string(game.stage()) +
                                    "   LIVES " + std::to_string(std::max(0, player.lives)) +
                                    "   ENEMY " + std::to_string(game.enemiesLeft());
@@ -5822,8 +5842,20 @@ void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport)
                             (steelProtected ? 24 : 0);
     DrawRectangle(left - 7, top - 5, panelWidth,
                   panelHeight, Color{5, 8, 11, 185});
+    const int fpsFontSize = 15;
+    const int fpsWidth = drawFrameRate
+                             ? MeasureText(fpsLine.c_str(), fpsFontSize)
+                             : 0;
+    const int nationWidth = drawFrameRate
+                                ? panelWidth - fpsWidth - 32
+                                : panelWidth - 14;
     drawTextShadow(nationLine, left, top,
-                   fittedFontSize(nationLine, panelWidth - 14, 22, 14), accent);
+                   fittedFontSize(nationLine, nationWidth, 22, 14), accent);
+    if (drawFrameRate)
+    {
+        drawTextShadow(fpsLine, left + panelWidth - fpsWidth - 14, top + 3,
+                       fpsFontSize, Color{139, 218, 235, 255});
+    }
     drawTextShadow(statusLine, left, top + 26,
                    fittedFontSize(statusLine, panelWidth - 14, 16, 11), RAYWHITE);
     drawTextShadow(vehicleLine, left, top + 49,
@@ -5871,8 +5903,10 @@ void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport)
                             : static_cast<int>(viewport.x + viewport.width *
                                   (playerIndex == 0 ? 0.25f : 0.75f));
 
-    const std::string controls = playerIndex == 0 ? "ARROWS DRIVE   RIGHT OPTION / SPACE FIRE"
-                                                   : "WASD DRIVE   LEFT OPTION / F FIRE";
+    const std::string controls =
+        playerIndex == 0
+            ? "PAD 1 / ARROWS   BOTTOM/LEFT FACE OR R1/RT FIRE"
+            : "PAD 2 / WASD   BOTTOM/LEFT FACE OR R1/RT FIRE";
     drawCenteredText(controls, centerX, static_cast<int>(viewport.height) - 28, width < 700 ? 14 : 16, Color{225, 230, 230, 225});
 }
 
@@ -6209,7 +6243,7 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
                               player.id, true, player.nation, true);
             }
             tankAssets.flushQueued(true);
-        }, 1);
+        });
 
     BeginDrawing();
     ClearBackground(BLACK);
@@ -6411,8 +6445,8 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
     }
 
     const std::string prompt = game.settlementCounting()
-                                   ? "ENTER / SPACE: COUNT NOW"
-                                   : "ENTER / SPACE: CONTINUE";
+                                   ? "BOTTOM FACE / ENTER: COUNT NOW"
+                                   : "BOTTOM FACE / ENTER: CONTINUE";
     const int promptY = std::min(screenHeight - 34,
                                  cardTop + cardHeight + 12);
     drawCenteredText(prompt, screenWidth / 2, promptY, 18,
@@ -6444,7 +6478,7 @@ void renderHighScore(const Game3D &game)
                      screenHeight / 2 - 105, 76, flash);
     drawCenteredText(std::to_string(game.settlementHighScore()),
                      screenWidth / 2, screenHeight / 2 + 5, 58, flash);
-    drawCenteredText("ENTER / SPACE: CONTINUE", screenWidth / 2,
+    drawCenteredText("BOTTOM FACE / ENTER: CONTINUE", screenWidth / 2,
                      screenHeight - 70, 18,
                      Color{205, 210, 205, 255});
     EndDrawing();
@@ -6452,7 +6486,8 @@ void renderHighScore(const Game3D &game)
 
 bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                 TankAssets &tankAssets, const EnvironmentAssets &environment,
-                bonus_assets::Assets &bonusAssets, PostProcess &postProcess)
+                bonus_assets::Assets &bonusAssets, PostProcess &postProcess,
+                bool showFrameRate)
 {
     if (game.highScoreDisplay())
     {
@@ -6473,10 +6508,10 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
     const Camera3D sharedCamera = game.cameraForPlayer(0);
 
     // The fixed sun and arena share one stable orthographic shadow map across
-    // the shared player camera. High refreshes moving silhouettes every frame;
+    // the shared player camera. High refreshes moving silhouettes at 60 Hz;
     // Balanced updates less often to preserve laptop headroom.
     lighting.updateShadowMap(
-        [&game, &tankAssets]() { drawShadowCasters(game, tankAssets); }, 1);
+        [&game, &tankAssets]() { drawShadowCasters(game, tankAssets); });
 
     for (int index = 0; index < 1; ++index)
     {
@@ -6510,7 +6545,7 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                      static_cast<float>(GetTime()));
     drawStreakPopups(game, sharedCamera, screenWidth, screenHeight);
     for (int index = 0; index < game.playerCount(); ++index)
-        drawViewportHud(game, index, destination);
+        drawViewportHud(game, index, destination, showFrameRate);
     drawGltfProbeHud(tankAssets, screenWidth, screenHeight);
     DrawRectangleLinesEx(destination, 3.0f, Color{224, 191, 67, 255});
     if (game.bonusMessageTimer() > 0.0f)
@@ -6531,14 +6566,16 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                          : game.stageIntro() || game.stageTransition() ? GOLD
                                                                        : RAYWHITE);
         if (game.gameOver())
-            drawCenteredText("BATTLE REPORT IN A MOMENT    ESC: SETUP",
+            drawCenteredText("BATTLE REPORT SOON    MINUS / ESC: SETUP",
                              screenWidth / 2, screenHeight / 2 + 24, 21,
                              LIGHTGRAY);
         else if (game.stageIntro())
             drawCenteredText("GET READY", screenWidth / 2,
                              screenHeight / 2 + 24, 21, LIGHTGRAY);
         else if (game.paused())
-            drawCenteredText("ENTER: RESUME    ESC: SETUP", screenWidth / 2, screenHeight / 2 + 24, 21, LIGHTGRAY);
+            drawCenteredText("PLUS / ENTER: RESUME    MINUS / ESC: SETUP",
+                             screenWidth / 2, screenHeight / 2 + 24, 21,
+                             LIGHTGRAY);
     }
     EndDrawing();
     return true;
@@ -6551,9 +6588,11 @@ struct MenuSettings
     int lives = 10;
     std::array<Nation, 2> nations{{Nation::UnitedStates, Nation::SovietUnion}};
     AdvancedGameSettings advanced{};
+    bool isometricAnalogStick = true;
     int selected = 0;
     int advancedSelected = 0;
     bool advancedOpen = false;
+    int connectedGamepads = 0;
 };
 
 int menuRowCount(const MenuSettings &settings)
@@ -6566,30 +6605,30 @@ int advancedMenuRow(const MenuSettings &settings)
     return menuRowCount(settings) - 1;
 }
 
-bool updateMenu(MenuSettings &settings)
+bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
 {
     bool changed = false;
     int rowCount = menuRowCount(settings);
     const int previousPlayerCount = settings.playerCount;
     const bool advancedWasSelected =
         settings.selected == advancedMenuRow(settings);
-    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W))
+    if (input.upPressed)
     {
         settings.selected = (settings.selected + rowCount - 1) % rowCount;
         changed = true;
     }
-    if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S))
+    if (input.downPressed)
     {
         settings.selected = (settings.selected + 1) % rowCount;
         changed = true;
     }
 
     int direction = 0;
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A))
+    if (input.leftPressed)
         direction = -1;
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D))
+    if (input.rightPressed)
         direction = 1;
-    const int step = (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) ? 10 : 1;
+    const int step = input.coarseAdjustment ? 10 : 1;
     if (direction != 0)
     {
         if (settings.selected == 0)
@@ -6615,12 +6654,12 @@ bool updateMenu(MenuSettings &settings)
             changed = true;
         }
     }
-    if (IsKeyPressed(KEY_ONE))
+    if (input.selectOnePlayerPressed)
     {
         changed = changed || settings.playerCount != 1;
         settings.playerCount = 1;
     }
-    if (IsKeyPressed(KEY_TWO))
+    if (input.selectTwoPlayerPressed)
     {
         changed = changed || settings.playerCount != 2;
         settings.playerCount = 2;
@@ -6633,29 +6672,30 @@ bool updateMenu(MenuSettings &settings)
     return changed;
 }
 
-constexpr int kAdvancedMenuRowCount = 5;
+constexpr int kAdvancedMenuRowCount = 6;
 constexpr int kAdvancedMenuBackRow = kAdvancedMenuRowCount - 1;
 
-bool advancedSettingsAreDefault(const AdvancedGameSettings &settings)
+bool advancedSettingsAreDefault(const MenuSettings &settings)
 {
-    return settings.playerMaximumHitPoints ==
+    return settings.advanced.playerMaximumHitPoints ==
                kDefaultPlayerMaximumHitPoints &&
-           settings.enemySpeedPercent == 0 &&
-           settings.enemyFireRatePercent == 0 &&
-           settings.enemySpawnRatePercent == 0;
+           settings.advanced.enemySpeedPercent == 0 &&
+           settings.advanced.enemyFireRatePercent == 0 &&
+           settings.advanced.enemySpawnRatePercent == 0 &&
+           settings.isometricAnalogStick;
 }
 
-bool updateAdvancedMenu(MenuSettings &settings)
+bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
 {
     bool changed = false;
-    if (IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W))
+    if (input.upPressed)
     {
         settings.advancedSelected =
             (settings.advancedSelected + kAdvancedMenuRowCount - 1) %
             kAdvancedMenuRowCount;
         changed = true;
     }
-    if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S))
+    if (input.downPressed)
     {
         settings.advancedSelected =
             (settings.advancedSelected + 1) % kAdvancedMenuRowCount;
@@ -6663,9 +6703,9 @@ bool updateAdvancedMenu(MenuSettings &settings)
     }
 
     int direction = 0;
-    if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A))
+    if (input.leftPressed)
         direction = -1;
-    if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D))
+    if (input.rightPressed)
         direction = 1;
     if (direction != 0)
     {
@@ -6690,12 +6730,19 @@ bool updateAdvancedMenu(MenuSettings &settings)
                 kEnemyTuningMinimumPercent, kEnemyTuningMaximumPercent);
             changed = true;
         }
+        else if (settings.advancedSelected == 4)
+        {
+            settings.isometricAnalogStick =
+                !settings.isometricAnalogStick;
+            changed = true;
+        }
     }
 
-    if (IsKeyPressed(KEY_R))
+    if (input.resetPressed)
     {
-        changed = changed || !advancedSettingsAreDefault(settings.advanced);
+        changed = changed || !advancedSettingsAreDefault(settings);
         settings.advanced = {};
+        settings.isometricAnalogStick = true;
     }
     return changed;
 }
@@ -6796,15 +6843,21 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
     }
 
     const int helpY = panelY + panelHeight + 14;
-    drawCenteredText("UP/DOWN SELECT   LEFT/RIGHT CHANGE   SHIFT: x10", width / 2,
-                     helpY, 16, LIGHTGRAY);
-    drawCenteredText("ENTER / SPACE  START OR OPEN", width / 2, helpY + 31, 25,
+    drawCenteredText("D-PAD / STICK OR KEYS: SELECT / CHANGE    SHOULDER / SHIFT: x10",
+                     width / 2, helpY, 16, LIGHTGRAY);
+    drawCenteredText("BOTTOM FACE / ENTER: START OR OPEN", width / 2,
+                     helpY + 31, 25,
                      Color{255, 224, 94, 255});
-    drawCenteredText("P1  ARROWS + RIGHT OPTION     P2  WASD + LEFT OPTION", width / 2,
+    drawCenteredText("P1  PAD 1 / ARROWS     P2  PAD 2 / WASD", width / 2,
                      helpY + 67, 16,
                      Color{189, 210, 214, 255});
-    drawCenteredText("F8 QUALITY     F11 FULLSCREEN     ESC QUIT", width / 2,
-                     helpY + 94, 14, Color{135, 157, 161, 255});
+    const std::string deviceLine =
+        "GAMEPADS " + std::to_string(settings.connectedGamepads) +
+        "     1P: PAD 1/2     2P: FIRST=P1 SECOND=P2     "
+        "F8 QUALITY     F11 FULLSCREEN     MINUS / ESC QUIT";
+    drawCenteredText(deviceLine, width / 2, helpY + 94,
+                     fittedFontSize(deviceLine, width - 40, 14, 10),
+                     Color{135, 157, 161, 255});
     if (!error.empty())
         drawCenteredText(error, width / 2, height - 42, 17, Color{255, 105, 92, 255});
     EndDrawing();
@@ -6845,7 +6898,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
 
     const std::array<std::string, kAdvancedMenuRowCount> labels{{
         "PLAYER HP", "ENEMY SPEED", "FIRE FREQUENCY", "SPAWN PACE",
-        "BACK TO SETUP"}};
+        "ANALOG STICK", "BACK TO SETUP"}};
     const std::array<std::string, kAdvancedMenuRowCount> values{{
         settings.advanced.playerMaximumHitPoints == 1
             ? "1  BANDAGE OFF"
@@ -6853,6 +6906,8 @@ void drawAdvancedMenu(const MenuSettings &settings)
         percentageLabel(settings.advanced.enemySpeedPercent),
         percentageLabel(settings.advanced.enemyFireRatePercent),
         percentageLabel(settings.advanced.enemySpawnRatePercent),
+        settings.isometricAnalogStick ? "VIEW-ALIGNED 45 DEG"
+                                      : "CLASSIC CARDINAL",
         "RETURN"}};
     const int valueCenter = panelX + panelWidth - 190;
     for (int index = 0; index < kAdvancedMenuRowCount; ++index)
@@ -6882,7 +6937,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
     const int noteY = panelY + 30 + kAdvancedMenuRowCount * rowHeight;
     drawCenteredText("HP 1-6 (STEP 1)    RATES -30% TO +30% (STEP 5%)",
                      width / 2, noteY, 15, Color{170, 198, 203, 255});
-    drawCenteredText("POSITIVE = FASTER / MORE FREQUENT    NEGATIVE = SLOWER",
+    drawCenteredText("ANALOG GAMEPLAY ONLY; D-PAD / KEYS STAY CARDINAL",
                      width / 2, noteY + 26, 15,
                      Color{170, 198, 203, 255});
     drawCenteredText("SPAWN WARNING STAYS 1.0s    PLAYER HP 1 DISABLES BANDAGE",
@@ -6892,10 +6947,14 @@ void drawAdvancedMenu(const MenuSettings &settings)
                          : Color{142, 178, 184, 255});
 
     const int helpY = panelY + panelHeight + 14;
-    drawCenteredText("UP/DOWN SELECT    LEFT/RIGHT CHANGE", width / 2,
+    drawCenteredText("D-PAD / STICK OR KEYS: SELECT / CHANGE", width / 2,
                      helpY, 17, LIGHTGRAY);
-    drawCenteredText("ENTER ON BACK / ESC RETURN    R RESET DEFAULTS", width / 2,
-                     helpY + 32, 17, Color{255, 224, 94, 255});
+    drawCenteredText("BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
+                     width / 2, helpY + 32,
+                     fittedFontSize(
+                         "BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
+                         width - 40, 17, 11),
+                     Color{255, 224, 94, 255});
     EndDrawing();
 }
 
@@ -6934,6 +6993,132 @@ PlayerInputFrame readRaylibPlayerInputFrame()
         [](KeyboardKey key) { return IsKeyDown(key); },
         [](KeyboardKey key) { return IsKeyPressed(key); });
 }
+
+UiInputFrame readRaylibUiInputFrame()
+{
+    UiInputFrame frame;
+    frame.upPressed = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W);
+    frame.downPressed = IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S);
+    frame.leftPressed = IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A);
+    frame.rightPressed = IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D);
+    frame.confirmPressed =
+        IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE);
+    frame.cancelPressed = IsKeyPressed(KEY_ESCAPE);
+    frame.quitPressed = frame.cancelPressed || IsKeyPressed(KEY_Q);
+    frame.pausePressed = IsKeyPressed(KEY_ENTER);
+    frame.restartPressed = IsKeyPressed(KEY_R);
+    frame.resetPressed = frame.restartPressed;
+    frame.coarseAdjustment =
+        IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+    frame.selectOnePlayerPressed = IsKeyPressed(KEY_ONE);
+    frame.selectTwoPlayerPressed = IsKeyPressed(KEY_TWO);
+    return frame;
+}
+
+struct GamepadFrame
+{
+    PlayerInputFrame players;
+    UiInputFrame ui;
+    int connectedCount = 0;
+};
+
+class GamepadInput
+{
+  public:
+    GamepadFrame read(bool gameplayActive, bool enabled,
+                      bool isometricAnalogStick)
+    {
+        GamepadFrame frame;
+        if (!enabled)
+            return frame;
+
+        const tanks3d::platform::GamepadBackendFrame backendFrame =
+            backend_.poll();
+        const auto &snapshots = backendFrame.snapshots;
+        std::array<bool, kPhysicalGamepadSlotCount> available{};
+        for (std::size_t slot = 0; slot < snapshots.size(); ++slot)
+        {
+            available[slot] = snapshots[slot].available;
+            if (available[slot])
+                ++frame.connectedCount;
+        }
+
+        assignments_.update(available, gameplayActive);
+        reportConnectionChanges(available, backendFrame.names);
+        const GamepadStickOrientation stickOrientation =
+            gameplayActive && isometricAnalogStick
+                ? GamepadStickOrientation::Isometric45
+                : GamepadStickOrientation::Cardinal;
+
+        for (std::size_t slot = 0; slot < snapshots.size(); ++slot)
+        {
+            const GamepadActionFrame actions =
+                mapGamepadInput(snapshots[slot], states_[slot],
+                                stickOrientation);
+            const int playerIndex =
+                assignments_.playerIndexForPhysicalSlot(slot);
+            if (!gameplayActive)
+            {
+                if (playerIndex >= 0)
+                    mergeUiInputFrame(frame.ui, actions.ui);
+                continue;
+            }
+            if (playerIndex < 0 ||
+                playerIndex >= static_cast<int>(frame.players.players.size()))
+            {
+                continue;
+            }
+            mergePlayerControlFrame(
+                frame.players.players[static_cast<std::size_t>(playerIndex)],
+                actions.player);
+            mergeUiInputFrame(frame.ui, actions.ui);
+        }
+        return frame;
+    }
+
+  private:
+    void reportConnectionChanges(
+        const std::array<bool, kPhysicalGamepadSlotCount> &available,
+        const std::array<std::string, kPhysicalGamepadSlotCount>
+            &reportedNames)
+    {
+        for (std::size_t slot = 0; slot < available.size(); ++slot)
+        {
+            if (available[slot] == previousAvailable_[slot])
+                continue;
+
+            if (available[slot])
+            {
+                names_[slot] = reportedNames[slot].empty()
+                                   ? "Unknown controller"
+                                   : reportedNames[slot];
+                std::cout << "Gamepad connected in slot " << slot + 1
+                          << ": " << names_[slot];
+                const int playerIndex =
+                    assignments_.playerIndexForPhysicalSlot(slot);
+                if (playerIndex >= 0)
+                    std::cout << " (P" << playerIndex + 1 << ')';
+                else
+                    std::cout << " (unassigned; two player slots are in use)";
+                std::cout << '\n';
+            }
+            else
+            {
+                std::cout << "Gamepad disconnected from slot " << slot + 1;
+                if (!names_[slot].empty())
+                    std::cout << ": " << names_[slot];
+                std::cout << '\n';
+            }
+            previousAvailable_[slot] = available[slot];
+        }
+    }
+
+    tanks3d::platform::GamepadBackend backend_;
+    std::array<GamepadInputState, kPhysicalGamepadSlotCount> states_{};
+    GamepadAssignments assignments_;
+    std::array<bool, kPhysicalGamepadSlotCount> previousAvailable_{};
+    std::array<std::string, kPhysicalGamepadSlotCount> names_{};
+};
 
 fs::path locateResourceRoot(const char *programPath)
 {
@@ -7156,9 +7341,14 @@ int main(int argc, char **argv)
         }
     }
 
-    // Use the explicit 60 Hz frame budget below. Combining it with a 120 Hz
-    // ProMotion swap interval makes GLFW/raylib busy-wait between swaps.
-    unsigned int windowFlags = FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT;
+    // Pace explicitly at 120 Hz for responsive controller input on ProMotion
+    // displays. Combining a separate 60 Hz limiter with the 120 Hz swap
+    // interval made GLFW/raylib wait twice and added avoidable input latency.
+    // The 3D view is already resolved into its HDR render target before the
+    // full-screen post-process pass. Multisampling the Retina back buffer then
+    // shades that resolved image four more times without improving geometry
+    // edges, so keep the presentation buffer single-sampled.
+    unsigned int windowFlags = FLAG_WINDOW_HIGHDPI;
     if (!releaseScreenshot.requested())
         windowFlags |= FLAG_WINDOW_RESIZABLE;
     SetConfigFlags(windowFlags);
@@ -7173,6 +7363,7 @@ int main(int argc, char **argv)
     InitAudioDevice();
 
     MenuSettings settings;
+    GamepadInput gamepadInput;
     AudioBank audio;
     audio.load(resourceRoot);
     SceneLighting lighting;
@@ -7347,7 +7538,8 @@ int main(int argc, char **argv)
         }
     }
 
-    auto previousFrame = std::chrono::steady_clock::now() - std::chrono::microseconds(16667);
+    auto previousFrame =
+        std::chrono::steady_clock::now() - kInteractiveFrameBudget;
     while (!exitRequested && !WindowShouldClose())
     {
         const auto frameStart = std::chrono::steady_clock::now();
@@ -7398,6 +7590,15 @@ int main(int argc, char **argv)
                 break;
             }
         }
+
+        UiInputFrame uiInput = readRaylibUiInputFrame();
+        const GamepadFrame gamepadFrame = gamepadInput.read(
+            inGame, !releaseScreenshot.requested() &&
+                        !releasePerformance.requested(),
+            settings.isometricAnalogStick);
+        mergeUiInputFrame(uiInput, gamepadFrame.ui);
+        settings.connectedGamepads = gamepadFrame.connectedCount;
+
         if (!releaseScreenshot.requested() &&
             !releasePerformance.requested() && IsKeyPressed(KEY_F11))
             ToggleBorderlessWindowed();
@@ -7417,10 +7618,10 @@ int main(int argc, char **argv)
         {
             if (settings.advancedOpen)
             {
-                if (updateAdvancedMenu(settings))
+                if (updateAdvancedMenu(settings, uiInput))
                     audio.play(AudioCue::MenuSelect);
-                const bool returnToSetup = IsKeyPressed(KEY_ESCAPE) ||
-                    ((IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) &&
+                const bool returnToSetup = uiInput.cancelPressed ||
+                    (uiInput.confirmPressed &&
                      settings.advancedSelected == kAdvancedMenuBackRow);
                 if (returnToSetup)
                 {
@@ -7433,13 +7634,13 @@ int main(int argc, char **argv)
                 continue;
             }
 
-            if (updateMenu(settings))
+            if (updateMenu(settings, uiInput))
                 audio.play(AudioCue::MenuSelect);
-            if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_Q))
+            if (uiInput.quitPressed)
             {
                 exitRequested = true;
             }
-            else if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE))
+            else if (uiInput.confirmPressed)
             {
                 audio.play(AudioCue::MenuSelect);
                 if (settings.selected == advancedMenuRow(settings))
@@ -7465,7 +7666,7 @@ int main(int argc, char **argv)
             continue;
         }
 
-        if (IsKeyPressed(KEY_ESCAPE))
+        if (uiInput.cancelPressed)
         {
             inGame = false;
             audio.stopAll();
@@ -7477,10 +7678,10 @@ int main(int argc, char **argv)
             continue;
         }
         if ((game.settling() || game.highScoreDisplay()) &&
-            (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)))
+            uiInput.confirmPressed)
             game.confirmSettlement();
         else if (!releasePerformance.requested() &&
-                 !game.endingSequence() && IsKeyPressed(KEY_ENTER))
+                 !game.endingSequence() && uiInput.pausePressed)
             game.togglePause();
         if (!releasePerformance.requested())
         {
@@ -7496,7 +7697,7 @@ int main(int argc, char **argv)
             {
                 menuError = game.lastError();
             }
-            if (!game.endingSequence() && IsKeyPressed(KEY_R) &&
+            if (!game.endingSequence() && uiInput.restartPressed &&
                 !game.restart())
             {
                 menuError = game.lastError();
@@ -7509,13 +7710,30 @@ int main(int argc, char **argv)
             inGame = false;
             audio.updateEngine(false, false);
             viewTargets.release();
+            // Advance raylib's input frame before the menu can observe the
+            // same confirm edge that requested this transition.
+            drawMenu(settings, menuError);
             continue;
         }
 
         if (!bonusShowcase && !tankShowcase)
         {
-            const PlayerInputFrame inputFrame =
-                readRaylibPlayerInputFrame();
+            PlayerInputFrame inputFrame = readRaylibPlayerInputFrame();
+            for (std::size_t playerIndex = 0;
+                 playerIndex < inputFrame.players.size(); ++playerIndex)
+            {
+                mergePlayerControlFrame(
+                    inputFrame.players[playerIndex],
+                    gamepadFrame.players.players[playerIndex]);
+            }
+            if (game.playerCount() == 1)
+            {
+                // Either of the two menu-capable pads may start and control a
+                // solo battle; two-player games retain strict P1/P2 isolation.
+                mergePlayerControlFrame(
+                    inputFrame.players[0],
+                    gamepadFrame.players.players[1]);
+            }
             game.update(dt, inputFrame);
             if (releasePerformanceRecorder)
             {
@@ -7547,11 +7765,13 @@ int main(int argc, char **argv)
             inGame = false;
             audio.updateEngine(false, false);
             viewTargets.release();
+            drawMenu(settings, menuError);
             continue;
         }
         tankAssets.setAnimationClock(GetTime());
         if (!renderGame(game, viewTargets, lighting, tankAssets, environment,
-                        bonusAssets, postProcess))
+                        bonusAssets, postProcess,
+                        !releaseScreenshot.requested()))
         {
             menuError = "Unable to allocate the gameplay render target";
             std::cerr << menuError << '\n';

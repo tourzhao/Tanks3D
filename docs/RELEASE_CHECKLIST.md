@@ -489,11 +489,12 @@ not from a development build. For example:
 Tanks3D.app/Contents/MacOS/Tanks3D \
     --quick-start \
     --release-screenshot=/absolute/path/one-player.png \
-    --release-screenshot-frame=240
+    --release-screenshot-frame=480
 ```
 
-Frame 240 is the default and normally clears the 3.2-second stage introduction
-at 60 Hz. Capture mode uses a fixed gameplay seed, locks the logical canvas,
+Frame 480 is the default and clears the 3.2-second stage introduction at the
+120 Hz interactive frame target. Capture mode uses a fixed gameplay seed,
+omits the live FPS counter, locks the logical canvas,
 ignores the borderless toggle, normalizes Retina output to 1280x720, refuses to
 replace an existing path even if it appears during capture, saves one PNG, and
 exits. Use

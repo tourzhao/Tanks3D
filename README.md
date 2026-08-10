@@ -27,6 +27,11 @@ Alpha 4 is an early pre-release and is not Apple notarized.
 
 - **P1:** Arrow keys; `Space`/Right Option/Right Control fires.
 - **P2:** `WASD`; `F`/Left Option/Left Control fires.
+- **Controller (source build; next release):** In battle, the left stick
+  follows the fixed 45° view by default; choose `Classic` in Advanced Settings
+  for unrotated input. Menu stick, D-pad, and keyboard directions are never
+  rotated. `B`/`Y`/`R`/`ZR` fires; `+` starts or pauses; `-` returns. ABXY
+  never exits the game.
 - `Enter` pauses · `Esc` returns to setup · `R` restarts.
 
 ## More

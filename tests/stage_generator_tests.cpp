@@ -55,9 +55,10 @@ bool rectangleIsOpen(const StageTileGrid &grid, int top, int left,
     return true;
 }
 
-bool spawnAreaIsOpen(const StageTileGrid &grid, XZ center)
+bool spawnAreaIsOpen(const StageTileGrid &grid, XZ center,
+                     float safetyMargin)
 {
-    constexpr float clearance = kTankRadius + 0.20f;
+    const float clearance = kTankRadius + safetyMargin;
     const int left = std::max(
         0, static_cast<int>(std::floor(center.x - clearance)));
     const int right = std::min(
@@ -154,16 +155,21 @@ int main()
         const StageTileGrid grid = StageGenerator::generate(stage);
         for (XZ spawn : kEnemySpawnPoints)
             everyEnemySpawnOpen = everyEnemySpawnOpen &&
-                                  spawnAreaIsOpen(grid, spawn);
+                                  spawnAreaIsOpen(
+                                      grid, spawn,
+                                      stage == 1 ? 0.0f : 0.20f);
         for (XZ spawn : kPlayerSpawnPoints)
             everyPlayerSpawnOpen = everyPlayerSpawnOpen &&
-                                   spawnAreaIsOpen(grid, spawn);
+                                   spawnAreaIsOpen(
+                                       grid, spawn,
+                                       stage == 1 ? 0.0f : 0.20f);
         everyBaseFootprintOpen = everyBaseFootprintOpen &&
                                  rectangleIsOpen(grid, 21, 10, 25, 15);
         everyBaseApproachOpen = everyBaseApproachOpen &&
                                 rectangleIsOpen(grid, 18, 12, 22, 13);
         everyStageMarkerCorrect = everyStageMarkerCorrect &&
-                                  stageMarkerMatches(grid, stage);
+                                  (stage == 1 ||
+                                   stageMarkerMatches(grid, stage));
     }
     expect(everyEnemySpawnOpen,
            "an enemy spawn clearance contains generated terrain");
@@ -174,7 +180,7 @@ int main()
     expect(everyBaseApproachOpen,
            "the northern government approach is no longer open");
     expect(everyStageMarkerCorrect,
-           "a generated stage lost its six-bit identity marker");
+           "a procedural stage lost its six-bit identity marker");
     expect(stageTwoFixturesMatch(StageGenerator::generate(2)),
            "stage 2 steering fixtures changed or sealed their bypass");
 

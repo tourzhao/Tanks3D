@@ -34,10 +34,30 @@ the tank center; visual muzzle length must not change gameplay spawn position.
 
 ## Player Input
 
-- The application samples one data-only `game/player_system.h`
-  `PlayerInputFrame` per game update. `Game3D` does not query raylib keys. P1
-  uses Arrow keys and Right Alt, Right Control, or Space to fire; P2 uses WASD
-  and Left Alt, Left Control, or F.
+- The application merges keyboard and assigned gamepad adapters into one
+  data-only `game/player_system.h` `PlayerInputFrame` per update. `Game3D`
+  does not query raylib devices. P1 uses Arrow keys and Right Alt, Right
+  Control, or Space to fire; P2 uses WASD and Left Alt, Left Control, or F.
+- Up to four physical gamepad slots are monitored. The first two available
+  pads become P1 and P2; menu assignments compact as devices change. During a
+  battle, still-connected players retain their slots and a new or reconnected
+  pad fills only a vacancy, so a surviving P2 never shifts silently to P1.
+  Keyboard input remains active alongside either pad.
+- A gamepad D-pad takes priority over its left stick. The stick resolves to one
+  cardinal direction with a 0.20 radial engage threshold, 0.12 release
+  threshold, and 1.08 cross-axis turn ratio. This gives each cardinal a wide
+  sector while retaining narrow diagonal hysteresis. During battle, the default
+  isometric mode aligns the left stick with the fixed 45-degree camera;
+  Advanced Settings can restore Classic, unrotated input. Menu stick, D-pad,
+  and keyboard directions are never rotated. Bottom/left face, right shoulder,
+  or right trigger fires; bottom face confirms, Plus/Start pauses, Minus/Back
+  cancels, and top face resets advanced settings. No face button can cancel or
+  quit. Restart remains keyboard-only to avoid an accidental battle reset.
+- On macOS, native controller callbacks run on a serial user-interactive queue.
+  Held state persists across frames and each rising edge remains latched until
+  the next input snapshot, so a complete tap between two frames is not lost.
+  Plus/Minus system gestures are disabled while attached to avoid deferred
+  short presses; the Home button remains system-owned.
 - A newly pressed direction overrides the previously held direction. When
   several directions are newly pressed in one frame, the fixed write order is
   North, South, West, East, so East has final priority.

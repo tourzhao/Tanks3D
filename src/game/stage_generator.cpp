@@ -3,11 +3,62 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string_view>
 
 namespace tanks3d::game
 {
 namespace
 {
+constexpr std::array<std::string_view, kMapSize> kClassicStageOneRows{{
+    "..........................",
+    "..........................",
+    "..##..##..##..##..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..##@@##..##..##..",
+    "..##..##..##@@##..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..........##..##..",
+    "..##..##..........##..##..",
+    "..........##..##..........",
+    "..........##..##..........",
+    "##..####..........####..##",
+    "@@..####..........####..@@",
+    "..........##..##..........",
+    "..........######..........",
+    "..##..##..######..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..##..##..##..##..",
+    "..##..##..........##..##..",
+    "..##..##..........##..##..",
+    "..##..##...####...##..##..",
+    "...........#..#...........",
+    "...........#..#..........."}};
+
+constexpr bool classicStageOneRowsAreValid()
+{
+    for (std::string_view row : kClassicStageOneRows)
+        if (row.size() != static_cast<std::size_t>(kMapSize))
+            return false;
+    return true;
+}
+
+static_assert(classicStageOneRowsAreValid(),
+              "classic stage 1 must remain a 26-by-26 tile grid");
+
+StageTileGrid classicStageOne()
+{
+    StageTileGrid tiles{};
+    for (std::size_t row = 0; row < kClassicStageOneRows.size(); ++row)
+    {
+        std::copy(kClassicStageOneRows[row].begin(),
+                  kClassicStageOneRows[row].end(), tiles[row].begin());
+    }
+    return tiles;
+}
+
 std::uint32_t nextStageRandom(std::uint32_t &state)
 {
     state ^= state << 13U;
@@ -46,61 +97,71 @@ void clearGovernmentBaseFootprint(StageTileGrid &tiles)
 
 StageTileGrid StageGenerator::generate(int canonicalStage)
 {
-    StageTileGrid tiles{};
-    for (auto &row : tiles)
-        row.fill('.');
-
-    std::array<char, 36> blockTerrain{};
-    std::size_t terrainIndex = 0;
-    for (int count = 0; count < 15; ++count)
-        blockTerrain[terrainIndex++] = '#';
-    for (int count = 0; count < 12; ++count)
-        blockTerrain[terrainIndex++] = '%';
-    for (int count = 0; count < 3; ++count)
-        blockTerrain[terrainIndex++] = '@';
-    for (int count = 0; count < 3; ++count)
-        blockTerrain[terrainIndex++] = '~';
-    for (int count = 0; count < 3; ++count)
-        blockTerrain[terrainIndex++] = '-';
-
-    std::uint32_t randomState =
-        0x6d2b79f5U ^
-        (static_cast<std::uint32_t>(canonicalStage) * 0x9e3779b9U);
-    for (std::size_t remaining = blockTerrain.size(); remaining > 1;
-         --remaining)
+    StageTileGrid tiles = classicStageOne();
+    if (canonicalStage != 1)
     {
-        const std::size_t other = nextStageRandom(randomState) % remaining;
-        std::swap(blockTerrain[remaining - 1], blockTerrain[other]);
-    }
+        for (auto &row : tiles)
+            row.fill('.');
 
-    terrainIndex = 0;
-    for (int blockRow = 0; blockRow < 6; ++blockRow)
-    {
-        const int top = 2 + blockRow * 4;
-        for (int blockColumn = 0; blockColumn < 6; ++blockColumn)
+        std::array<char, 36> blockTerrain{};
+        std::size_t terrainIndex = 0;
+        for (int count = 0; count < 15; ++count)
+            blockTerrain[terrainIndex++] = '#';
+        for (int count = 0; count < 12; ++count)
+            blockTerrain[terrainIndex++] = '%';
+        for (int count = 0; count < 3; ++count)
+            blockTerrain[terrainIndex++] = '@';
+        for (int count = 0; count < 3; ++count)
+            blockTerrain[terrainIndex++] = '~';
+        for (int count = 0; count < 3; ++count)
+            blockTerrain[terrainIndex++] = '-';
+
+        std::uint32_t randomState =
+            0x6d2b79f5U ^
+            (static_cast<std::uint32_t>(canonicalStage) * 0x9e3779b9U);
+        for (std::size_t remaining = blockTerrain.size(); remaining > 1;
+             --remaining)
         {
-            const int left = 2 + blockColumn * 4;
-            const char terrain = blockTerrain[terrainIndex++];
-            for (int rowOffset = 0; rowOffset < 2; ++rowOffset)
-                for (int columnOffset = 0; columnOffset < 2;
-                     ++columnOffset)
-                    tiles[static_cast<std::size_t>(top + rowOffset)]
-                         [static_cast<std::size_t>(left + columnOffset)] =
-                        terrain;
+            const std::size_t other =
+                nextStageRandom(randomState) % remaining;
+            std::swap(blockTerrain[remaining - 1], blockTerrain[other]);
+        }
+
+        terrainIndex = 0;
+        for (int blockRow = 0; blockRow < 6; ++blockRow)
+        {
+            const int top = 2 + blockRow * 4;
+            for (int blockColumn = 0; blockColumn < 6; ++blockColumn)
+            {
+                const int left = 2 + blockColumn * 4;
+                const char terrain = blockTerrain[terrainIndex++];
+                for (int rowOffset = 0; rowOffset < 2; ++rowOffset)
+                    for (int columnOffset = 0; columnOffset < 2;
+                         ++columnOffset)
+                        tiles[static_cast<std::size_t>(top + rowOffset)]
+                             [static_cast<std::size_t>(left + columnOffset)] =
+                            terrain;
+            }
+        }
+
+        for (int bit = 0; bit < 6; ++bit)
+        {
+            const int column = 2 + bit * 4;
+            tiles[12][static_cast<std::size_t>(column)] =
+                (canonicalStage & (1 << bit)) != 0 ? '%' : '-';
         }
     }
 
-    for (int bit = 0; bit < 6; ++bit)
+    // The classic first stage already leaves the original spawn lanes open.
+    // Procedural layouts need the larger safety margin used by modern tanks,
+    // but applying it to stage 1 would erase recognizable nearby brickwork.
+    if (canonicalStage != 1)
     {
-        const int column = 2 + bit * 4;
-        tiles[12][static_cast<std::size_t>(column)] =
-            (canonicalStage & (1 << bit)) != 0 ? '%' : '-';
+        for (XZ spawn : kEnemySpawnPoints)
+            clearSpawnArea(tiles, spawn);
+        for (XZ spawn : kPlayerSpawnPoints)
+            clearSpawnArea(tiles, spawn);
     }
-
-    for (XZ spawn : kEnemySpawnPoints)
-        clearSpawnArea(tiles, spawn);
-    for (XZ spawn : kPlayerSpawnPoints)
-        clearSpawnArea(tiles, spawn);
 
     for (int row = 18; row <= 22; ++row)
         for (int column = 12; column <= 13; ++column)

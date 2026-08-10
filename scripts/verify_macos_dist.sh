@@ -287,10 +287,18 @@ bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")
 bundle_executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
 bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
 bundle_macos_min=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")
+controller_interaction=$(/usr/libexec/PlistBuddy -c \
+    'Print :GCSupportsControllerUserInteraction' "$plist")
+controller_profile=$(/usr/libexec/PlistBuddy -c \
+    'Print :GCSupportedGameControllers:0:ProfileName' "$plist")
 [ "$bundle_id" = "io.github.tourzhao.tanks3d" ] || fail "unexpected bundle identifier"
 [ "$bundle_executable" = "Tanks3D" ] || fail "unexpected bundle executable"
 [ "$bundle_version" = "$expected_version" ] || fail "unexpected bundle version"
 [ "$bundle_macos_min" = "$expected_macos_min" ] || fail "plist deployment target mismatch"
+[ "$controller_interaction" = "true" ] || \
+    fail "controller interaction plist declaration is missing"
+[ "$controller_profile" = "ExtendedGamepad" ] || \
+    fail "extended gamepad plist declaration is missing"
 
 actual_arch=$(lipo -archs "$executable")
 [ "$actual_arch" = "$expected_arch" ] || fail "Mach-O architecture mismatch"

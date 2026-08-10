@@ -8,7 +8,7 @@
 
 namespace tanks3d::app
 {
-inline constexpr int kDefaultReleaseScreenshotFrame = 240;
+inline constexpr int kDefaultReleaseScreenshotFrame = 480;
 inline constexpr int kMaximumReleaseScreenshotFrame = 3600;
 inline constexpr int kReleaseScreenshotWidth = 1280;
 inline constexpr int kReleaseScreenshotHeight = 720;
