@@ -95,8 +95,10 @@ Cell findBrickWithOpenLeft(const StageMap &map)
 bool allRequiredRoutesAreOpen(const StageMap &map)
 {
     bool open = map.hasTankRoute(kPlayerSpawnPoints[0],
-                                 kPlayerSpawnPoints[1]) &&
-                map.hasTankRoute(kEnemySpawnPoints[1], {13.0f, 20.0f});
+                                 kPlayerSpawnPoints[1]);
+    if (map.stage() != 1)
+        open = open &&
+               map.hasTankRoute(kEnemySpawnPoints[1], {13.0f, 20.0f});
     for (XZ enemySpawn : kEnemySpawnPoints)
         for (XZ playerSpawn : kPlayerSpawnPoints)
             open = open && map.hasTankRoute(enemySpawn, playerSpawn);
@@ -122,6 +124,7 @@ int main()
             passed = false;
     };
     const std::filesystem::path noResourceDependency;
+    constexpr int kTerrainFixtureStage = 2;
 
     reporter.beginSuite("stage-map-layouts-and-routes");
     for (int stage = 1; stage <= kStageCount; ++stage)
@@ -175,7 +178,7 @@ int main()
     StageMap terrainMap;
     std::string terrainError;
     const bool terrainLoaded = terrainMap.load(
-        noResourceDependency, 1, terrainError);
+        noResourceDependency, kTerrainFixtureStage, terrainError);
     const Cell openCell = findTile(terrainMap, '.');
     const Cell brickCell = findTile(terrainMap, '#');
     const Cell steelCell = findTile(terrainMap, '@');
@@ -185,7 +188,7 @@ int main()
     expect(terrainLoaded && terrainError.empty() && openCell.valid() &&
                brickCell.valid() && steelCell.valid() && waterCell.valid() &&
                forestCell.valid() && iceCell.valid(),
-           "stage 1 did not expose every terrain family");
+           "terrain fixture stage did not expose every terrain family");
 
     constexpr float probeHalfExtent = 0.10f;
     expect(!terrainMap.collidesWithTank(openCell.center(), probeHalfExtent),
@@ -218,7 +221,7 @@ int main()
     StageMap normalSteelMap;
     std::string normalSteelError;
     const bool normalSteelLoaded = normalSteelMap.load(
-        noResourceDependency, 1, normalSteelError);
+        noResourceDependency, kTerrainFixtureStage, normalSteelError);
     expect(normalSteelLoaded &&
                normalSteelMap.impactShell(steelCell.center(), false,
                                           CardinalDirection::North) ==
@@ -229,7 +232,7 @@ int main()
     StageMap powerSteelMap;
     std::string powerSteelError;
     const bool powerSteelLoaded = powerSteelMap.load(
-        noResourceDependency, 1, powerSteelError);
+        noResourceDependency, kTerrainFixtureStage, powerSteelError);
     expect(powerSteelLoaded &&
                powerSteelMap.impactShell(steelCell.center(), true,
                                          CardinalDirection::North) ==
@@ -240,7 +243,7 @@ int main()
     StageMap forestMap;
     std::string forestError;
     const bool forestLoaded = forestMap.load(
-        noResourceDependency, 1, forestError);
+        noResourceDependency, kTerrainFixtureStage, forestError);
     const ImpactKind normalForest = forestMap.impactShell(
         forestCell.center(), false, CardinalDirection::North);
     const bool forestSurvived =
@@ -255,7 +258,7 @@ int main()
     StageMap waterShellMap;
     std::string waterShellError;
     const bool waterShellLoaded = waterShellMap.load(
-        noResourceDependency, 1, waterShellError);
+        noResourceDependency, kTerrainFixtureStage, waterShellError);
     expect(waterShellLoaded &&
                waterShellMap.impactShell(waterCell.center(), false,
                                          CardinalDirection::East) ==
@@ -269,7 +272,7 @@ int main()
     StageMap iceShellMap;
     std::string iceShellError;
     const bool iceShellLoaded = iceShellMap.load(
-        noResourceDependency, 1, iceShellError);
+        noResourceDependency, kTerrainFixtureStage, iceShellError);
     expect(iceShellLoaded &&
                iceShellMap.impactShell(iceCell.center(), false,
                                        CardinalDirection::South) ==
@@ -343,7 +346,7 @@ int main()
     StageMap showcaseMap;
     std::string showcaseError;
     const bool showcaseLoaded = showcaseMap.load(
-        noResourceDependency, 1, showcaseError);
+        noResourceDependency, kTerrainFixtureStage, showcaseError);
     showcaseMap.impactShell(brickCell.center(), false,
                             CardinalDirection::North);
     showcaseMap.activateGovernmentSteel();
@@ -381,7 +384,8 @@ int main()
     {
         StageMap map;
         std::string error;
-        const bool loaded = map.load(noResourceDependency, 1, error);
+        const bool loaded = map.load(noResourceDependency,
+                                     kTerrainFixtureStage, error);
         ShellImpactDetails details;
         const ImpactKind impact = map.impactShell(
             brickCell.center(), false, firstDirections[index], &details);
@@ -404,7 +408,8 @@ int main()
     {
         StageMap map;
         std::string error;
-        const bool loaded = map.load(noResourceDependency, 1, error);
+        const bool loaded = map.load(noResourceDependency,
+                                     kTerrainFixtureStage, error);
         map.impactShell(brickCell.center(), false, firstDirections[index]);
         ShellImpactDetails details;
         const ImpactKind impact = map.impactShell(
@@ -427,7 +432,7 @@ int main()
     StageMap sameAxisMap;
     std::string sameAxisError;
     const bool sameAxisLoaded = sameAxisMap.load(
-        noResourceDependency, 1, sameAxisError);
+        noResourceDependency, kTerrainFixtureStage, sameAxisError);
     sameAxisMap.impactShell(brickCell.center(), false,
                             CardinalDirection::North);
     ShellImpactDetails sameAxisDetails;
@@ -451,7 +456,7 @@ int main()
     StageMap thirdHitMap;
     std::string thirdHitError;
     const bool thirdHitLoaded = thirdHitMap.load(
-        noResourceDependency, 1, thirdHitError);
+        noResourceDependency, kTerrainFixtureStage, thirdHitError);
     thirdHitMap.impactShell(brickCell.center(), false,
                            CardinalDirection::North);
     thirdHitMap.impactShell(brickCell.center(), false,
@@ -471,7 +476,8 @@ int main()
 
     StageMap seamMap;
     std::string seamError;
-    const bool seamLoaded = seamMap.load(noResourceDependency, 1, seamError);
+    const bool seamLoaded = seamMap.load(
+        noResourceDependency, kTerrainFixtureStage, seamError);
     const Cell seamCell = findHorizontalBrickPair(seamMap);
     ShellImpactDetails seamDetails;
     const ImpactKind seamImpact = seamMap.impactShell(
@@ -489,7 +495,7 @@ int main()
     StageMap powerSeamMap;
     std::string powerSeamError;
     const bool powerSeamLoaded = powerSeamMap.load(
-        noResourceDependency, 1, powerSeamError);
+        noResourceDependency, kTerrainFixtureStage, powerSeamError);
     ShellImpactDetails powerSeamDetails;
     const ImpactKind powerSeamImpact = powerSeamMap.impactShell(
         {seamCell.column + 1.0f, seamCell.row + 0.5f}, true,
@@ -508,7 +514,7 @@ int main()
     StageMap partialMap;
     std::string partialError;
     const bool partialLoaded = partialMap.load(
-        noResourceDependency, 1, partialError);
+        noResourceDependency, kTerrainFixtureStage, partialError);
     partialMap.impactShell(brickCell.center(), false,
                            CardinalDirection::North);
     const XZ survivingHalf{brickCell.column + 0.5f,
@@ -548,7 +554,7 @@ int main()
     StageMap exactTouchMap;
     std::string exactTouchError;
     const bool exactTouchLoaded = exactTouchMap.load(
-        noResourceDependency, 1, exactTouchError);
+        noResourceDependency, kTerrainFixtureStage, exactTouchError);
     const Cell exactTouchCell = findBrickWithOpenLeft(exactTouchMap);
     const ImpactKind exactTouchImpact = exactTouchMap.impactShell(
         {exactTouchCell.column - kShellHalfSize,
@@ -563,7 +569,7 @@ int main()
     StageMap nearTouchMap;
     std::string nearTouchError;
     const bool nearTouchLoaded = nearTouchMap.load(
-        noResourceDependency, 1, nearTouchError);
+        noResourceDependency, kTerrainFixtureStage, nearTouchError);
     const ImpactKind nearTouchImpact = nearTouchMap.impactShell(
         {exactTouchCell.column - kShellHalfSize + 0.001f,
          exactTouchCell.row + 0.5f},

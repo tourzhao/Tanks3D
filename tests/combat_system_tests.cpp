@@ -117,6 +117,12 @@ bool loadStageOne(StageMap &map)
     return map.load(std::filesystem::path{}, 1, error) && error.empty();
 }
 
+bool loadTerrainFixture(StageMap &map)
+{
+    std::string error;
+    return map.load(std::filesystem::path{}, 2, error) && error.empty();
+}
+
 bool shellStateMatches(const Shell &shell, XZ position, XZ velocity,
                        float life = 4.0f)
 {
@@ -658,7 +664,7 @@ int main()
            "open-ground outcome lost its source snapshot or changed the shell");
 
     StageMap normalForestMap;
-    const bool normalForestLoaded = loadStageOne(normalForestMap);
+    const bool normalForestLoaded = loadTerrainFixture(normalForestMap);
     const Cell normalForestCell = findTile(normalForestMap, '%');
     Shell normalForestShell = testShell(
         normalForestCell.center(), {0.0f, -8.0f}, ShellOwner::Player);
@@ -673,7 +679,7 @@ int main()
            "ordinary shell stopped in or changed forest cover");
 
     StageMap powerForestMap;
-    const bool powerForestLoaded = loadStageOne(powerForestMap);
+    const bool powerForestLoaded = loadTerrainFixture(powerForestMap);
     const Cell powerForestCell = findTile(powerForestMap, '%');
     Shell powerForestShell = testShell(
         powerForestCell.center(), {0.0f, -8.0f}, ShellOwner::Player);
@@ -1974,7 +1980,8 @@ int main()
            "inert shells entered ordered physical-impact resolution");
 
     StageMap forestPhysicalMap;
-    const bool loadedForestPhysicalMap = loadStageOne(forestPhysicalMap);
+    const bool loadedForestPhysicalMap =
+        loadTerrainFixture(forestPhysicalMap);
     const Cell forestPhysicalCell = findTile(forestPhysicalMap, '%');
     Shell forestPhysicalShell = testShell(
         forestPhysicalCell.center(), {3.0f, -2.0f}, ShellOwner::Player);

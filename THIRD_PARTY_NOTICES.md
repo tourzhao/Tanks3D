@@ -10,6 +10,11 @@ against [`krystiankaluzny/Tanks`](https://github.com/krystiankaluzny/Tanks),
 copyright 2025 Krystian Kałużny and distributed under the MIT License. The
 complete upstream notice is reproduced in `LICENSES/MIT-upstream.txt`.
 
+The fixed 26x26 stage-one tile layout embedded in
+`src/game/stage_generator.cpp` is transcribed from the upstream
+`resources/stages/1` map and remains under that MIT license. Procedurally
+generated later stages and the 3D presentation are project-owned additions.
+
 The sound set was authored and refined in the upstream project by Redas
 Jefisovas (`holoflash`), beginning with the commit explicitly described as
 [`add original effect sounds`](https://github.com/krystiankaluzny/Tanks/commit/326c2935).

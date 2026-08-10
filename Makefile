@@ -47,6 +47,7 @@ RELEASE_PERFORMANCE_CAPABILITY_STDERR := \
 	build/tests/release-performance-capabilities.stderr
 COMMAND_SIDE_EFFECT_DISPATCH_SOURCE := \
 	src/app/command_side_effect_dispatch.cpp
+INPUT_ADAPTER_SOURCE := src/app/input_adapter.cpp
 ATOMIC_OUTPUT_FILE_SOURCE := src/app/atomic_output_file.cpp
 RELEASE_PERFORMANCE_LOG_SOURCE := src/app/release_performance_log.cpp
 RELEASE_PERFORMANCE_CAPABILITY_SOURCE := \
@@ -58,6 +59,7 @@ SHELL_MAP_CORE_PRESENTATION_SOURCE := \
 	src/app/shell_map_core_presentation.cpp
 SHELL_TANK_PRESENTATION_SOURCE := src/app/shell_tank_presentation.cpp
 APP_SOURCES := $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
+	$(INPUT_ADAPTER_SOURCE) \
 	$(ATOMIC_OUTPUT_FILE_SOURCE) \
 	$(RELEASE_PERFORMANCE_CAPABILITY_SOURCE) \
 	$(RELEASE_PERFORMANCE_LOG_SOURCE) \
@@ -72,15 +74,20 @@ PLAYER_SYSTEM_SOURCE := src/game/player_system.cpp
 SETTLEMENT_SYSTEM_SOURCE := src/game/settlement_system.cpp
 STAGE_GENERATOR_SOURCE := src/game/stage_generator.cpp
 STAGE_MAP_SOURCE := src/game/stage_map.cpp
+PLATFORM_SOURCES := src/platform/macos_gamepad_backend.mm
+PLATFORM_HEADERS := src/platform/gamepad_backend.h \
+	src/platform/gamepad_event_accumulator.h
 SOURCES := src/main.cpp $(APP_SOURCES) \
 	$(BONUS_SYSTEM_SOURCE) $(COMBAT_SYSTEM_SOURCE) $(ENEMY_SYSTEM_SOURCE) \
 	$(PLAYER_SYSTEM_SOURCE) $(SETTLEMENT_SYSTEM_SOURCE) \
 	$(STAGE_GENERATOR_SOURCE) $(STAGE_MAP_SOURCE)
-OBJECTS := $(patsubst src/%.cpp,$(OBJECT_DIR)/%.o,$(SOURCES))
+OBJECTS := $(patsubst src/%.cpp,$(OBJECT_DIR)/%.o,$(SOURCES)) \
+	$(patsubst src/%.mm,$(OBJECT_DIR)/%.o,$(PLATFORM_SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
 AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
 APP_HEADERS := src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
+	src/app/input_adapter.h \
 	src/app/atomic_output_file.h \
 	src/app/release_performance_capabilities.h \
 	src/app/release_performance_log.h \
@@ -105,7 +112,7 @@ PURE_SOURCES := $(BONUS_SYSTEM_SOURCE) $(COMBAT_SYSTEM_SOURCE) \
 PURE_HEADERS := $(CORE_HEADERS) $(GAME_HEADERS)
 PRODUCTION_HEADERS := src/wwii_tank_model.h src/tank_assets.h src/battle_fx.h \
 	src/bonus_assets.h $(AUDIO_HEADERS) $(APP_HEADERS) $(PURE_HEADERS) \
-	src/environment_assets.h src/post_process.h
+	$(PLATFORM_HEADERS) src/environment_assets.h src/post_process.h
 TEST_FILES := tests/test_support.h tests/stage_layout_expectations.h \
 	tests/stage_map_expectations.h tests/self_tests.inl
 BUNDLE_RESOURCE_MANIFEST := tests/expected_bundle_resources.txt
@@ -181,6 +188,8 @@ COMMAND_SIDE_EFFECT_DISPATCH_TEST_SOURCE := \
 	tests/command_side_effect_dispatch_tests.cpp
 COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET := \
 	build/tests/command_side_effect_dispatch_tests
+INPUT_ADAPTER_TEST_SOURCE := tests/input_adapter_tests.cpp
+INPUT_ADAPTER_TEST_TARGET := build/tests/input_adapter_tests
 ATOMIC_OUTPUT_FILE_TEST_SOURCE := tests/atomic_output_file_tests.cpp
 ATOMIC_OUTPUT_FILE_TEST_TARGET := build/tests/atomic_output_file_tests
 RELEASE_PERFORMANCE_LOG_TEST_SOURCE := \
@@ -204,6 +213,7 @@ SHELL_MAP_CORE_PRESENTATION_TEST_SOURCE := \
 SHELL_MAP_CORE_PRESENTATION_TEST_TARGET := \
 	build/tests/shell_map_core_presentation_tests
 APP_TEST_TARGETS := $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET) \
+	$(INPUT_ADAPTER_TEST_TARGET) \
 	$(ATOMIC_OUTPUT_FILE_TEST_TARGET) \
 	$(RELEASE_PERFORMANCE_LOG_TEST_TARGET) \
 	$(RELEASE_SCREENSHOT_OPTIONS_TEST_TARGET) \
@@ -238,12 +248,14 @@ SETTLEMENT_SYSTEM_RULE_OBJECT := \
 
 DEBUG_DIR := build/debug
 DEBUG_TARGET := $(DEBUG_DIR)/Tanks3D-debug
-DEBUG_OBJECTS := $(patsubst src/%.cpp,$(DEBUG_DIR)/%.o,$(SOURCES))
+DEBUG_OBJECTS := $(patsubst src/%.cpp,$(DEBUG_DIR)/%.o,$(SOURCES)) \
+	$(patsubst src/%.mm,$(DEBUG_DIR)/%.o,$(PLATFORM_SOURCES))
 DEBUG_DEPFILES := $(DEBUG_OBJECTS:.o=.d)
 
 SANITIZER_DIR := build/sanitize
 SANITIZER_TARGET := $(SANITIZER_DIR)/Tanks3D-sanitize
-SANITIZER_OBJECTS := $(patsubst src/%.cpp,$(SANITIZER_DIR)/%.o,$(SOURCES))
+SANITIZER_OBJECTS := $(patsubst src/%.cpp,$(SANITIZER_DIR)/%.o,$(SOURCES)) \
+	$(patsubst src/%.mm,$(SANITIZER_DIR)/%.o,$(PLATFORM_SOURCES))
 SANITIZER_DEPFILES := $(SANITIZER_OBJECTS:.o=.d)
 
 APP_VERSION := $(shell /usr/libexec/PlistBuddy -c \
@@ -254,7 +266,8 @@ DIST_MACOS_MIN ?= $(MACOS_MIN)
 DIST_DIR := build/dist
 DIST_CONFIG_FILE := $(DIST_DIR)/.build-config
 DIST_OBJECT_DIR := $(DIST_DIR)/obj
-DIST_OBJECTS := $(patsubst src/%.cpp,$(DIST_OBJECT_DIR)/%.o,$(SOURCES))
+DIST_OBJECTS := $(patsubst src/%.cpp,$(DIST_OBJECT_DIR)/%.o,$(SOURCES)) \
+	$(patsubst src/%.mm,$(DIST_OBJECT_DIR)/%.o,$(PLATFORM_SOURCES))
 DIST_DEPFILES := $(DIST_OBJECTS:.o=.d)
 DIST_TARGET := $(DIST_DIR)/Tanks3D-static
 DIST_STAGING_DIR := $(DIST_DIR)/staging
@@ -300,14 +313,16 @@ CLEAN_MAC_EVIDENCE_OUTPUT_DIR ?= \
 DIST_COMPILE_FLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
 	-mmacosx-version-min=$(DIST_MACOS_MIN) $(DIST_IDENTITY_FLAGS)
 DIST_LINK_FLAGS := -mmacosx-version-min=$(DIST_MACOS_MIN) \
-	-framework Cocoa -framework IOKit -framework OpenGL
+	-framework Cocoa -framework GameController -framework IOKit \
+	-framework OpenGL
 DIST_COMPILER_ID := $(shell $(CXX) --version 2>/dev/null | sed -n '1p')
 DIST_RAYLIB_SHA256 := $(shell shasum -a 256 "$(RAYLIB_STATIC)" 2>/dev/null | \
 	awk '{print $$1}')
 
 COVERAGE_DIR := build/coverage
 COVERAGE_TARGET := $(COVERAGE_DIR)/Tanks3D-coverage
-COVERAGE_OBJECTS := $(patsubst src/%.cpp,$(COVERAGE_DIR)/%.o,$(SOURCES))
+COVERAGE_OBJECTS := $(patsubst src/%.cpp,$(COVERAGE_DIR)/%.o,$(SOURCES)) \
+	$(patsubst src/%.mm,$(COVERAGE_DIR)/%.o,$(PLATFORM_SOURCES))
 COVERAGE_DEPFILES := $(COVERAGE_OBJECTS:.o=.d)
 COVERAGE_RAW_PROFILE := $(COVERAGE_DIR)/self-test.profraw
 RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE := \
@@ -368,6 +383,12 @@ COMPILED_COVERAGE_TEST_DEPFILES := \
 	$(SETTLEMENT_SYSTEM_COVERAGE_TEST_OBJECT:.o=.d)
 COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/command_side_effect_dispatch_tests
+INPUT_ADAPTER_COVERAGE_TARGET := \
+	$(COVERAGE_DIR)/input_adapter_tests
+INPUT_ADAPTER_COVERAGE_OBJECT := \
+	$(COVERAGE_DIR)/app/input_adapter.o
+INPUT_ADAPTER_COVERAGE_TEST_OBJECT := \
+	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/input_adapter_tests.o
 ATOMIC_OUTPUT_FILE_COVERAGE_TARGET := \
 	$(COVERAGE_DIR)/atomic_output_file_tests
 ATOMIC_OUTPUT_FILE_COVERAGE_OBJECT := \
@@ -410,6 +431,7 @@ SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT := \
 	$(COMPILED_COVERAGE_TEST_OBJECT_DIR)/shell_map_core_presentation_tests.o
 COMPILED_COVERAGE_TEST_DEPFILES += \
 	$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT:.o=.d) \
+	$(INPUT_ADAPTER_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(ATOMIC_OUTPUT_FILE_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(RELEASE_PERFORMANCE_LOG_COVERAGE_TEST_OBJECT:.o=.d) \
 	$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TEST_OBJECT:.o=.d) \
@@ -418,6 +440,7 @@ COMPILED_COVERAGE_TEST_DEPFILES += \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TEST_OBJECT:.o=.d)
 APP_COVERAGE_TARGETS := \
 	$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET) \
+	$(INPUT_ADAPTER_COVERAGE_TARGET) \
 	$(ATOMIC_OUTPUT_FILE_COVERAGE_TARGET) \
 	$(RELEASE_PERFORMANCE_LOG_COVERAGE_TARGET) \
 	$(RELEASE_SCREENSHOT_OPTIONS_COVERAGE_TARGET) \
@@ -468,7 +491,8 @@ DIST_LICENSE_FILES := LICENSE NOTICE README.md THIRD_PARTY_NOTICES.md \
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic $(MACOS_TARGET_FLAG)
 CPPFLAGS := -Isrc -I$(RAYLIB_PREFIX)/include
 LDFLAGS := -L$(RAYLIB_PREFIX)/lib $(MACOS_TARGET_FLAG)
-LDLIBS := -lraylib -framework Cocoa -framework IOKit -framework OpenGL
+LDLIBS := -lraylib -framework Cocoa -framework GameController \
+	-framework IOKit -framework OpenGL
 SANITIZER_FLAGS := -O1 -g -fno-omit-frame-pointer \
 	-fsanitize=address,undefined $(MACOS_TARGET_FLAG)
 COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
@@ -495,6 +519,11 @@ $(OBJECT_DIR)/%.o: src/%.cpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $(@:.o=.d) \
 		-c $< -o $@
 
+$(OBJECT_DIR)/%.o: src/%.mm
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -fobjc-arc -MMD -MP \
+		-MF $(@:.o=.d) -c $< -o $@
+
 $(TARGET): $(OBJECTS)
 	$(CXX) $(OBJECTS) $(LDFLAGS) $(LDLIBS) -o $@
 
@@ -502,6 +531,12 @@ $(DEBUG_DIR)/%.o: src/%.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
 		-Werror $(MACOS_TARGET_FLAG) -MMD -MP -MF $(@:.o=.d) -c $< -o $@
+
+$(DEBUG_DIR)/%.o: src/%.mm
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
+		-Werror $(MACOS_TARGET_FLAG) -fobjc-arc -MMD -MP \
+		-MF $(@:.o=.d) -c $< -o $@
 
 $(DEBUG_TARGET): $(DEBUG_OBJECTS)
 	$(CXX) $(DEBUG_OBJECTS) $(LDFLAGS) $(LDLIBS) -o $@
@@ -561,6 +596,7 @@ $(DIST_CONFIG_FILE): force-dist-config | check-dist-prereqs
 			'performance-capability-contract-sha256=$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT_SHA256)' \
 			'arch=$(DIST_ARCH)' 'macos-min=$(DIST_MACOS_MIN)' \
 			'compile-flags=$(DIST_COMPILE_FLAGS)' \
+			'objcxx-flags=-fobjc-arc' \
 			'link-flags=$(DIST_LINK_FLAGS)'; \
 	} > $@.tmp
 	if test ! -f $@ || ! cmp -s $@.tmp $@; then \
@@ -572,6 +608,11 @@ $(DIST_CONFIG_FILE): force-dist-config | check-dist-prereqs
 $(DIST_OBJECT_DIR)/%.o: src/%.cpp $(DIST_CONFIG_FILE)
 	mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(DIST_COMPILE_FLAGS) -MMD -MP \
+		-MF $(@:.o=.d) -c $< -o $@
+
+$(DIST_OBJECT_DIR)/%.o: src/%.mm $(DIST_CONFIG_FILE)
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(DIST_COMPILE_FLAGS) -fobjc-arc -MMD -MP \
 		-MF $(@:.o=.d) -c $< -o $@
 
 $(DIST_TARGET): $(DIST_OBJECTS) $(RAYLIB_STATIC)
@@ -885,6 +926,12 @@ test-bundle: $(APP_EXECUTABLE) $(BUNDLE_RESOURCE_MANIFEST)
 	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
 		'Print :LSMinimumSystemVersion' $(APP)/Contents/Info.plist)" = \
 		"$(MACOS_MIN)"
+	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
+		'Print :GCSupportsControllerUserInteraction' \
+		$(APP)/Contents/Info.plist)" = "true"
+	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
+		'Print :GCSupportedGameControllers:0:ProfileName' \
+		$(APP)/Contents/Info.plist)" = "ExtendedGamepad"
 	codesign --verify --deep --strict --verbose=4 $(APP)
 
 # This exact, no-window handshake proves that the built executable exposes the
@@ -993,6 +1040,14 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_TARGET): \
 		-Werror $(COMMAND_SIDE_EFFECT_DISPATCH_TEST_SOURCE) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) -o $@
 
+$(INPUT_ADAPTER_TEST_TARGET): $(INPUT_ADAPTER_TEST_SOURCE) \
+		$(INPUT_ADAPTER_SOURCE) src/app/input_adapter.h \
+		src/platform/gamepad_event_accumulator.h \
+		src/game/player_system.h src/core/coordinates.h tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
+		-Werror $(INPUT_ADAPTER_TEST_SOURCE) $(INPUT_ADAPTER_SOURCE) -o $@
+
 $(ATOMIC_OUTPUT_FILE_TEST_TARGET): $(ATOMIC_OUTPUT_FILE_TEST_SOURCE) \
 		$(ATOMIC_OUTPUT_FILE_SOURCE) src/app/atomic_output_file.h \
 		tests/test_support.h
@@ -1097,6 +1152,12 @@ $(SANITIZER_DIR)/%.o: src/%.cpp
 	$(CXX) $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic \
 		$(SANITIZER_FLAGS) -MMD -MP -MF $(@:.o=.d) -c $< -o $@
 
+$(SANITIZER_DIR)/%.o: src/%.mm
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic \
+		$(SANITIZER_FLAGS) -fobjc-arc -MMD -MP -MF $(@:.o=.d) \
+		-c $< -o $@
+
 $(SANITIZER_TARGET): $(SANITIZER_OBJECTS)
 	$(CXX) $(SANITIZER_OBJECTS) $(SANITIZER_FLAGS) \
 		$(LDFLAGS) $(LDLIBS) -o $@
@@ -1110,6 +1171,12 @@ $(COVERAGE_DIR)/%.o: src/%.cpp
 	mkdir -p $(dir $@)
 	"$(COVERAGE_CXX)" $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic \
 		$(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) -c $< -o $@
+
+$(COVERAGE_DIR)/%.o: src/%.mm
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic \
+		$(COVERAGE_FLAGS) -fobjc-arc -MMD -MP -MF $(@:.o=.d) \
+		-c $< -o $@
 
 $(COVERAGE_TARGET): $(COVERAGE_OBJECTS)
 	"$(COVERAGE_CXX)" $(COVERAGE_OBJECTS) $(COVERAGE_FLAGS) \
@@ -1135,6 +1202,16 @@ $(COMBAT_SYSTEM_COVERAGE_TEST_OBJECT): $(COMBAT_SYSTEM_TEST_SOURCE)
 	mkdir -p $(dir $@)
 	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic \
 		-Werror $(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) -c $< -o $@
+
+# This driver directly exercises the inline, thread-safe platform event cache.
+# Instrument it while linking the canonical input-adapter production object.
+$(INPUT_ADAPTER_COVERAGE_TEST_OBJECT): $(INPUT_ADAPTER_TEST_SOURCE) \
+		src/app/input_adapter.h src/platform/gamepad_event_accumulator.h \
+		src/game/player_system.h src/core/coordinates.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic \
+		-Werror $(COVERAGE_FLAGS) -MMD -MP -MF $(@:.o=.d) \
+		-c $(INPUT_ADAPTER_TEST_SOURCE) -o $@
 
 # This driver instruments the inline option parser; the file writer uses the
 # canonical production object to avoid duplicate coverage maps.
@@ -1234,6 +1311,16 @@ $(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TARGET): \
 	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_TEST_OBJECT) \
 		$(COMMAND_SIDE_EFFECT_DISPATCH_COVERAGE_OBJECT) -o $@
+
+$(INPUT_ADAPTER_COVERAGE_TARGET): \
+		$(INPUT_ADAPTER_COVERAGE_TEST_OBJECT) \
+		$(INPUT_ADAPTER_COVERAGE_OBJECT) src/app/input_adapter.h \
+		src/platform/gamepad_event_accumulator.h \
+		src/game/player_system.h src/core/coordinates.h tests/test_support.h
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" $(COVERAGE_FLAGS) \
+		$(INPUT_ADAPTER_COVERAGE_TEST_OBJECT) \
+		$(INPUT_ADAPTER_COVERAGE_OBJECT) -o $@
 
 $(ATOMIC_OUTPUT_FILE_COVERAGE_TARGET): \
 		$(ATOMIC_OUTPUT_FILE_COVERAGE_TEST_OBJECT) \
@@ -1337,7 +1424,7 @@ coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES) \
 		-o $(COVERAGE_PROFILE)
 	"$(LLVM_COV)" report $(COVERAGE_TARGET) \
 		-instr-profile=$(COVERAGE_PROFILE) \
-		$(SOURCES) $(PRODUCTION_HEADERS)
+		$(SOURCES) $(PLATFORM_SOURCES) $(PRODUCTION_HEADERS)
 
 # Candidate packages and candidate-bound QA under build/release{,-evidence}
 # are immutable records, not disposable compiler output. Keep the cleanup list

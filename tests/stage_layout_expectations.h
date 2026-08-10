@@ -55,7 +55,7 @@ inline std::uint64_t stageLayoutSignature(
 
 inline constexpr std::array<std::uint64_t, tanks3d::game::kStageCount>
     kExpectedStageLayoutSignatures{{
-        0x6393262a9b657ff5ULL, 0x5ac8724c44a81688ULL,
+        0x16f7273f7f1f9e7aULL, 0x5ac8724c44a81688ULL,
         0x0f4ec27c9fe51a90ULL, 0x6c64f0942c79f353ULL,
         0xef85299a443a8efeULL, 0x3d78b48b0aa0bedfULL,
         0x49da66e5663a53a6ULL, 0x9022e2e55550bbbcULL,

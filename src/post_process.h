@@ -29,6 +29,7 @@ public:
 
     void unload()
     {
+        unloadResolvedTarget();
         if (IsShaderValid(shader_))
             UnloadShader(shader_);
         shader_ = {};
@@ -55,7 +56,9 @@ public:
             static_cast<float>(source.texture.width),
             -static_cast<float>(source.texture.height)};
 
-        if (!valid())
+        if (!valid() ||
+            !ensureResolvedTarget(source.texture.width,
+                                  source.texture.height))
         {
             DrawTexturePro(source.texture, sourceRectangle, destination,
                            {0.0f, 0.0f}, 0.0f, WHITE);
@@ -66,17 +69,61 @@ public:
             1.0f / static_cast<float>(source.texture.width),
             1.0f / static_cast<float>(source.texture.height)};
 
-        // A complete shader-mode scope forces the raylib batch to flush before
-        // another render target changes the texel-size uniform.
+        // The source view is logical-window resolution while a Retina back
+        // buffer has four times as many fragments. Run the 13-tap bloom and
+        // tone map once per source pixel, then perform one inexpensive
+        // bilinear upscale. HUD rendering still follows at native Retina
+        // resolution in the caller.
+        BeginTextureMode(resolvedTarget_);
+        ClearBackground(BLACK);
         BeginShaderMode(shader_);
         SetShaderValue(shader_, texelSizeLocation_, &texelSize, SHADER_UNIFORM_VEC2);
         SetShaderValue(shader_, timeLocation_, &time, SHADER_UNIFORM_FLOAT);
-        DrawTexturePro(source.texture, sourceRectangle, destination,
+        const Rectangle resolvedDestination{
+            0.0f, 0.0f,
+            static_cast<float>(resolvedTarget_.texture.width),
+            static_cast<float>(resolvedTarget_.texture.height)};
+        DrawTexturePro(source.texture, sourceRectangle, resolvedDestination,
                        {0.0f, 0.0f}, 0.0f, WHITE);
         EndShaderMode();
+        EndTextureMode();
+
+        const Rectangle resolvedSource{
+            0.0f, 0.0f,
+            static_cast<float>(resolvedTarget_.texture.width),
+            -static_cast<float>(resolvedTarget_.texture.height)};
+        DrawTexturePro(resolvedTarget_.texture, resolvedSource, destination,
+                       {0.0f, 0.0f}, 0.0f, WHITE);
     }
 
 private:
+    bool ensureResolvedTarget(int width, int height)
+    {
+        if (IsRenderTextureValid(resolvedTarget_) &&
+            resolvedTarget_.texture.width == width &&
+            resolvedTarget_.texture.height == height)
+        {
+            return true;
+        }
+
+        unloadResolvedTarget();
+        resolvedTarget_ = LoadRenderTexture(width, height);
+        if (!IsRenderTextureValid(resolvedTarget_))
+        {
+            resolvedTarget_ = {};
+            return false;
+        }
+        SetTextureFilter(resolvedTarget_.texture, TEXTURE_FILTER_BILINEAR);
+        return true;
+    }
+
+    void unloadResolvedTarget()
+    {
+        if (IsRenderTextureValid(resolvedTarget_))
+            UnloadRenderTexture(resolvedTarget_);
+        resolvedTarget_ = {};
+    }
+
     static const char *fragmentShaderSource()
     {
         return R"GLSL(#version 330
@@ -166,6 +213,7 @@ void main()
     }
 
     Shader shader_{};
+    RenderTexture2D resolvedTarget_{};
     int texelSizeLocation_ = -1;
     int timeLocation_ = -1;
     bool valid_ = false;

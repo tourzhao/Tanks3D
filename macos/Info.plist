@@ -23,6 +23,15 @@
     <!-- Make replaces this template value with the linked raylib minimum. -->
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
+    <key>GCSupportsControllerUserInteraction</key>
+    <true/>
+    <key>GCSupportedGameControllers</key>
+    <array>
+        <dict>
+            <key>ProfileName</key>
+            <string>ExtendedGamepad</string>
+        </dict>
+    </array>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

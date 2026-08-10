@@ -135,9 +135,10 @@ int main()
     expect(disabled.valid() && !disabled.options.requested() &&
                disabled.options.frame == kDefaultReleaseScreenshotFrame,
            "unrelated gameplay arguments enabled or changed screenshot mode");
-    expect(kReleaseScreenshotWidth == 1280 &&
+    expect(kDefaultReleaseScreenshotFrame == 480 &&
+               kReleaseScreenshotWidth == 1280 &&
                kReleaseScreenshotHeight == 720,
-           "the release screenshot canvas dimensions changed");
+           "the release screenshot timing or canvas dimensions changed");
 
     const auto defaultFrame = parseReleaseScreenshotOptions(
         {"--quick-start", "--tank-showcase", "--stage=35",

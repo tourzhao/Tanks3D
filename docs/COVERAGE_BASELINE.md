@@ -1,12 +1,12 @@
 # Coverage Baseline
 
 This report records the pre-modularization self-test baseline begun on
-2026-08-04 and refreshed on 2026-08-09 after the transactional view-target
-hardening increment.
+2026-08-04 and refreshed on 2026-08-10 after the native-controller, 120 Hz
+presentation, and classic stage-one increment.
 It is a measurement, not a whole-project merge threshold. The larger self-test
 is still textually included from `tests/self_tests.inl` in `src/main.cpp`; the
 new core/game rule suites and app-layer suites are independent executables that
-do not link raylib. The Makefile merges all nineteen profiles and explicitly
+do not link raylib. The Makefile merges all twenty profiles and explicitly
 passes only production source/header paths to `llvm-cov`, excluding `tests/`
 and third-party headers from the denominator. Compiled-module tests reuse
 canonical instrumented objects; the CombatSystem test driver is instrumented
@@ -17,7 +17,7 @@ warnings. Renderer and embedded visual code lower the whole-source number.
 
 ## Instrumented Result
 
-Apple clang 21 compiled the game, ten pure-rule executables, and seven
+Apple clang 21 compiled the game, ten pure-rule executables, and eight
 raylib-free app-layer executables with
 `-O0 -g -fprofile-instr-generate -fcoverage-mapping`. The game ran
 `--self-test` plus `--self-test=release-performance-capabilities` in distinct
@@ -26,9 +26,10 @@ profiles, the pure-rule and app-layer executables ran their table suites, and
 
 | Scope | Region | Function | Line | Branch |
 | --- | ---: | ---: | ---: | ---: |
-| All forty-nine production source/header files | 52.23% | 65.28% | 47.22% | 53.76% |
-| `src/main.cpp` | 24.65% | 58.74% | 29.19% | 22.00% |
+| All fifty-four production source/header paths | 52.31% | 64.21% | 47.12% | 53.73% |
+| `src/main.cpp` | 24.87% | 58.46% | 28.92% | 22.19% |
 | `src/app/command_side_effect_dispatch.cpp` | 100.00% | 100.00% | 99.55% | 100.00% |
+| `src/app/input_adapter.cpp` | 94.19% | 100.00% | 96.51% | 78.19% |
 | `src/app/atomic_output_file.cpp` | 60.40% | 100.00% | 69.92% | 53.45% |
 | `src/app/release_performance_capabilities.cpp` | 85.00% | 100.00% | 86.36% | 52.94% |
 | `src/app/release_performance_capabilities.h` | 100.00% | 100.00% | 100.00% | N/A |
@@ -52,15 +53,19 @@ profiles, the pure-rule and app-layer executables ran their table suites, and
 | `src/game/game_event.h` | 100.00% | 100.00% | 100.00% | 100.00% |
 | `src/game/player_system.cpp` | 100.00% | 100.00% | 100.00% | 100.00% |
 | `src/game/settlement_system.cpp` | 100.00% | 100.00% | 100.00% | 100.00% |
-| `src/game/stage_generator.cpp` | 100.00% | 100.00% | 100.00% | 100.00% |
+| `src/game/stage_generator.cpp` | 98.77% | 83.33% | 95.28% | 100.00% |
 | `src/game/stage_map.h` | 100.00% | 100.00% | 100.00% | 100.00% |
-| `src/game/stage_map.cpp` | 97.97% | 100.00% | 98.18% | 93.40% |
+| `src/game/stage_map.cpp` | 97.82% | 100.00% | 97.91% | 92.26% |
+| `src/platform/gamepad_event_accumulator.h` | 90.32% | 100.00% | 96.63% | 77.78% |
+| `src/platform/macos_gamepad_backend.mm` | 0.00% | 0.00% | 0.00% | 0.00% |
+| `src/post_process.h` | 0.00% | 0.00% | 0.00% | 0.00% |
 | `StageMap::impactShell` | 100.00% | 100.00% | 100.00% | 97.37% |
 
-The overall percentages now include all forty-nine production files and 21,236
-production lines: `src/main.cpp` is 7,679 lines and the textually included
-`tests/self_tests.inl` is 11,042 lines. Thirteen pure headers and seven pure
-implementation sources are compiled independently; eight app implementation
+The report lists 41 files with coverage mappings from 54 explicitly passed
+production paths and 16,315 executable lines. `src/main.cpp` is 7,899 physical
+lines and the textually included `tests/self_tests.inl` is 11,059 lines; tests
+remain outside the production denominator. Thirteen pure headers and seven pure
+implementation sources are compiled independently; nine app implementation
 modules remain raylib-free. `player_system.h` is 277 lines,
 `player_system.cpp` is 289 lines, and its 1,793-line direct test remains outside
 the production denominator. Moving tile generation from `StageMap` into
@@ -68,6 +73,13 @@ the production denominator. Moving tile generation from `StageMap` into
 generator goldens, the mutable-map bridge and routes, dumped signatures,
 gameplay expectations, and the versioned same-build deterministic replay gate
 pass.
+
+The 72-check input-adapter suite instruments both the raylib-free mapper and
+the inline thread-safe event accumulator. The Objective-C++ GameController
+backend and GPU post-process remain at zero automated coverage because their
+meaningful paths require a live macOS controller/window and framebuffer;
+bundle checks, release-screenshot smoke tests, and manual controller QA cover
+those platform boundaries instead.
 
 The integrated view-target suite covers the raylib 6.0 depth-metadata sentinel,
 valid HDR reuse, RGBA8 fallback, double-failure retry, failed-resize rollback,

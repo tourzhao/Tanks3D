@@ -2,6 +2,7 @@
 #define TANKS3D_SELF_TESTS_INL
 
 tanks3d_test::Reporter gSelfTestReporter;
+constexpr int kTerrainFixtureStage = 2;
 
 enum class AudioOutputCallType : unsigned char
 {
@@ -2011,14 +2012,16 @@ int runStageAndEnvironmentSelfTests(const fs::path &resourceRoot)
             signature;
 
         bool spawnRoutesOpen =
-            map.hasTankRoute(kPlayerSpawnPoints[0], kPlayerSpawnPoints[1]) &&
-            map.hasTankRoute(kEnemySpawnPoints[1], {13.0f, 20.0f});
+            map.hasTankRoute(kPlayerSpawnPoints[0], kPlayerSpawnPoints[1]);
+        if (stage != 1)
+            spawnRoutesOpen = spawnRoutesOpen &&
+                map.hasTankRoute(kEnemySpawnPoints[1], {13.0f, 20.0f});
         for (XZ enemySpawn : kEnemySpawnPoints)
             for (XZ playerStart : kPlayerSpawnPoints)
                 spawnRoutesOpen = spawnRoutesOpen &&
                     map.hasTankRoute(enemySpawn, playerStart);
         if (!checkTest(deterministicLayout && uniqueLayout && spawnRoutesOpen,
-                       "original stage generation is unstable, duplicated, or disconnected"))
+                       "stage generation is unstable, duplicated, or disconnected"))
             return 1;
         for (int row = 21; row <= 25; ++row)
         {
@@ -3135,11 +3138,25 @@ int runSettingsProgressionAndSettlementSelfTests(
     menuDefaults.playerCount = 2;
     if (!checkTest(onePlayerAdvancedRow && menuRowCount(menuDefaults) == 6 &&
                        advancedMenuRow(menuDefaults) == 5 &&
-                       advancedSettingsAreDefault(menuDefaults.advanced) &&
+                       advancedSettingsAreDefault(menuDefaults) &&
                        percentageLabel(-30) == "-30%" &&
                        percentageLabel(0) == "0%  DEFAULT" &&
                        percentageLabel(30) == "+30%",
                    "advanced menu rows, defaults, or percentage labels are incorrect"))
+        return 1;
+    menuDefaults.advancedSelected = 4;
+    UiInputFrame toggleStickLayout;
+    toggleStickLayout.rightPressed = true;
+    const bool stickLayoutChanged =
+        updateAdvancedMenu(menuDefaults, toggleStickLayout);
+    UiInputFrame resetAdvanced;
+    resetAdvanced.resetPressed = true;
+    const bool advancedResetChanged =
+        updateAdvancedMenu(menuDefaults, resetAdvanced);
+    if (!checkTest(stickLayoutChanged && advancedResetChanged &&
+                       menuDefaults.isometricAnalogStick &&
+                       advancedSettingsAreDefault(menuDefaults),
+                   "advanced analogue-stick layout toggle or reset is incorrect"))
         return 1;
     const std::array<float, 4> expectedMovement{{5.0f, 6.5f, 6.5f, 6.5f}};
     const std::array<float, 4> expectedShellSpeed{{9.775f, 12.7075f,
@@ -4916,7 +4933,7 @@ int runEnemyProductionPathCharacterizationSelfTests(
     Game3D iceFireGame(resourceRoot, 0xe3000009U);
     XZ iceFireAnchor{};
     if (!checkTest(
-            iceFireGame.start(1, 3, 1, nations) &&
+            iceFireGame.start(1, 3, kTerrainFixtureStage, nations) &&
                 Game3DTestAccess::preparePlayerIceInputScenario(
                     iceFireGame, iceFireAnchor),
             "could not prepare Armor ice-fire fixture"))
@@ -5670,7 +5687,7 @@ int runEnemyLifecycleProductionPathSelfTests(const fs::path &resourceRoot)
     Game3D activeGame(resourceRoot, 0xe3100002U);
     XZ iceAnchor{};
     if (!checkTest(
-            activeGame.start(1, 3, 1, nations) &&
+            activeGame.start(1, 3, kTerrainFixtureStage, nations) &&
                 Game3DTestAccess::preparePlayerIceInputScenario(activeGame,
                                                                  iceAnchor),
             "could not prepare the enemy lifecycle ice fixture"))
@@ -6968,7 +6985,7 @@ int runScriptedPlayerInputSelfTests(const fs::path &resourceRoot)
     Game3D boatGame(resourceRoot, 0x1f2a000dU);
     XZ boatAnchor{};
     if (!checkTest(
-            boatGame.start(1, 3, 1, nations) &&
+            boatGame.start(1, 3, kTerrainFixtureStage, nations) &&
                 Game3DTestAccess::preparePlayerBoatInputScenario(
                     boatGame, boatAnchor),
             "could not find a safe 2x2 water movement fixture"))
@@ -6996,7 +7013,7 @@ int runScriptedPlayerInputSelfTests(const fs::path &resourceRoot)
 
     Game3D iceGame(resourceRoot, 0x1f2a0005U);
     XZ iceAnchor{};
-    if (!checkTest(iceGame.start(1, 3, 1, nations) &&
+    if (!checkTest(iceGame.start(1, 3, kTerrainFixtureStage, nations) &&
                        Game3DTestAccess::preparePlayerIceInputScenario(
                            iceGame, iceAnchor),
                    "could not find a safe 2x2 ice input fixture"))
@@ -11029,7 +11046,7 @@ int runSelfTests(const fs::path &resourceRoot,
     gSelfTestReporter.finish();
     if (selection == SelfTestSelection::All)
     {
-        std::cout << "Tanks3D self-test passed: 35 deterministic original stages with validated spawn routes, three national bases, 12 distinct WWII player vehicles, scripted two-player cardinal/ice/fire input, deterministic session digests and observable rule events, configurable 1-6 HP with 1-HP Bandage disable, advanced +/-30% enemy movement/fire/spawn tuning, strict classic AABBs, cardinal/ice movement with collision-safe local escape, hit-first shell cancellation, 200/490 ms projectile/tank destruction states, death-reset direct-fire streaks and classified K.O. tallies, 20-second shovel steel, 12.5-second 3D/icon bonuses, fixed ten-frame spawn warnings, and all 22 enabled 2D audio cues.\n";
+        std::cout << "Tanks3D self-test passed: classic stage 1 plus 34 deterministic generated stages with validated spawn routes, three national bases, 12 distinct WWII player vehicles, scripted two-player cardinal/ice/fire input, deterministic session digests and observable rule events, configurable 1-6 HP with 1-HP Bandage disable, advanced +/-30% enemy movement/fire/spawn tuning, strict classic AABBs, cardinal/ice movement with collision-safe local escape, hit-first shell cancellation, 200/490 ms projectile/tank destruction states, death-reset direct-fire streaks and classified K.O. tallies, 20-second shovel steel, 12.5-second 3D/icon bonuses, fixed ten-frame spawn warnings, and all 22 enabled 2D audio cues.\n";
     }
     else
     {
