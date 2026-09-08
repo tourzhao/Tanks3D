@@ -10,18 +10,23 @@
 namespace
 {
 using tanks3d::app::ButtonSnapshot;
+using tanks3d::app::CameraPlanarBasis;
 using tanks3d::app::GamepadActionFrame;
 using tanks3d::app::GamepadAssignments;
 using tanks3d::app::GamepadInputState;
 using tanks3d::app::GamepadSnapshot;
-using tanks3d::app::GamepadStickOrientation;
 using tanks3d::app::UiInputFrame;
+using tanks3d::app::cameraPlanarBasis;
+using tanks3d::app::kCameraYawMaximumDegrees;
+using tanks3d::app::kCameraYawMinimumDegrees;
+using tanks3d::app::kCameraYawStepDegrees;
 using tanks3d::app::kGamepadStickEngageThreshold;
 using tanks3d::app::kGamepadStickReleaseThreshold;
 using tanks3d::app::kGamepadStickTurnAxisRatio;
 using tanks3d::app::mapGamepadInput;
 using tanks3d::app::mergePlayerControlFrame;
 using tanks3d::app::mergeUiInputFrame;
+using tanks3d::app::normalizedCameraYawDegrees;
 using tanks3d::core::CardinalDirection;
 using tanks3d::game::DirectionButtonFrame;
 using tanks3d::game::PlayerControlFrame;
@@ -312,6 +317,201 @@ int main()
            "left-stick axis sign did not map to the expected cardinal "
            "direction");
 
+    reporter.beginSuite("camera-yaw-basis-range-and-stick-main-axes");
+    expect(kCameraYawMinimumDegrees == -45 &&
+               kCameraYawMaximumDegrees == 45 &&
+               kCameraYawStepDegrees == 5 &&
+               normalizedCameraYawDegrees(-99) == -45 &&
+               normalizedCameraYawDegrees(99) == 45 &&
+               normalizedCameraYawDegrees(17) == 17,
+           "camera yaw range, step, or clamping contract changed");
+    const std::array<int, 5> cameraAngles{{-45, -30, 0, 30, 45}};
+    for (const int angle : cameraAngles)
+    {
+        const CameraPlanarBasis basis = cameraPlanarBasis(angle);
+        expect(std::fabs(basis.rightX * basis.rightX +
+                         basis.rightZ * basis.rightZ - 1.0f) < 0.0001f &&
+                   std::fabs(basis.offsetX * basis.offsetX +
+                             basis.offsetZ * basis.offsetZ - 1.0f) < 0.0001f &&
+                   std::fabs(basis.rightX * basis.offsetX +
+                             basis.rightZ * basis.offsetZ) < 0.0001f,
+               "camera yaw basis was not orthonormal");
+        for (const StickCase &testCase : stickCases)
+        {
+            GamepadSnapshot snapshot = connectedGamepad();
+            snapshot.leftStickX = testCase.x;
+            snapshot.leftStickY = testCase.y;
+            GamepadInputState state;
+            expect(isSingleDirection(
+                       mapGamepadInput(snapshot, state, angle),
+                       testCase.direction, true),
+                   "camera endpoint or intermediate yaw collapsed a "
+                   "screen-cardinal stick direction");
+        }
+    }
+
+    reporter.beginSuite("camera-yaw-stick-follows-visible-world-lanes");
+    struct WorldLaneCase
+    {
+        float x;
+        float z;
+        CardinalDirection direction;
+    };
+    const std::array<WorldLaneCase, 4> worldLanes{{
+        {0.0f, -0.8f, CardinalDirection::North},
+        {0.8f, 0.0f, CardinalDirection::East},
+        {0.0f, 0.8f, CardinalDirection::South},
+        {-0.8f, 0.0f, CardinalDirection::West}}};
+    for (const int angle : cameraAngles)
+    {
+        const CameraPlanarBasis basis = cameraPlanarBasis(angle);
+        for (const WorldLaneCase &lane : worldLanes)
+        {
+            GamepadSnapshot snapshot = connectedGamepad();
+            // Invert the orthonormal screen-to-world basis so the stick points
+            // along the lane as it appears at this camera azimuth.
+            snapshot.leftStickX =
+                lane.x * basis.rightX + lane.z * basis.rightZ;
+            snapshot.leftStickY =
+                lane.x * basis.offsetX + lane.z * basis.offsetZ;
+            GamepadInputState state;
+            expect(isSingleDirection(
+                       mapGamepadInput(snapshot, state, angle),
+                       lane.direction, true),
+                   "a visible map lane did not resolve to its world cardinal "
+                   "direction at the selected camera yaw");
+        }
+    }
+
+    reporter.beginSuite("camera-yaw-change-clears-stick-hysteresis");
+    GamepadSnapshot yawChange = connectedGamepad();
+    yawChange.leftStickX = 0.8f;
+    GamepadInputState yawChangeState;
+    expect(isSingleDirection(mapGamepadInput(yawChange, yawChangeState, 0),
+                             CardinalDirection::East, true),
+           "camera-yaw transition setup did not engage east");
+    expect(isSingleDirection(mapGamepadInput(yawChange, yawChangeState, 45),
+                             CardinalDirection::East, true) &&
+               yawChangeState.cameraYawDegrees == 45,
+           "camera-yaw change retained the old stick edge state");
+    expect(isSingleDirection(mapGamepadInput(yawChange, yawChangeState, 99),
+                             CardinalDirection::East, false) &&
+               yawChangeState.cameraYawDegrees == 45,
+           "equivalent clamped camera yaw repeated a stick edge");
+
+    reporter.beginSuite("camera-yaw-endpoints-tolerate-main-axis-drift");
+    struct DriftCase
+    {
+        float x;
+        float y;
+        CardinalDirection direction;
+    };
+    const std::array<DriftCase, 8> endpointDriftCases{{
+        {0.80f, -0.02f, CardinalDirection::East},
+        {0.80f, 0.02f, CardinalDirection::East},
+        {-0.80f, -0.02f, CardinalDirection::West},
+        {-0.80f, 0.02f, CardinalDirection::West},
+        {-0.02f, -0.80f, CardinalDirection::North},
+        {0.02f, -0.80f, CardinalDirection::North},
+        {-0.02f, 0.80f, CardinalDirection::South},
+        {0.02f, 0.80f, CardinalDirection::South}}};
+    for (const int angle : std::array<int, 2>{{-45, 45}})
+    {
+        for (const DriftCase &testCase : endpointDriftCases)
+        {
+            GamepadSnapshot snapshot = connectedGamepad();
+            snapshot.leftStickX = testCase.x;
+            snapshot.leftStickY = testCase.y;
+            GamepadInputState state;
+            expect(isSingleDirection(
+                       mapGamepadInput(snapshot, state, angle),
+                       testCase.direction, true),
+                   "minor endpoint stick drift crossed into an adjacent "
+                   "world lane");
+        }
+    }
+
+    reporter.beginSuite("menu-transition-suppresses-held-stick-edge");
+    GamepadSnapshot heldOnReturn = connectedGamepad();
+    heldOnReturn.leftStickX = 0.80f;
+    heldOnReturn.faceDown.pressed = true;
+    GamepadInputState heldOnReturnState;
+    heldOnReturnState.suppressStickUntilRelease = true;
+    const GamepadActionFrame suppressedReturn =
+        mapGamepadInput(heldOnReturn, heldOnReturnState, 0);
+    expect(activeDirectionCount(suppressedReturn.player) == 0 &&
+               suppressedReturn.player.fireHeld &&
+               suppressedReturn.ui.confirmPressed &&
+               heldOnReturnState.suppressStickUntilRelease,
+           "menu-transition suppression lost button input or leaked a held "
+           "stick edge");
+    heldOnReturn.faceDown = {};
+    heldOnReturn.leftStickX = std::nextafter(
+        kGamepadStickReleaseThreshold, 0.0f);
+    expect(noPlayerInput(
+               mapGamepadInput(heldOnReturn, heldOnReturnState, 0).player) &&
+               !heldOnReturnState.suppressStickUntilRelease,
+           "centred stick did not clear menu-transition suppression");
+    heldOnReturn.leftStickX = 0.80f;
+    expect(isSingleDirection(
+               mapGamepadInput(heldOnReturn, heldOnReturnState, 0),
+               CardinalDirection::East, true),
+           "fresh deflection after menu-transition suppression lacked an "
+           "edge");
+
+    reporter.beginSuite("menu-transition-stick-release-during-dpad-use");
+    GamepadSnapshot returnWithDpad = connectedGamepad();
+    returnWithDpad.leftStickX = 0.80f;
+    returnWithDpad.dpadUp.held = true;
+    GamepadInputState returnWithDpadState;
+    returnWithDpadState.suppressStickUntilRelease = true;
+    expect(isSingleDirection(
+               mapGamepadInput(returnWithDpad, returnWithDpadState),
+               CardinalDirection::North, false) &&
+               returnWithDpadState.suppressStickUntilRelease,
+           "D-pad lost priority or cleared suppression without a stick "
+           "release");
+    returnWithDpad.dpadUp = {};
+    expect(noPlayerInput(
+               mapGamepadInput(returnWithDpad, returnWithDpadState).player) &&
+               returnWithDpadState.suppressStickUntilRelease,
+           "D-pad release enabled a stick that had not returned to centre");
+    returnWithDpad.dpadUp.held = true;
+    returnWithDpad.leftStickX = 0.0f;
+    expect(isSingleDirection(
+               mapGamepadInput(returnWithDpad, returnWithDpadState),
+               CardinalDirection::North, false) &&
+               !returnWithDpadState.suppressStickUntilRelease,
+           "D-pad input hid the stick release needed to clear suppression");
+    returnWithDpad.leftStickX = 0.80f;
+    expect(isSingleDirection(
+               mapGamepadInput(returnWithDpad, returnWithDpadState),
+               CardinalDirection::North, false),
+           "fresh stick deflection overrode the held D-pad after suppression");
+    returnWithDpad.dpadUp = {};
+    expect(isSingleDirection(
+               mapGamepadInput(returnWithDpad, returnWithDpadState),
+               CardinalDirection::East, true),
+           "stick centred during D-pad use needed another release to recover");
+    expect(isSingleDirection(
+               mapGamepadInput(returnWithDpad, returnWithDpadState),
+               CardinalDirection::East, false),
+           "recovered stick lost held input or repeated its pressed edge");
+
+    reporter.beginSuite("camera-yaw-keeps-dpad-world-cardinal");
+    for (const int angle : std::array<int, 2>{{-45, 45}})
+    {
+        for (const DpadCase &testCase : dpadCases)
+        {
+            GamepadSnapshot snapshot = connectedGamepad();
+            (snapshot.*testCase.input).pressed = true;
+            GamepadInputState state;
+            expect(isSingleDirection(mapGamepadInput(snapshot, state, angle),
+                                     testCase.direction, true),
+                   "camera yaw rotated or collapsed a D-pad world lane");
+        }
+    }
+
     reporter.beginSuite("gamepad-stick-diagonal-lock-and-axis-turn");
     GamepadSnapshot tie = connectedGamepad();
     tie.leftStickX = 0.7f;
@@ -358,195 +558,6 @@ int main()
     expect(isSingleDirection(mapGamepadInput(reversal, reversalState),
                              CardinalDirection::West, true),
            "same-axis reversal did not emit a new direction edge");
-
-    reporter.beginSuite("gamepad-stick-isometric-diagonal-map");
-    const std::array<StickCase, 4> isometricCases{{
-        {0.70f, -0.70f, CardinalDirection::North},
-        {0.70f, 0.70f, CardinalDirection::East},
-        {-0.70f, 0.70f, CardinalDirection::South},
-        {-0.70f, -0.70f, CardinalDirection::West}}};
-    for (const StickCase &testCase : isometricCases)
-    {
-        GamepadSnapshot snapshot = connectedGamepad();
-        snapshot.leftStickX = testCase.x;
-        snapshot.leftStickY = testCase.y;
-        GamepadInputState state;
-        expect(isSingleDirection(
-                   mapGamepadInput(
-                       snapshot, state,
-                       GamepadStickOrientation::Isometric45),
-                   testCase.direction, true),
-               "an isometric screen diagonal did not map to its map-axis "
-               "direction");
-    }
-
-    reporter.beginSuite("gamepad-stick-cardinal-orientation-compatible");
-    for (const StickCase &testCase : stickCases)
-    {
-        GamepadSnapshot snapshot = connectedGamepad();
-        snapshot.leftStickX = testCase.x;
-        snapshot.leftStickY = testCase.y;
-        GamepadInputState state;
-        expect(isSingleDirection(
-                   mapGamepadInput(
-                       snapshot, state,
-                       GamepadStickOrientation::Cardinal),
-                   testCase.direction, true),
-               "explicit cardinal orientation changed classic stick "
-               "mapping");
-    }
-
-    reporter.beginSuite("gamepad-stick-isometric-keeps-dpad-cardinal");
-    bool isometricDpadMapCorrect = true;
-    for (const DpadCase &testCase : dpadCases)
-    {
-        GamepadSnapshot snapshot = connectedGamepad();
-        snapshot.leftStickX = 0.70f;
-        snapshot.leftStickY = 0.70f;
-        (snapshot.*testCase.input).pressed = true;
-        GamepadInputState state;
-        const GamepadActionFrame actions = mapGamepadInput(
-            snapshot, state, GamepadStickOrientation::Isometric45);
-        isometricDpadMapCorrect = isometricDpadMapCorrect &&
-            isSingleDirection(actions, testCase.direction, true);
-    }
-    expect(isometricDpadMapCorrect,
-           "isometric stick orientation rotated or leaked through the D-pad");
-
-    GamepadSnapshot isometricDpadPriority = connectedGamepad();
-    isometricDpadPriority.leftStickX = 0.70f;
-    isometricDpadPriority.leftStickY = 0.70f;
-    isometricDpadPriority.dpadUp.pressed = true;
-    GamepadInputState isometricDpadState;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricDpadPriority, isometricDpadState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, true),
-           "D-pad did not remain authoritative in isometric stick mode");
-    isometricDpadPriority.dpadUp = {};
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricDpadPriority, isometricDpadState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::East, true),
-           "isometric stick did not emit a fresh edge after D-pad release");
-
-    reporter.beginSuite("gamepad-stick-orientation-switch-clears-hysteresis");
-    GamepadSnapshot cardinalToIsometric = connectedGamepad();
-    cardinalToIsometric.leftStickX = 0.80f;
-    cardinalToIsometric.leftStickY = -0.02f;
-    GamepadInputState cardinalToIsometricState;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   cardinalToIsometric, cardinalToIsometricState,
-                   GamepadStickOrientation::Cardinal),
-               CardinalDirection::East, true),
-           "cardinal setup direction for orientation switch was incorrect");
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   cardinalToIsometric, cardinalToIsometricState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, true),
-           "cardinal-to-isometric switch retained the old angular lock");
-
-    GamepadSnapshot isometricToCardinal = connectedGamepad();
-    isometricToCardinal.leftStickX = 0.80f;
-    isometricToCardinal.leftStickY = -0.75f;
-    GamepadInputState isometricToCardinalState;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricToCardinal, isometricToCardinalState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, true),
-           "isometric setup direction for orientation switch was incorrect");
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricToCardinal, isometricToCardinalState,
-                   GamepadStickOrientation::Cardinal),
-               CardinalDirection::East, true),
-           "isometric-to-cardinal switch retained the old angular lock");
-
-    reporter.beginSuite("gamepad-stick-isometric-deadzone-and-hysteresis");
-    GamepadSnapshot isometricThreshold = connectedGamepad();
-    GamepadInputState isometricThresholdState;
-    isometricThreshold.leftStickX =
-        kGamepadStickEngageThreshold * 0.70f;
-    isometricThreshold.leftStickY =
-        -kGamepadStickEngageThreshold * 0.70f;
-    expect(noPlayerInput(
-               mapGamepadInput(
-                   isometricThreshold, isometricThresholdState,
-                   GamepadStickOrientation::Isometric45).player),
-           "isometric rotation enlarged input below the radial dead zone");
-    isometricThreshold.leftStickX =
-        kGamepadStickEngageThreshold * 0.72f;
-    isometricThreshold.leftStickY =
-        -kGamepadStickEngageThreshold * 0.72f;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricThreshold, isometricThresholdState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, true),
-           "isometric rotation rejected input outside the radial dead zone");
-    isometricThreshold.leftStickX =
-        kGamepadStickReleaseThreshold * 0.72f;
-    isometricThreshold.leftStickY =
-        -kGamepadStickReleaseThreshold * 0.72f;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricThreshold, isometricThresholdState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, false),
-           "isometric stick released above the release threshold");
-    isometricThreshold.leftStickX =
-        kGamepadStickReleaseThreshold * 0.70f;
-    isometricThreshold.leftStickY =
-        -kGamepadStickReleaseThreshold * 0.70f;
-    expect(noPlayerInput(
-               mapGamepadInput(
-                   isometricThreshold, isometricThresholdState,
-                   GamepadStickOrientation::Isometric45).player),
-           "isometric stick remained active below the release threshold");
-
-    constexpr float kInverseSquareRootTwo = 0.7071067811865475f;
-    GamepadSnapshot isometricTurn = connectedGamepad();
-    isometricTurn.leftStickX = 0.50f * kInverseSquareRootTwo;
-    isometricTurn.leftStickY = -0.50f * kInverseSquareRootTwo;
-    GamepadInputState isometricTurnState;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricTurn, isometricTurnState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, true),
-           "isometric hysteresis setup did not engage north");
-    // Leave enough room around the threshold for the rotate/inverse-rotate
-    // floating-point round trip; the cardinal tests above cover exact ULP
-    // inclusivity directly in the resolver's coordinate system.
-    const float belowIsometricTurn =
-        0.50f * (kGamepadStickTurnAxisRatio - 0.02f);
-    isometricTurn.leftStickX =
-        (belowIsometricTurn + 0.50f) * kInverseSquareRootTwo;
-    isometricTurn.leftStickY =
-        (belowIsometricTurn - 0.50f) * kInverseSquareRootTwo;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricTurn, isometricTurnState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::North, false),
-           "isometric stick changed axes below the hysteresis margin");
-    const float aboveIsometricTurn =
-        0.50f * (kGamepadStickTurnAxisRatio + 0.02f);
-    isometricTurn.leftStickX =
-        (aboveIsometricTurn + 0.50f) * kInverseSquareRootTwo;
-    isometricTurn.leftStickY =
-        (aboveIsometricTurn - 0.50f) * kInverseSquareRootTwo;
-    expect(isSingleDirection(
-               mapGamepadInput(
-                   isometricTurn, isometricTurnState,
-                   GamepadStickOrientation::Isometric45),
-               CardinalDirection::East, true),
-           "isometric stick did not change axes above the hysteresis margin");
 
     reporter.beginSuite("gamepad-stick-non-finite-values-are-neutral");
     const float infinity = std::numeric_limits<float>::infinity();

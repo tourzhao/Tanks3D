@@ -46,10 +46,17 @@ the tank center; visual muzzle length must not change gameplay spawn position.
 - A gamepad D-pad takes priority over its left stick. The stick resolves to one
   cardinal direction with a 0.20 radial engage threshold, 0.12 release
   threshold, and 1.08 cross-axis turn ratio. This gives each cardinal a wide
-  sector while retaining narrow diagonal hysteresis. During battle, the default
-  isometric mode aligns the left stick with the fixed 45-degree camera;
-  Advanced Settings can restore Classic, unrotated input. Menu stick, D-pad,
-  and keyboard directions are never rotated. Bottom/left face, right shoulder,
+  sector while retaining narrow diagonal hysteresis. During battle, the stick
+  is rotated continuously into the selected camera azimuth (-45 to +45 degrees)
+  before quantization; an endpoint tie falls back to the original stick axis,
+  so all four main directions remain distinct. Menu stick, D-pad, and keyboard
+  directions remain world-cardinal and are never rotated.
+  Returning from battle suppresses a held stick until it crosses the release
+  threshold, preventing a rotated gameplay deflection from navigating the
+  setup menu. Centering the stick also clears suppression while the D-pad is
+  held; the D-pad retains priority, and switching back to the stick does not
+  require a second release.
+  Bottom/left face, right shoulder,
   or right trigger fires; bottom face confirms, Plus/Start pauses, Minus/Back
   cancels, and top face resets advanced settings. No face button can cancel or
   quit. Restart remains keyboard-only to avoid an accidental battle reset.
@@ -158,6 +165,21 @@ the tank center; visual muzzle length must not change gameplay spawn position.
   blocks a player without Boat and permits the same move with it.
 - Pause, stage intro, game over, settlement, high-score display, death, and the
   one-second player creation state ignore input; pressed edges are not buffered.
+
+## Camera Tracking
+
+- The orthographic combat camera has no movement dead zone. It follows the
+  active solo tank every update with exponential responsiveness `12/s`; a
+  reset snaps immediately to the tank. With two active players it follows
+  their exact midpoint and expands the view from their separation and actual
+  viewport aspect ratio. Portrait and square windows must not crop separated
+  players by imposing a fixed maximum orthographic span.
+- Horizontal rotation is selectable from -45 to +45 degrees. Elevation is
+  selectable from 40 to 70 degrees, defaults to 50, and keeps a fixed camera
+  orbit distance. Both use five-degree steps and are presentation-only; they
+  do not change world-cardinal rules or deterministic session state. The
+  darker grass apron outside the raised 26-by-26 boundary never extends
+  collision or playable space.
 
 ## Audio Output
 

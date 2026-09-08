@@ -30,6 +30,7 @@ EVENT_LOG_SCHEMA = "tanks3d-gameplay-event-log-v2"
 EVENT_LOG_PRODUCER = "Tanks3D Alpha QA Evidence Compiler"
 OBSERVATION_MANIFEST_SHA256_KEY = "observation_manifest_sha256"
 REQUIREMENTS_SCHEMA = "tanks3d-release-requirements-v2"
+INTERACTIVE_CONTROLS_REVISION = "camera-controller-v1"
 EVIDENCE_IDS = (
     "main_menu_and_advanced_settings",
     "one_player_gameplay",
@@ -57,6 +58,13 @@ PUBLISHED_CONTROL_CHECKS = (
     "f11_borderless_toggle",
     "n_b_stage_navigation",
     "q_or_escape_exits_from_setup",
+    "controller_menu_navigation_confirm_cancel_reset",
+    "controller_fire_pause_cancel_no_face_exit",
+    "controller_stable_player_assignments",
+    "controller_disconnect_reconnect_without_stuck_input",
+    "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+    "return_menu_held_stick_release_without_dpad",
+    "return_menu_held_stick_release_with_dpad_overlap",
 )
 ADVANCED_SETTINGS_CHECKS = (
     "default_hp_3_and_reset_restores_defaults",
@@ -67,6 +75,13 @@ ADVANCED_SETTINGS_CHECKS = (
     "selected_tuning_applies_after_start_and_restart",
     "hp_1_disables_bandage_and_normal_hp_restores_it",
     "escape_preserves_selected_values",
+    "camera_yaw_range_minus_45_to_plus_45_step_5",
+    "camera_elevation_range_40_to_70_step_5",
+    "camera_defaults_yaw_0_elevation_50_and_reset",
+    "camera_angles_preserved_on_escape_start_restart",
+    "camera_framing_all_angles_and_window_sizes",
+    "solo_camera_continuous_follow_and_reset",
+    "coop_camera_midpoint_separation_and_respawn",
 )
 CONTROL_CONTEXT_KEYS = {"context", "coverage_token", "evidence_id", "checks"}
 CONTROL_CONTEXT_REQUIREMENTS = (
@@ -78,12 +93,18 @@ CONTROL_CONTEXT_REQUIREMENTS = (
             "menu_arrow_or_wasd_navigation",
             "menu_enter_or_space_confirm",
             "q_or_escape_exits_from_setup",
+            "controller_menu_navigation_confirm_cancel_reset",
+            "controller_disconnect_reconnect_without_stuck_input",
             "default_hp_3_and_reset_restores_defaults",
             "player_hp_range_1_to_6_step_1",
             "enemy_speed_range_minus_30_to_plus_30_step_5",
             "fire_frequency_range_minus_30_to_plus_30_step_5",
             "spawn_pace_range_minus_30_to_plus_30_step_5",
             "escape_preserves_selected_values",
+            "camera_yaw_range_minus_45_to_plus_45_step_5",
+            "camera_elevation_range_40_to_70_step_5",
+            "camera_defaults_yaw_0_elevation_50_and_reset",
+            "camera_angles_preserved_on_escape_start_restart",
         ],
     },
     {
@@ -99,8 +120,17 @@ CONTROL_CONTEXT_REQUIREMENTS = (
             "f8_quality_toggle",
             "f11_borderless_toggle",
             "n_b_stage_navigation",
+            "controller_fire_pause_cancel_no_face_exit",
+            "controller_stable_player_assignments",
+            "controller_disconnect_reconnect_without_stuck_input",
+            "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+            "return_menu_held_stick_release_without_dpad",
+            "return_menu_held_stick_release_with_dpad_overlap",
             "selected_tuning_applies_after_start_and_restart",
             "hp_1_disables_bandage_and_normal_hp_restores_it",
+            "camera_angles_preserved_on_escape_start_restart",
+            "camera_framing_all_angles_and_window_sizes",
+            "solo_camera_continuous_follow_and_reset",
         ],
     },
     {
@@ -118,8 +148,17 @@ CONTROL_CONTEXT_REQUIREMENTS = (
             "f8_quality_toggle",
             "f11_borderless_toggle",
             "n_b_stage_navigation",
+            "controller_fire_pause_cancel_no_face_exit",
+            "controller_stable_player_assignments",
+            "controller_disconnect_reconnect_without_stuck_input",
+            "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+            "return_menu_held_stick_release_without_dpad",
+            "return_menu_held_stick_release_with_dpad_overlap",
             "selected_tuning_applies_after_start_and_restart",
             "hp_1_disables_bandage_and_normal_hp_restores_it",
+            "camera_angles_preserved_on_escape_start_restart",
+            "camera_framing_all_angles_and_window_sizes",
+            "coop_camera_midpoint_separation_and_respawn",
         ],
     },
 )
@@ -497,6 +536,7 @@ def load_profile(requirements_path: Path) -> Tuple[bytes, Mapping[str, Any]]:
     if profile.get("profile") != "macos-alpha-v2":
         raise CompileError("requirements profile is not macos-alpha-v2")
     expected_strings = {
+        "interactive_controls_revision": INTERACTIVE_CONTROLS_REVISION,
         "interactive_observation_manifest_schema": OBSERVATION_MANIFEST_SCHEMA,
         "gameplay_event_log_schema": EVENT_LOG_SCHEMA,
         "gameplay_event_log_producer": EVENT_LOG_PRODUCER,
@@ -579,7 +619,7 @@ def load_profile(requirements_path: Path) -> Tuple[bytes, Mapping[str, Any]]:
         covered_checks.update(checks)
     if covered_checks != set(global_control_checks):
         raise CompileError(
-            "published control contexts do not cover the canonical 21 checks"
+            "published control contexts do not cover the canonical controls revision"
         )
 
     for key in ("modes", "gameplay_ids", "base_ids", "base_checks", "settlement_ids"):

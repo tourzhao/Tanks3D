@@ -34,18 +34,12 @@ struct GamepadSnapshot
     ButtonSnapshot middleRight;
 };
 
-enum class GamepadStickOrientation : unsigned char
-{
-    Cardinal,
-    Isometric45
-};
-
 struct GamepadInputState
 {
     core::CardinalDirection previousStickDirection =
         core::CardinalDirection::None;
-    GamepadStickOrientation stickOrientation =
-        GamepadStickOrientation::Cardinal;
+    int cameraYawDegrees = 0;
+    bool suppressStickUntilRelease = false;
 };
 
 struct UiInputFrame
@@ -80,6 +74,20 @@ inline constexpr float kGamepadStickReleaseThreshold = 0.12f;
 inline constexpr float kGamepadStickTurnAxisRatio = 1.08f;
 inline constexpr std::size_t kPhysicalGamepadSlotCount = 4U;
 inline constexpr std::size_t kPlayerGamepadSlotCount = 2U;
+inline constexpr int kCameraYawMinimumDegrees = -45;
+inline constexpr int kCameraYawMaximumDegrees = 45;
+inline constexpr int kCameraYawStepDegrees = 5;
+
+struct CameraPlanarBasis
+{
+    float rightX = 1.0f;
+    float rightZ = 0.0f;
+    float offsetX = 0.0f;
+    float offsetZ = 1.0f;
+};
+
+int normalizedCameraYawDegrees(int requestedDegrees);
+CameraPlanarBasis cameraPlanarBasis(int requestedDegrees);
 
 struct GamepadAssignments
 {
@@ -97,14 +105,15 @@ struct GamepadAssignments
     int playerIndexForPhysicalSlot(std::size_t physicalSlot) const;
 };
 
-// Converts one raylib-free device snapshot into canonical player and UI
-// commands. Isometric45 rotates only the analogue stick into the fixed
-// camera's four world directions; D-pad input remains cardinal. A disconnect
-// or orientation change clears the stick edge state.
+// Converts one raylib-free device snapshot into cardinal player and UI
+// commands. During gameplay, cameraYawDegrees rotates the analogue stick from
+// screen space into the four world lanes before quantization. D-pad and
+// keyboard directions remain one-to-one world-cardinal controls. A disconnect
+// or camera-angle change clears the stick edge state. Returning to a menu can
+// suppress a held stick until it crosses the release threshold.
 GamepadActionFrame mapGamepadInput(
     const GamepadSnapshot &snapshot, GamepadInputState &state,
-    GamepadStickOrientation orientation =
-        GamepadStickOrientation::Cardinal);
+    int cameraYawDegrees = 0);
 
 // OR-merges independent physical sources while preserving pressed => held for
 // canonical player direction buttons.

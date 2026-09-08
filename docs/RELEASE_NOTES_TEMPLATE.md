@@ -66,7 +66,13 @@ Confirm every line against the published build before release:
 - Menus: NOT VERIFIED — BLOCKED
 - Player 1 movement/fire: NOT VERIFIED — BLOCKED
 - Player 2 movement/fire: NOT VERIFIED — BLOCKED
+- Controller menu/fire/pause/return/reset and two-player assignment: NOT VERIFIED — BLOCKED
+- Camera angle ranges, defaults, keyboard/D-pad lanes, and view-aligned stick: NOT VERIFIED — BLOCKED
 - Pause, setup/menu return, restart, stage navigation, and fullscreen: NOT VERIFIED — BLOCKED
+
+For the adjustable-camera build, bind these claims to the current
+`camera-controller-v1` control matrix and its exact-candidate recordings.
+Older Alpha 4 controls evidence does not cover these changes.
 
 ## Release gate summary
 

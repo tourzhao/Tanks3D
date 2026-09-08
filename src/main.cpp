@@ -96,7 +96,6 @@ using tanks3d::app::Float3;
 using tanks3d::app::GamepadActionFrame;
 using tanks3d::app::GamepadAssignments;
 using tanks3d::app::GamepadInputState;
-using tanks3d::app::GamepadStickOrientation;
 using tanks3d::app::RequestTankAudioAction;
 using tanks3d::app::RequestMapCoreAudioAction;
 using tanks3d::app::Rgba8;
@@ -104,6 +103,8 @@ using tanks3d::app::ReleasePerformanceOptions;
 using tanks3d::app::ReleasePerformanceRecorder;
 using tanks3d::app::ReleaseScreenshotOptions;
 using tanks3d::app::UiInputFrame;
+using tanks3d::app::CameraPlanarBasis;
+using tanks3d::app::cameraPlanarBasis;
 using tanks3d::app::checkReleasePerformanceCapabilities;
 using tanks3d::app::kReleasePerformanceCapabilitiesArgument;
 using tanks3d::app::kReleasePerformanceCompleteMarker;
@@ -134,9 +135,13 @@ using tanks3d::app::parseReleaseScreenshotOptions;
 using tanks3d::app::writeReleasePerformanceCapabilities;
 using tanks3d::app::dispatchCommandSideEffect;
 using tanks3d::app::kPhysicalGamepadSlotCount;
+using tanks3d::app::kCameraYawMaximumDegrees;
+using tanks3d::app::kCameraYawMinimumDegrees;
+using tanks3d::app::kCameraYawStepDegrees;
 using tanks3d::app::mapGamepadInput;
 using tanks3d::app::mergePlayerControlFrame;
 using tanks3d::app::mergeUiInputFrame;
+using tanks3d::app::normalizedCameraYawDegrees;
 using tanks3d::app::shellMapCorePresentationStep;
 using tanks3d::app::shellTankPresentationStep;
 using tanks3d::audio::AudioCue;
@@ -347,9 +352,80 @@ constexpr float kFastEnemySpeed =
 // Normal enemy steering remains on its original 100-899 ms clock.  This local
 // fallback only engages after a tank has repeatedly failed to advance.
 constexpr float kPlayerReloadTime = 0.120f;
-// Keep the fixed isometric camera local, but show enough surrounding lanes to
+// Keep the fixed tilted camera local, but show enough surrounding lanes to
 // plan interceptions without relying on the minimap for every nearby threat.
-constexpr float kSoloCameraSpan = 14.0f;
+constexpr float kSoloCameraSpan = 15.5f;
+// Camera elevation is measured above the ground plane. The supported range
+// keeps tank silhouettes readable at the low endpoint while allowing a much
+// flatter, near-top-down composition at the high endpoint.
+constexpr int kCameraElevationMinimumDegrees = 40;
+constexpr int kCameraElevationMaximumDegrees = 70;
+constexpr int kCameraElevationStepDegrees = 5;
+constexpr int kDefaultCameraElevationDegrees = 50;
+constexpr float kGameplayCameraOrbitDistance = 21.017376f;
+constexpr float kGameplayCameraTargetHeight = 0.35f;
+constexpr float kGameplayCameraFollowResponsiveness = 12.0f;
+
+int normalizedCameraElevationDegrees(int requestedDegrees)
+{
+    return std::clamp(requestedDegrees, kCameraElevationMinimumDegrees,
+                      kCameraElevationMaximumDegrees);
+}
+
+struct GameplayCameraElevationGeometry
+{
+    float depthOffset = 0.0f;
+    float verticalOffset = 0.0f;
+    float groundDepthProjection = 0.0f;
+};
+
+GameplayCameraElevationGeometry gameplayCameraElevationGeometry(
+    int requestedDegrees)
+{
+    const float radians =
+        static_cast<float>(normalizedCameraElevationDegrees(
+            requestedDegrees)) *
+        (kPi / 180.0f);
+    const float groundDepthProjection = std::sin(radians);
+    return {
+        std::cos(radians) * kGameplayCameraOrbitDistance,
+        groundDepthProjection * kGameplayCameraOrbitDistance,
+        groundDepthProjection};
+}
+
+float gameplayCameraSpan(XZ playerSeparation, int cameraYawDegrees,
+                         int cameraElevationDegrees, float aspectRatio)
+{
+    const float aspect = std::isfinite(aspectRatio) && aspectRatio > 0.0f
+                             ? aspectRatio
+                             : static_cast<float>(kReleaseScreenshotWidth) /
+                                   static_cast<float>(kReleaseScreenshotHeight);
+    const CameraPlanarBasis basis = cameraPlanarBasis(cameraYawDegrees);
+    const GameplayCameraElevationGeometry elevation =
+        gameplayCameraElevationGeometry(cameraElevationDegrees);
+    const float verticalSeparation =
+        std::fabs(playerSeparation.x * basis.offsetX +
+                  playerSeparation.z * basis.offsetZ) *
+        elevation.groundDepthProjection;
+    const float horizontalSeparation =
+        std::fabs(playerSeparation.x * basis.rightX +
+                  playerSeparation.z * basis.rightZ);
+    // Preserve both tanks' screen-space margins when a window becomes narrow.
+    // A fixed vertical span cap can crop even their centers in portrait views.
+    return std::max({kSoloCameraSpan, verticalSeparation + 4.5f,
+                     (horizontalSeparation + 6.0f) / aspect});
+}
+
+float gameplayCameraAspectRatio()
+{
+    const int width = GetScreenWidth();
+    const int height = GetScreenHeight();
+    if (width > 0 && height > 0)
+        return static_cast<float>(width) / static_cast<float>(height);
+    return static_cast<float>(kReleaseScreenshotWidth) /
+           static_cast<float>(kReleaseScreenshotHeight);
+}
+
 constexpr float kTankPairCollisionExtent = kTankRadius * 2.0f;
 constexpr float kStageIntroDuration = 3.2f;
 constexpr float kStageEndDelay = 5.0f;
@@ -1365,8 +1441,12 @@ bool operator==(const SessionDigest &first, const SessionDigest &second)
 
 struct CameraRig
 {
-    Vector3 position{13.0f, 4.5f, 30.0f};
-    Vector3 target{kGovernmentBaseCenter.x, 0.7f, kGovernmentBaseCenter.z};
+    Vector3 position{kGovernmentBaseCenter.x,
+                     kGameplayCameraTargetHeight +
+                         kGameplayCameraOrbitDistance,
+                     kGovernmentBaseCenter.z};
+    Vector3 target{kGovernmentBaseCenter.x, kGameplayCameraTargetHeight,
+                   kGovernmentBaseCenter.z};
     bool initialized = false;
 };
 
@@ -1507,7 +1587,10 @@ public:
 
     bool start(int playerCount, int startingLives, int requestedStage,
                const std::array<Nation, 2> &playerNations,
-               AdvancedGameSettings advancedSettings = {})
+               AdvancedGameSettings advancedSettings = {},
+               int cameraYawDegrees = 0,
+               int cameraElevationDegrees =
+                   kDefaultCameraElevationDegrees)
     {
         // A rejected candidate must not combine the previous world with a new
         // session configuration or a fresh, unprepared player vector.
@@ -1515,6 +1598,8 @@ public:
         const int previousPlayerCount = playerCount_;
         const int previousStartingLives = startingLives_;
         const AdvancedGameSettings previousAdvancedSettings = advancedSettings_;
+        const int previousCameraYawDegrees = cameraYawDegrees_;
+        const int previousCameraElevationDegrees = cameraElevationDegrees_;
         const std::array<Nation, 2> previousStartingNations = startingNations_;
         const int previousStage = stage_;
         const std::vector<Player> previousPlayers = players_;
@@ -1523,6 +1608,10 @@ public:
         playerCount_ = std::clamp(playerCount, 1, 2);
         startingLives_ = std::clamp(startingLives, 1, 99);
         advancedSettings_ = normalizedAdvancedSettings(advancedSettings);
+        cameraYawDegrees_ =
+            normalizedCameraYawDegrees(cameraYawDegrees);
+        cameraElevationDegrees_ =
+            normalizedCameraElevationDegrees(cameraElevationDegrees);
         for (std::size_t index = 0; index < startingNations_.size(); ++index)
             startingNations_[index] = normalizedNation(playerNations[index]);
         stage_ = normalizedStage(requestedStage);
@@ -1546,6 +1635,8 @@ public:
         playerCount_ = previousPlayerCount;
         startingLives_ = previousStartingLives;
         advancedSettings_ = previousAdvancedSettings;
+        cameraYawDegrees_ = previousCameraYawDegrees;
+        cameraElevationDegrees_ = previousCameraElevationDegrees;
         startingNations_ = previousStartingNations;
         stage_ = previousStage;
         players_ = previousPlayers;
@@ -1555,7 +1646,8 @@ public:
     bool restart()
     {
         return start(playerCount_, startingLives_, stage_, startingNations_,
-                     advancedSettings_);
+                     advancedSettings_, cameraYawDegrees_,
+                     cameraElevationDegrees_);
     }
 
     bool changeStage(int difference)
@@ -1649,6 +1741,29 @@ public:
     const AdvancedGameSettings &advancedSettings() const
     {
         return advancedSettings_;
+    }
+    int cameraYawDegrees() const { return cameraYawDegrees_; }
+    void setCameraYawDegrees(int requestedDegrees)
+    {
+        const int normalized =
+            normalizedCameraYawDegrees(requestedDegrees);
+        if (cameraYawDegrees_ == normalized)
+            return;
+        cameraYawDegrees_ = normalized;
+        resetCameras();
+    }
+    int cameraElevationDegrees() const
+    {
+        return cameraElevationDegrees_;
+    }
+    void setCameraElevationDegrees(int requestedDegrees)
+    {
+        const int normalized =
+            normalizedCameraElevationDegrees(requestedDegrees);
+        if (cameraElevationDegrees_ == normalized)
+            return;
+        cameraElevationDegrees_ = normalized;
+        resetCameras();
     }
     int enemiesLeft() const
     {
@@ -2169,10 +2284,21 @@ public:
         if (shake > 0.0f)
         {
             const float phase = static_cast<float>(GetTime()) * 57.0f + index * 2.1f;
-            camera.position.x += std::sin(phase) * shake;
+            const CameraPlanarBasis basis =
+                cameraPlanarBasis(cameraYawDegrees_);
+            // Translate position and target together along screen-right. A
+            // planar depth pulse stays on the selected azimuth, so shake never
+            // introduces a temporary yaw change.
+            const float horizontalShake = std::sin(phase) * shake;
+            camera.position.x += horizontalShake * basis.rightX;
+            camera.position.z += horizontalShake * basis.rightZ;
+            camera.target.x += horizontalShake * basis.rightX;
+            camera.target.z += horizontalShake * basis.rightZ;
             camera.position.y += std::cos(phase * 1.37f) * shake * 0.55f;
-            camera.position.z += std::sin(phase * 0.73f) * shake * 0.40f;
-            camera.target.x += std::sin(phase * 0.81f) * shake * 0.42f;
+            const float depthShake =
+                std::sin(phase * 0.73f) * shake * 0.40f;
+            camera.position.x += depthShake * basis.offsetX;
+            camera.position.z += depthShake * basis.offsetZ;
             camera.target.y += std::cos(phase * 1.11f) * shake * 0.22f;
         }
         camera.up = {0.0f, 1.0f, 0.0f};
@@ -3325,37 +3451,43 @@ private:
             trackedPlayers = 1;
         }
         focus = focus * (1.0f / static_cast<float>(trackedPlayers));
-        if (trackedPlayers == 1)
-        {
-            focus.x = std::clamp(focus.x, 3.5f, 22.5f);
-            focus.z = std::clamp(focus.z, 3.5f, 22.5f);
-        }
+        const CameraPlanarBasis cameraBasis =
+            cameraPlanarBasis(cameraYawDegrees_);
+        const GameplayCameraElevationGeometry elevationGeometry =
+            gameplayCameraElevationGeometry(cameraElevationDegrees_);
+        // Follow every movement instead of waiting for the player group to
+        // reach a large screen-space dead zone. Solo play tracks the tank;
+        // co-op tracks the midpoint and expands the view for separation.
+        const float aspect = gameplayCameraAspectRatio();
 
         float desiredFovy = kSoloCameraSpan;
         if (trackedPlayers > 1)
         {
-            const float dx = tracked[1].x - tracked[0].x;
-            const float dz = tracked[1].z - tracked[0].z;
-            const float verticalSeparation = std::fabs(dx + dz) * 0.5f;
-            const float horizontalSeparation = std::fabs(dx - dz) * 0.70710678f;
-            const float aspect = static_cast<float>(std::max(1, GetScreenWidth())) /
-                                 static_cast<float>(std::max(1, GetScreenHeight()));
-            desiredFovy = std::clamp(
-                std::max({kSoloCameraSpan, verticalSeparation + 4.5f,
-                          (horizontalSeparation + 6.0f) / aspect}),
-                kSoloCameraSpan, 29.5f);
+            desiredFovy = gameplayCameraSpan(
+                {tracked[1].x - tracked[0].x,
+                 tracked[1].z - tracked[0].z},
+                cameraYawDegrees_, cameraElevationDegrees_, aspect);
         }
 
         for (int index = 0; index < playerCount_; ++index)
         {
-            // Keep the 45-degree map azimuth but use a 39-degree elevation so
-            // the exaggerated running gear remains visible beneath the large
-            // arcade turret. Co-op tracks the midpoint and zooms as necessary.
-            const Vector3 desiredTarget{focus.x, 0.35f, focus.z};
-            const Vector3 desiredPosition{focus.x + 9.55f, 11.29f,
-                                          focus.z + 9.55f};
+            // Orbit at a fixed distance using the selected azimuth and
+            // elevation. Co-op tracks the midpoint and zooms as necessary.
+            const Vector3 desiredTarget{
+                focus.x, kGameplayCameraTargetHeight, focus.z};
+            const Vector3 desiredPosition{
+                focus.x + cameraBasis.offsetX *
+                              elevationGeometry.depthOffset,
+                kGameplayCameraTargetHeight +
+                    elevationGeometry.verticalOffset,
+                focus.z + cameraBasis.offsetZ *
+                              elevationGeometry.depthOffset};
             CameraRig &rig = cameraRigs_[index];
-            const float blend = rig.initialized ? 1.0f - std::exp(-7.0f * dt) : 1.0f;
+            const float blend = rig.initialized
+                                    ? 1.0f - std::exp(
+                                                 -kGameplayCameraFollowResponsiveness *
+                                                 dt)
+                                    : 1.0f;
             rig.position.x += (desiredPosition.x - rig.position.x) * blend;
             rig.position.y += (desiredPosition.y - rig.position.y) * blend;
             rig.position.z += (desiredPosition.z - rig.position.z) * blend;
@@ -3503,6 +3635,8 @@ private:
     std::array<CameraRig, 2> cameraRigs_{};
     std::array<float, 2> cameraShake_{};
     float cameraFovy_ = kSoloCameraSpan;
+    int cameraYawDegrees_ = 0;
+    int cameraElevationDegrees_ = kDefaultCameraElevationDegrees;
     std::uint32_t randomSeed_ = 0U;
     Mt19937RandomSource random_;
     StageLoadOperation stageLoadOperation_ = &loadGeneratedStageMap;
@@ -3709,9 +3843,10 @@ unsigned char forestEdgeMask(const StageMap &map, int row, int column)
 
 void drawTerrain(const StageMap &map, const EnvironmentAssets &environment)
 {
-    // The fixed oblique camera can frame slightly beyond the 26x26 arena. A
-    // larger dark apron keeps those edges grounded instead of exposing sky.
-    DrawPlane({13.0f, -0.105f, 13.0f}, {80.0f, 80.0f}, Color{31, 37, 34, 8});
+    // Continuous player tracking can frame beyond the 26x26 collision arena.
+    // A darker textured apron keeps the view grounded without disguising the
+    // raised boundary or adding playable terrain.
+    environment.drawArenaApron();
     environment.drawArenaGround();
 
     for (int row = 0; row < kMapSize; ++row)
@@ -3764,27 +3899,55 @@ void drawTerrain(const StageMap &map, const EnvironmentAssets &environment)
     DrawCube({13.0f, 0.19f, 26.08f}, 26.3f, 0.38f, 0.16f, boundary);
 }
 
+struct ForestDrawCell
+{
+    int row = 0;
+    int column = 0;
+    float depth = 0.0f;
+};
+
+std::vector<ForestDrawCell> forestDrawOrder(const StageMap &map,
+                                            int cameraYawDegrees)
+{
+    const CameraPlanarBasis basis =
+        cameraPlanarBasis(cameraYawDegrees);
+    std::vector<ForestDrawCell> cells;
+    cells.reserve(kMapSize * kMapSize);
+    for (int row = 0; row < kMapSize; ++row)
+    {
+        for (int column = 0; column < kMapSize; ++column)
+        {
+            if (map.tile(row, column) != '%')
+                continue;
+            cells.push_back({
+                row, column,
+                (static_cast<float>(column) + 0.5f) * basis.offsetX +
+                    (static_cast<float>(row) + 0.5f) * basis.offsetZ});
+        }
+    }
+    std::stable_sort(cells.begin(), cells.end(),
+                     [](const ForestDrawCell &left,
+                        const ForestDrawCell &right) {
+                         return left.depth < right.depth;
+                     });
+    return cells;
+}
+
 void drawForestForeground(const StageMap &map,
-                          const EnvironmentAssets &environment)
+                          const EnvironmentAssets &environment,
+                          int cameraYawDegrees)
 {
     BeginBlendMode(BLEND_ALPHA);
     rlDrawRenderBatchActive();
     rlDisableDepthMask();
-    // The fixed camera sits at +x,+z. Submit stable far-to-near diagonals so
-    // neighboring translucent crowns blend deterministically during shake.
-    for (int diagonal = 0; diagonal <= (kMapSize - 1) * 2; ++diagonal)
+    // Alpha canopies must be submitted far-to-near along the selected camera
+    // azimuth. Stable row-major ties keep the result deterministic.
+    for (const ForestDrawCell &cell :
+         forestDrawOrder(map, cameraYawDegrees))
     {
-        const int firstRow = std::max(0, diagonal - (kMapSize - 1));
-        const int lastRow = std::min(kMapSize - 1, diagonal);
-        for (int row = firstRow; row <= lastRow; ++row)
-        {
-            const int column = diagonal - row;
-            if (map.tile(row, column) != '%')
-                continue;
-            environment.drawForestCanopy(
-                map.stage(), row, column,
-                forestEdgeMask(map, row, column));
-        }
+        environment.drawForestCanopy(
+            map.stage(), cell.row, cell.column,
+            forestEdgeMask(map, cell.row, cell.column));
     }
     rlDrawRenderBatchActive();
     rlEnableDepthMask();
@@ -3971,7 +4134,7 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
 
             // Main office mass, rusticated base course, floor belt, cornice
             // and slate roof deck.  The shallow relief survives the fixed
-            // isometric view without making the building taller.
+            // tilted top-down view without making the building taller.
             drawYawCube({segment.center.x, 0.405f, segment.center.z},
                         {wallLength, 0.61f, kGovernmentWallThickness},
                         segment.yaw, limestone);
@@ -4267,15 +4430,11 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                        centerZ + kGovernmentEagleRight.z * lateral +
                                    kGovernmentEagleForward.z * ahead};
     };
-    // Sweep only the wings onto the camera-horizontal diagonal.  The torso
-    // and head still face north, while the display pose keeps both wings
-    // equally readable instead of projecting one behind the body.
-    constexpr float viewDiagonal = 0.70710678f;
+    // Wings span world x, matching the straight default camera's horizontal
+    // axis. The torso and head remain pointed north at the enemy line.
     const auto eagleWingPoint = [&](float lateral, float height,
                                     float depth) {
-        return Vector3{centerX + viewDiagonal * (lateral - depth),
-                       height,
-                       centerZ - viewDiagonal * (lateral + depth)};
+        return eaglePoint(lateral, height, depth);
     };
 
     if (!alive)
@@ -4284,16 +4443,16 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                      12, stoneDark);
         DrawCylinder({centerX, 0.17f, centerZ}, 0.19f, 0.22f, 0.08f,
                      12, stoneDark);
-        drawEllipsoid(eaglePoint(0.05f, 0.25f, 0.00f),
-                      {0.30f, 0.14f, 0.20f}, stoneDark, kPi * 0.45f);
-        drawEllipsoid(eaglePoint(-0.20f, 0.19f, -0.04f),
-                      {0.22f, 0.07f, 0.10f}, darkBrown, -0.35f);
-        drawEllipsoid(eaglePoint(0.23f, 0.18f, -0.02f),
-                      {0.24f, 0.065f, 0.11f}, featherBrown, 0.30f);
-        DrawSphereEx(eaglePoint(-0.13f, 0.23f, 0.16f), 0.10f,
+        drawEllipsoid(eaglePoint(-0.05f, 0.25f, 0.00f),
+                      {0.30f, 0.14f, 0.20f}, stoneDark, -kPi * 0.45f);
+        drawEllipsoid(eaglePoint(0.20f, 0.19f, -0.04f),
+                      {0.22f, 0.07f, 0.10f}, darkBrown, 0.35f);
+        drawEllipsoid(eaglePoint(-0.23f, 0.18f, -0.02f),
+                      {0.24f, 0.065f, 0.11f}, featherBrown, -0.30f);
+        DrawSphereEx(eaglePoint(0.13f, 0.23f, 0.16f), 0.10f,
                      8, 10, featherShade);
-        DrawCylinderEx(eaglePoint(-0.13f, 0.23f, 0.23f),
-                       eaglePoint(-0.13f, 0.20f, 0.34f),
+        DrawCylinderEx(eaglePoint(0.13f, 0.23f, 0.23f),
+                       eaglePoint(0.13f, 0.20f, 0.34f),
                        0.045f, 0.0f, 7, beakShade);
         for (int feather = -1; feather <= 1; ++feather)
             DrawCylinderEx(eaglePoint(feather * 0.06f, 0.19f, -0.12f),
@@ -4313,7 +4472,7 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                  12, bronzeLight);
 
     // Five long white tail feathers point back toward the player and remain
-    // visible below the raised wings in the southeast gameplay camera.
+    // visible below the raised wings from the straight default camera.
     for (int feather = -2; feather <= 2; ++feather)
     {
         const float lateral = static_cast<float>(feather) * 0.052f;
@@ -4363,12 +4522,12 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                   {0.090f, 0.175f, 0.040f}, featherCopper);
 
     // High shoulder arches and descending primary feathers create an M-shaped
-    // half-spread wing line across the camera-horizontal diagonal.
+    // half-spread wing line across the camera-horizontal axis.
     for (float side : {-1.0f, 1.0f})
     {
-        const float nearDrop = side > 0.0f ? 0.015f : 0.0f;
-        const Color shoulderColor = side > 0.0f ? bronzeLight : bronze;
-        const Color midWingColor = side > 0.0f ? featherCopper : featherBrown;
+        constexpr float nearDrop = 0.0f;
+        const Color shoulderColor = bronze;
+        const Color midWingColor = featherBrown;
         const Vector3 shoulder = eaglePoint(side * 0.115f,
                                              0.800f - nearDrop, -0.020f);
         const Vector3 elbow = eagleWingPoint(side * 0.300f,
@@ -4393,7 +4552,7 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                                0.895f - tier * 0.060f - nearDrop,
                                -0.052f - tier * 0.010f),
                 0.110f - tier * 0.009f, 0.034f,
-                Vector3{viewDiagonal, 0.0f, viewDiagonal},
+                Vector3{0.0f, 0.0f, 1.0f},
                 secondary < 2 ? shoulderColor : midWingColor);
         }
 
@@ -4410,16 +4569,12 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                 side * (0.480f + tier * 0.014f),
                 tipHeights[static_cast<std::size_t>(feather)] - nearDrop,
                 -0.075f - tier * 0.012f);
-            const Color primary = side > 0.0f
-                                      ? (feather % 2 == 0
-                                             ? featherCopper
-                                             : bronzeLight)
-                                      : (feather % 2 == 0
-                                             ? featherBrown
-                                             : bronze);
+            const Color primary = feather % 2 == 0
+                                      ? featherBrown
+                                      : bronze;
             drawFeatherBlade(root, tip, 0.085f - tier * 0.006f,
                              0.030f,
-                             Vector3{viewDiagonal, 0.0f, viewDiagonal},
+                             Vector3{0.0f, 0.0f, 1.0f},
                              primary);
         }
     }
@@ -4438,48 +4593,48 @@ void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
                       (feather & 1) == 0 ? whiteFeather : featherShade,
                       lateral * 2.0f);
     }
-    drawEllipsoid(eaglePoint(0.060f, 1.040f, 0.100f),
+    drawEllipsoid(eaglePoint(-0.060f, 1.040f, 0.100f),
                   {0.108f, 0.130f, 0.122f}, whiteFeather);
-    drawEllipsoid(eaglePoint(0.070f, 1.098f, 0.125f),
+    drawEllipsoid(eaglePoint(-0.070f, 1.098f, 0.125f),
                   {0.094f, 0.050f, 0.098f}, featherShade);
 
-    // Short, thick yellow bill turns slightly east while still addressing the
-    // northern enemy line, exposing a strong profile to the gameplay camera.
-    DrawSphereEx(eaglePoint(0.105f, 1.035f, 0.195f), 0.070f,
+    // Short, thick yellow bill turns slightly west while still addressing the
+    // northern enemy line, preserving a readable elevated-view profile.
+    DrawSphereEx(eaglePoint(-0.105f, 1.035f, 0.195f), 0.070f,
                  8, 10, beak);
-    DrawCylinderEx(eaglePoint(0.095f, 1.047f, 0.185f),
-                   eaglePoint(0.215f, 1.002f, 0.300f),
+    DrawCylinderEx(eaglePoint(-0.095f, 1.047f, 0.185f),
+                   eaglePoint(-0.215f, 1.002f, 0.300f),
                    0.076f, 0.015f, 9, beak);
-    DrawCylinderEx(eaglePoint(0.095f, 1.005f, 0.180f),
-                   eaglePoint(0.195f, 0.972f, 0.275f),
+    DrawCylinderEx(eaglePoint(-0.095f, 1.005f, 0.180f),
+                   eaglePoint(-0.195f, 0.972f, 0.275f),
                    0.044f, 0.010f, 8, beakShade);
-    DrawCylinderEx(eaglePoint(0.210f, 1.002f, 0.292f),
-                   eaglePoint(0.222f, 0.936f, 0.315f),
+    DrawCylinderEx(eaglePoint(-0.210f, 1.002f, 0.292f),
+                   eaglePoint(-0.222f, 0.936f, 0.315f),
                    0.025f, 0.004f, 7, beakShade);
 
     if (!shadowPass)
     {
         const Color eye = materialColor(Color{13, 12, 10, 255}, 7);
         const Color iris = materialColor(Color{222, 157, 29, 255}, 7);
-        // The +x eye is dominant in the southeast camera; the far eye remains
-        // smaller so the head reads as a turned three-quarter profile.
+        // The west eye is dominant because the head keeps its intentionally
+        // turned three-quarter profile while the body faces the enemy line.
         for (float side : {-1.0f, 1.0f})
         {
-            const float eyeRadius = side > 0.0f ? 0.021f : 0.014f;
-            const Vector3 irisCenter = eaglePoint(side * 0.078f + 0.060f,
+            const float eyeRadius = side < 0.0f ? 0.021f : 0.014f;
+            const Vector3 irisCenter = eaglePoint(side * 0.078f - 0.060f,
                                                    1.065f, 0.128f);
             DrawSphereEx(irisCenter, eyeRadius, 7, 8, iris);
-            DrawSphereEx(eaglePoint(side * 0.078f + 0.060f,
+            DrawSphereEx(eaglePoint(side * 0.078f - 0.060f,
                                     1.065f, 0.141f),
                          eyeRadius * 0.56f, 7, 8, eye);
-            if (side > 0.0f)
-                DrawSphereEx(eaglePoint(0.136f, 1.071f, 0.151f),
+            if (side < 0.0f)
+                DrawSphereEx(eaglePoint(-0.136f, 1.071f, 0.151f),
                              0.0045f, 6, 6, RAYWHITE);
         }
         // A sloped brow gives the visible eye the severe advertising-emblem
         // expression without introducing a separate facial texture.
-        DrawCylinderEx(eaglePoint(0.090f, 1.103f, 0.094f),
-                       eaglePoint(0.160f, 1.077f, 0.148f),
+        DrawCylinderEx(eaglePoint(-0.090f, 1.103f, 0.094f),
+                       eaglePoint(-0.160f, 1.077f, 0.148f),
                        0.018f, 0.007f, 7, featherShade);
 
     }
@@ -4521,10 +4676,13 @@ void drawNationalBaseRubble(const GovernmentWallSegment &segment,
 
 void drawStalinMonument(bool alive, bool shadowPass)
 {
-    constexpr XZ forward{0.0f, -1.0f};
-    constexpr XZ right{1.0f, 0.0f};
-    constexpr XZ faceForward{0.30f, -0.953939f};
-    constexpr XZ faceRight{0.953939f, 0.30f};
+    // Human monuments face the southern courtyard/camera so their uniforms
+    // and facial silhouettes remain identifiable in the cardinal view. The
+    // US eagle intentionally remains north-facing toward the enemy lanes.
+    constexpr XZ forward{0.0f, 1.0f};
+    constexpr XZ right{-1.0f, 0.0f};
+    constexpr XZ faceForward{0.0f, 1.0f};
+    constexpr XZ faceRight{-1.0f, 0.0f};
     const auto bodyPoint = [&](float lateral, float height, float ahead) {
         return Vector3{kGovernmentBaseCenter.x + right.x * lateral +
                            forward.x * ahead,
@@ -4561,19 +4719,19 @@ void drawStalinMonument(bool alive, bool shadowPass)
                  0.29f, 0.34f, 0.13f, 12, graniteLight);
     if (!alive)
     {
-        drawEllipsoid(bodyPoint(0.18f, 0.31f, -0.08f),
-                      {0.48f, 0.14f, 0.19f}, bronzeDark, -0.18f);
-        DrawSphereEx(bodyPoint(-0.30f, 0.25f, 0.12f), 0.15f,
+        drawEllipsoid(bodyPoint(-0.18f, 0.31f, -0.08f),
+                      {0.48f, 0.14f, 0.19f}, bronzeDark, 0.18f);
+        DrawSphereEx(bodyPoint(0.30f, 0.25f, 0.12f), 0.15f,
                      8, 10, bronze);
-        DrawCylinderEx(bodyPoint(-0.04f, 0.20f, -0.24f),
-                       bodyPoint(0.28f, 0.17f, -0.45f),
+        DrawCylinderEx(bodyPoint(0.04f, 0.20f, -0.24f),
+                       bodyPoint(-0.28f, 0.17f, -0.45f),
                        0.08f, 0.05f, 8, bronzeDark);
         return;
     }
 
     // Broad boots, long greatcoat and a rolled plan make this silhouette
     // distinct from the shorter German tunic while remaining readable from
-    // the fixed southeast camera.
+    // the straight default camera.
     for (float side : {-1.0f, 1.0f})
     {
         DrawCylinderEx(bodyPoint(side * 0.115f, 0.26f, 0.0f),
@@ -4588,18 +4746,18 @@ void drawStalinMonument(bool alive, bool shadowPass)
                   {0.31f, 0.25f, 0.22f}, bronze);
     drawYawCube(bodyPoint(0.0f, 1.04f, 0.205f),
                 {0.39f, 0.085f, 0.055f}, 0.0f, bronzeLight);
-    DrawCylinderEx(bodyPoint(-0.25f, 1.22f, 0.0f),
-                   bodyPoint(-0.28f, 0.83f, 0.08f),
+    DrawCylinderEx(bodyPoint(0.25f, 1.22f, 0.0f),
+                   bodyPoint(0.28f, 0.83f, 0.08f),
                    0.095f, 0.070f, 9, bronze);
-    DrawSphereEx(bodyPoint(-0.28f, 0.80f, 0.10f), 0.075f,
+    DrawSphereEx(bodyPoint(0.28f, 0.80f, 0.10f), 0.075f,
                  8, 9, bronzeLight);
-    DrawCylinderEx(bodyPoint(0.25f, 1.21f, 0.0f),
-                   bodyPoint(0.15f, 0.96f, 0.20f),
+    DrawCylinderEx(bodyPoint(-0.25f, 1.21f, 0.0f),
+                   bodyPoint(-0.15f, 0.96f, 0.20f),
                    0.095f, 0.068f, 9, bronze);
-    DrawSphereEx(bodyPoint(0.14f, 0.93f, 0.22f), 0.074f,
+    DrawSphereEx(bodyPoint(-0.14f, 0.93f, 0.22f), 0.074f,
                  8, 9, bronzeLight);
-    DrawCylinderEx(bodyPoint(0.105f, 0.93f, 0.25f),
-                   bodyPoint(0.24f, 0.93f, 0.25f),
+    DrawCylinderEx(bodyPoint(-0.105f, 0.93f, 0.25f),
+                   bodyPoint(-0.24f, 0.93f, 0.25f),
                    0.052f, 0.052f, 8, graniteLight);
 
     drawEllipsoid(facePoint(0.0f, 1.48f, 0.02f),
@@ -4613,12 +4771,13 @@ void drawStalinMonument(bool alive, bool shadowPass)
                   {0.073f, 0.022f, 0.027f}, bronzeDark, 0.12f);
     DrawCylinder(facePoint(0.0f, 1.62f, 0.0f),
                  0.17f, 0.18f, 0.075f, 12, bronzeDark);
-    drawYawCube(facePoint(0.025f, 1.635f, 0.11f),
-                {0.23f, 0.035f, 0.13f}, -0.305f, bronzeDark);
+    drawYawCube(facePoint(0.0f, 1.635f, 0.11f),
+                {0.23f, 0.035f, 0.13f}, 0.0f, bronzeDark);
     if (!shadowPass)
     {
-        DrawSphereEx(facePoint(0.070f, 1.515f, 0.135f), 0.014f,
-                     6, 7, Color{15, 17, 14, 255});
+        for (float side : {-1.0f, 1.0f})
+            DrawSphereEx(facePoint(side * 0.070f, 1.515f, 0.135f),
+                         0.014f, 6, 7, Color{15, 17, 14, 255});
     }
 }
 
@@ -4813,10 +4972,10 @@ void drawSovietBaseGeometry(const StageMap &map, bool alive,
 
 void drawHitlerMonument(bool alive, bool shadowPass)
 {
-    constexpr XZ forward{0.0f, -1.0f};
-    constexpr XZ right{1.0f, 0.0f};
-    constexpr XZ faceForward{0.24f, -0.970773f};
-    constexpr XZ faceRight{0.970773f, 0.24f};
+    constexpr XZ forward{0.0f, 1.0f};
+    constexpr XZ right{-1.0f, 0.0f};
+    constexpr XZ faceForward{0.0f, 1.0f};
+    constexpr XZ faceRight{-1.0f, 0.0f};
     const auto bodyPoint = [&](float lateral, float height, float ahead) {
         return Vector3{kGovernmentBaseCenter.x + right.x * lateral +
                            forward.x * ahead,
@@ -4855,12 +5014,12 @@ void drawHitlerMonument(bool alive, bool shadowPass)
                 {0.58f, 0.12f, 0.52f}, 0.0f, graniteLight);
     if (!alive)
     {
-        drawEllipsoid(bodyPoint(-0.10f, 0.32f, -0.05f),
-                      {0.43f, 0.13f, 0.18f}, bronzeDark, 0.20f);
-        DrawSphereEx(bodyPoint(0.32f, 0.24f, 0.10f), 0.14f,
+        drawEllipsoid(bodyPoint(0.10f, 0.32f, -0.05f),
+                      {0.43f, 0.13f, 0.18f}, bronzeDark, -0.20f);
+        DrawSphereEx(bodyPoint(-0.32f, 0.24f, 0.10f), 0.14f,
                      8, 10, bronze);
-        drawYawCube(bodyPoint(-0.30f, 0.18f, -0.18f),
-                    {0.24f, 0.07f, 0.18f}, 0.35f, bronzeLight);
+        drawYawCube(bodyPoint(0.30f, 0.18f, -0.18f),
+                    {0.24f, 0.07f, 0.18f}, -0.35f, bronzeLight);
         return;
     }
 
@@ -4888,8 +5047,8 @@ void drawHitlerMonument(bool alive, bool shadowPass)
         DrawSphereEx(bodyPoint(side * 0.29f, 0.79f, 0.065f),
                      0.065f, 8, 9, bronzeLight);
     }
-    drawYawCube(bodyPoint(-0.31f, 0.72f, 0.11f),
-                {0.18f, 0.27f, 0.055f}, 0.06f, granite);
+    drawYawCube(bodyPoint(0.31f, 0.72f, 0.11f),
+                {0.18f, 0.27f, 0.055f}, -0.06f, granite);
     if (!shadowPass)
     {
         for (int row = 0; row < 2; ++row)
@@ -4906,15 +5065,16 @@ void drawHitlerMonument(bool alive, bool shadowPass)
                    0.034f, 0.017f, 7, bronzeLight);
     drawEllipsoid(facePoint(0.0f, 1.405f, 0.142f),
                   {0.060f, 0.018f, 0.023f}, bronzeDark);
-    // Low, strongly side-parted hair is visible from the southeast camera.
-    drawEllipsoid(facePoint(-0.025f, 1.615f, -0.005f),
-                  {0.155f, 0.055f, 0.14f}, bronzeDark, -0.08f);
-    drawYawCube(facePoint(0.075f, 1.59f, 0.075f),
+    // Low, strongly side-parted hair preserves the figure's silhouette.
+    drawEllipsoid(facePoint(0.025f, 1.615f, -0.005f),
+                  {0.155f, 0.055f, 0.14f}, bronzeDark, 0.08f);
+    drawYawCube(facePoint(-0.075f, 1.59f, 0.075f),
                 {0.13f, 0.045f, 0.09f}, -0.245f, bronzeDark);
     if (!shadowPass)
     {
-        DrawSphereEx(facePoint(0.065f, 1.51f, 0.128f), 0.013f,
-                     6, 7, Color{12, 13, 12, 255});
+        for (float side : {-1.0f, 1.0f})
+            DrawSphereEx(facePoint(side * 0.065f, 1.51f, 0.128f),
+                         0.013f, 6, 7, Color{12, 13, 12, 255});
     }
 }
 
@@ -5802,24 +5962,60 @@ void drawStreakPopups(const Game3D &game, const Camera3D &camera,
     }
 }
 
+struct ViewportHudLayout
+{
+    int panelWidth = 0;
+    int panelTextX = 0;
+    int mapX = 0;
+    int mapCellSize = 0;
+    int footerCenterX = 0;
+    int footerWidth = 0;
+};
+
+ViewportHudLayout viewportHudLayout(Rectangle viewport, int playerCount,
+                                     int playerIndex)
+{
+    const int width = std::max(1, static_cast<int>(viewport.width));
+    const int originX = static_cast<int>(viewport.x);
+    const int count = std::clamp(playerCount, 1, 2);
+    const int index = std::clamp(playerIndex, 0, count - 1);
+    ViewportHudLayout layout;
+    layout.mapCellSize = width < 700 ? 4 : 5;
+    const int mapPixels = kMapSize * layout.mapCellSize;
+    layout.mapX = count == 1 ? originX + width - mapPixels - 16
+                            : originX + width / 2 - mapPixels / 2;
+    // The minimap background extends four pixels beyond its tiles. Keep a
+    // twelve-pixel gap to each panel, including its seven-pixel text inset.
+    constexpr int mapPadding = 4;
+    constexpr int panelGap = 12;
+    const int spaceBeforeMap = layout.mapX - mapPadding - panelGap -
+                               (originX + 7);
+    const int spaceAfterMap = originX + width - 21 -
+                              (layout.mapX + mapPixels + mapPadding +
+                               panelGap);
+    layout.panelWidth = std::max(1, std::min(
+        390, count == 1 ? spaceBeforeMap
+                       : std::min(spaceBeforeMap, spaceAfterMap)));
+    layout.panelTextX = index == 0 ? originX + 14
+                                  : originX + width - layout.panelWidth - 14;
+    const int footerLeft = originX + width * index / count;
+    const int footerRight = originX + width * (index + 1) / count;
+    layout.footerCenterX = (footerLeft + footerRight) / 2;
+    layout.footerWidth = std::max(1, footerRight - footerLeft - 28);
+    return layout;
+}
+
 void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport,
                      bool showFrameRate)
 {
     const Player &player = game.players()[playerIndex];
     const Color accent = playerColor(playerIndex);
     const int width = static_cast<int>(viewport.width);
-    const int panelWidth = game.playerCount() == 1
-                               ? std::min(390, width - 28)
-                               : std::min(390, std::max(250, width / 2 - 28));
-    const int left = playerIndex == 0
-                         ? static_cast<int>(viewport.x) + 14
-                         : static_cast<int>(viewport.x + viewport.width) - panelWidth - 14;
+    const ViewportHudLayout layout = viewportHudLayout(
+        viewport, game.playerCount(), playerIndex);
+    const int panelWidth = layout.panelWidth;
+    const int left = layout.panelTextX;
     const int top = static_cast<int>(viewport.y) + 12;
-    const int cellSize = width < 700 ? 4 : 5;
-    const int mapPixels = kMapSize * cellSize;
-    const int mapX = game.playerCount() == 1
-                         ? static_cast<int>(viewport.x + viewport.width) - mapPixels - 16
-                         : static_cast<int>(viewport.x + viewport.width * 0.5f) - mapPixels / 2;
     const int mapY = top + 4;
 
     const std::string nationLine = "P" + std::to_string(playerIndex + 1) +
@@ -5896,18 +6092,36 @@ void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport,
                        Color{139, 218, 235, 255});
     }
     if (playerIndex == 0)
-        drawMiniMap(game, mapX, mapY, cellSize);
+        drawMiniMap(game, layout.mapX, mapY, layout.mapCellSize);
 
-    const int centerX = game.playerCount() == 1
-                            ? static_cast<int>(viewport.x + viewport.width * 0.5f)
-                            : static_cast<int>(viewport.x + viewport.width *
-                                  (playerIndex == 0 ? 0.25f : 0.75f));
-
-    const std::string controls =
-        playerIndex == 0
-            ? "PAD 1 / ARROWS   BOTTOM/LEFT FACE OR R1/RT FIRE"
-            : "PAD 2 / WASD   BOTTOM/LEFT FACE OR R1/RT FIRE";
-    drawCenteredText(controls, centerX, static_cast<int>(viewport.height) - 28, width < 700 ? 14 : 16, Color{225, 230, 230, 225});
+    const std::string movement = playerIndex == 0 ? "PAD 1 / ARROWS"
+                                                 : "PAD 2 / WASD";
+    const std::string fire = "BOTTOM/LEFT FACE OR R1/RT FIRE";
+    const std::string controls = movement + "   " + fire;
+    const int preferredFont = width < 700 ? 14 : 16;
+    const int controlsFont = fittedFontSize(
+        controls, layout.footerWidth, preferredFont, 12);
+    const int footerY = static_cast<int>(viewport.y + viewport.height) - 28;
+    const Color controlsColor{225, 230, 230, 225};
+    if (MeasureText(controls.c_str(), controlsFont) <= layout.footerWidth)
+    {
+        drawCenteredText(controls, layout.footerCenterX, footerY,
+                         controlsFont, controlsColor);
+    }
+    else
+    {
+        // Preserve every binding without letting either player's hints cross
+        // the center line or the viewport edge in a narrow co-op window.
+        drawCenteredText(movement, layout.footerCenterX,
+                         footerY - preferredFont - 4,
+                         fittedFontSize(movement, layout.footerWidth,
+                                        preferredFont, 8),
+                         controlsColor);
+        drawCenteredText(fire, layout.footerCenterX, footerY,
+                         fittedFontSize(fire, layout.footerWidth,
+                                        preferredFont, 8),
+                         controlsColor);
+    }
 }
 
 void drawGltfProbeHud(const TankAssets &tankAssets, int screenWidth,
@@ -6227,10 +6441,9 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
         const float offset = (static_cast<float>(index) -
                               static_cast<float>(playerCount - 1) * 0.5f) *
                              spacing;
-        // Follow the preview camera's screen-right basis so co-op tanks share
-        // one visual baseline instead of one appearing lower and clipped.
-        return XZ{13.0f + offset * 0.77f,
-                  13.0f - offset * 0.64f};
+        // The cardinal preview camera's screen-right basis is world +x, so
+        // co-op tanks share one horizontal visual baseline.
+        return XZ{13.0f + offset, 13.0f};
     };
 
     lighting.updateShadowMap(
@@ -6238,7 +6451,8 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
             for (int index = 0; index < game.playerCount(); ++index)
             {
                 const Player &player = game.players()[static_cast<std::size_t>(index)];
-                drawTankModel(tankAssets, previewPosition(index), kPi * 0.75f,
+                drawTankModel(tankAssets, previewPosition(index),
+                              kPi,
                               playerColor(index), false, player.level, 0.0f,
                               player.id, true, player.nation, true);
             }
@@ -6278,7 +6492,7 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
         0.04f, 8, 2.0f, Color{132, 112, 58, 255});
 
     Camera3D previewCamera{};
-    previewCamera.position = {17.8f, 2.82f, 18.8f};
+    previewCamera.position = {13.0f, 2.82f, 20.53f};
     previewCamera.target = {13.0f, -0.45f, 13.0f};
     previewCamera.up = {0.0f, 1.0f, 0.0f};
     previewCamera.fovy = playerCount == 1 ? 5.6f : 7.4f;
@@ -6295,8 +6509,8 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
     {
         const Player &player = game.players()[static_cast<std::size_t>(index)];
         const XZ position = previewPosition(index);
-        drawTankContactShadow(position, kPi * 0.75f, false, player.id);
-        drawTankModel(tankAssets, position, kPi * 0.75f,
+        drawTankContactShadow(position, kPi, false, player.id);
+        drawTankModel(tankAssets, position, kPi,
                       playerColor(index), false, player.level, 0.0f,
                       player.id, true, player.nation);
     }
@@ -6532,7 +6746,8 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
             bonusAssets.draw(pickup, sharedCamera,
                              static_cast<float>(GetTime()));
         drawEmissiveBattleFx(game);
-        drawForestForeground(game.map(), environment);
+        drawForestForeground(game.map(), environment,
+                             game.cameraYawDegrees());
         EndMode3D();
         EndTextureMode();
     }
@@ -6588,7 +6803,8 @@ struct MenuSettings
     int lives = 10;
     std::array<Nation, 2> nations{{Nation::UnitedStates, Nation::SovietUnion}};
     AdvancedGameSettings advanced{};
-    bool isometricAnalogStick = true;
+    int cameraYawDegrees = 0;
+    int cameraElevationDegrees = kDefaultCameraElevationDegrees;
     int selected = 0;
     int advancedSelected = 0;
     bool advancedOpen = false;
@@ -6672,7 +6888,7 @@ bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
     return changed;
 }
 
-constexpr int kAdvancedMenuRowCount = 6;
+constexpr int kAdvancedMenuRowCount = 7;
 constexpr int kAdvancedMenuBackRow = kAdvancedMenuRowCount - 1;
 
 bool advancedSettingsAreDefault(const MenuSettings &settings)
@@ -6682,7 +6898,9 @@ bool advancedSettingsAreDefault(const MenuSettings &settings)
            settings.advanced.enemySpeedPercent == 0 &&
            settings.advanced.enemyFireRatePercent == 0 &&
            settings.advanced.enemySpawnRatePercent == 0 &&
-           settings.isometricAnalogStick;
+           settings.cameraYawDegrees == 0 &&
+           settings.cameraElevationDegrees ==
+               kDefaultCameraElevationDegrees;
 }
 
 bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
@@ -6732,8 +6950,19 @@ bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
         }
         else if (settings.advancedSelected == 4)
         {
-            settings.isometricAnalogStick =
-                !settings.isometricAnalogStick;
+            settings.cameraYawDegrees = std::clamp(
+                settings.cameraYawDegrees +
+                    direction * kCameraYawStepDegrees,
+                kCameraYawMinimumDegrees, kCameraYawMaximumDegrees);
+            changed = true;
+        }
+        else if (settings.advancedSelected == 5)
+        {
+            settings.cameraElevationDegrees = std::clamp(
+                settings.cameraElevationDegrees +
+                    direction * kCameraElevationStepDegrees,
+                kCameraElevationMinimumDegrees,
+                kCameraElevationMaximumDegrees);
             changed = true;
         }
     }
@@ -6742,7 +6971,9 @@ bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
     {
         changed = changed || !advancedSettingsAreDefault(settings);
         settings.advanced = {};
-        settings.isometricAnalogStick = true;
+        settings.cameraYawDegrees = 0;
+        settings.cameraElevationDegrees =
+            kDefaultCameraElevationDegrees;
     }
     return changed;
 }
@@ -6754,6 +6985,25 @@ std::string percentageLabel(int requestedPercent)
         return "0%  DEFAULT";
     return std::string(percent > 0 ? "+" : "") +
            std::to_string(percent) + "%";
+}
+
+std::string cameraYawLabel(int requestedDegrees)
+{
+    const int degrees = normalizedCameraYawDegrees(requestedDegrees);
+    if (degrees == 0)
+        return "0 DEG  STRAIGHT";
+    return std::string(degrees < 0 ? "LEFT " : "RIGHT ") +
+           std::to_string(std::abs(degrees)) + " DEG";
+}
+
+std::string cameraElevationLabel(int requestedDegrees)
+{
+    const int degrees =
+        normalizedCameraElevationDegrees(requestedDegrees);
+    return std::to_string(degrees) + " DEG" +
+           (degrees == kDefaultCameraElevationDegrees
+                ? "  DEFAULT"
+                : "");
 }
 
 std::string technologyTreeLine(Nation nation, int playerIndex)
@@ -6772,6 +7022,9 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
 {
     const int width = GetScreenWidth();
     const int height = GetScreenHeight();
+    const bool compact = height < 700;
+    const int rowHeight = compact ? 34 : 46;
+    const int treeRowHeight = compact ? 18 : 24;
     BeginDrawing();
     ClearBackground(Color{11, 18, 24, 255});
     DrawRectangleGradientV(0, 0, width, height, Color{28, 52, 63, 255}, Color{7, 11, 15, 255});
@@ -6782,15 +7035,19 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
         DrawLine(0, y, width, y - width / 5, Fade(Color{82, 125, 133, 255}, 0.12f));
     }
 
-    drawCenteredText("TANKS 3D", width / 2, 54, std::clamp(width / 13, 58, 92), GOLD);
-    drawCenteredText("ISOMETRIC ARMORED COMBAT", width / 2, 139, 23,
+    drawCenteredText("TANKS 3D", width / 2, compact ? 24 : 54,
+                     std::clamp(width / 13, 58, compact ? 66 : 92), GOLD);
+    drawCenteredText("TILTED TOP-DOWN ARMORED COMBAT", width / 2,
+                     compact ? 96 : 139, compact ? 18 : 23,
                      Color{180, 218, 225, 255});
 
     const int rowCount = menuRowCount(settings);
     const int panelWidth = std::min(900, width - 40);
     const int panelX = (width - panelWidth) / 2;
-    const int panelY = 178;
-    const int panelHeight = 28 + rowCount * 46 + settings.playerCount * 24 + 30;
+    const int panelY = compact ? 126 : 178;
+    const int panelHeight = 28 + rowCount * rowHeight +
+                            settings.playerCount * treeRowHeight +
+                            (compact ? 12 : 30);
     DrawRectangleRounded({static_cast<float>(panelX), static_cast<float>(panelY),
                           static_cast<float>(panelWidth), static_cast<float>(panelHeight)},
                          0.08f, 8, Color{4, 8, 11, 220});
@@ -6813,15 +7070,18 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
     const int valueCenter = panelX + panelWidth - 170;
     for (int index = 0; index < rowCount; ++index)
     {
-        const int y = panelY + 21 + index * 46;
+        const int y = panelY + 21 + index * rowHeight;
         const bool selected = index == settings.selected;
         if (selected)
             DrawRectangleRounded({static_cast<float>(panelX + 20), static_cast<float>(y - 7),
-                                  static_cast<float>(panelWidth - 40), 40.0f},
+                                  static_cast<float>(panelWidth - 40),
+                                  static_cast<float>(rowHeight - 6)},
                                  0.16f, 6, Color{42, 72, 76, 235});
-        drawTextShadow((selected ? ">  " : "   ") + labels[index], panelX + 38, y, 21,
+        drawTextShadow((selected ? ">  " : "   ") + labels[index],
+                       panelX + 38, y, compact ? 18 : 21,
                        selected ? RAYWHITE : Color{170, 185, 188, 255});
-        const int valueFont = fittedFontSize(values[index], 230, 23, 15);
+        const int valueFont = fittedFontSize(values[index], 230,
+                                             compact ? 19 : 23, 15);
         drawTextShadow(values[index], valueCenter - MeasureText(values[index].c_str(), valueFont) / 2,
                        y - 1, valueFont, selected ? GOLD : LIGHTGRAY);
         if (selected && index != advancedMenuRow(settings))
@@ -6831,32 +7091,36 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
         }
     }
 
-    const int treeY = panelY + 28 + rowCount * 46;
+    const int treeY = panelY + 28 + rowCount * rowHeight;
     for (int playerIndex = 0; playerIndex < settings.playerCount; ++playerIndex)
     {
         const std::string tree = technologyTreeLine(
             settings.nations[static_cast<std::size_t>(playerIndex)], playerIndex);
-        drawCenteredText(tree, width / 2, treeY + playerIndex * 24,
+        drawCenteredText(tree, width / 2, treeY + playerIndex * treeRowHeight,
                          fittedFontSize(tree, panelWidth - 50, 14, 9),
                          playerIndex == 0 ? Color{240, 180, 65, 255}
                                           : Color{88, 221, 142, 255});
     }
 
-    const int helpY = panelY + panelHeight + 14;
+    const int helpY = panelY + panelHeight + (compact ? 10 : 14);
     drawCenteredText("D-PAD / STICK OR KEYS: SELECT / CHANGE    SHOULDER / SHIFT: x10",
-                     width / 2, helpY, 16, LIGHTGRAY);
+                     width / 2, helpY,
+                     fittedFontSize(
+                         "D-PAD / STICK OR KEYS: SELECT / CHANGE    SHOULDER / SHIFT: x10",
+                         width - 40, compact ? 14 : 16, 10), LIGHTGRAY);
     drawCenteredText("BOTTOM FACE / ENTER: START OR OPEN", width / 2,
-                     helpY + 31, 25,
+                     helpY + (compact ? 22 : 31), compact ? 19 : 25,
                      Color{255, 224, 94, 255});
     drawCenteredText("P1  PAD 1 / ARROWS     P2  PAD 2 / WASD", width / 2,
-                     helpY + 67, 16,
+                     helpY + (compact ? 48 : 67), compact ? 14 : 16,
                      Color{189, 210, 214, 255});
     const std::string deviceLine =
         "GAMEPADS " + std::to_string(settings.connectedGamepads) +
         "     1P: PAD 1/2     2P: FIRST=P1 SECOND=P2     "
         "F8 QUALITY     F11 FULLSCREEN     MINUS / ESC QUIT";
-    drawCenteredText(deviceLine, width / 2, helpY + 94,
-                     fittedFontSize(deviceLine, width - 40, 14, 10),
+    drawCenteredText(deviceLine, width / 2, helpY + (compact ? 70 : 94),
+                     fittedFontSize(deviceLine, width - 40,
+                                    compact ? 12 : 14, 10),
                      Color{135, 157, 161, 255});
     if (!error.empty())
         drawCenteredText(error, width / 2, height - 42, 17, Color{255, 105, 92, 255});
@@ -6867,6 +7131,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
 {
     const int width = GetScreenWidth();
     const int height = GetScreenHeight();
+    const bool compact = height < 700;
     BeginDrawing();
     ClearBackground(Color{11, 18, 24, 255});
     DrawRectangleGradientV(0, 0, width, height, Color{28, 52, 63, 255},
@@ -6878,16 +7143,19 @@ void drawAdvancedMenu(const MenuSettings &settings)
                  Fade(Color{82, 125, 133, 255}, 0.12f));
     }
 
-    drawCenteredText("TANKS 3D", width / 2, 54,
-                     std::clamp(width / 13, 58, 92), GOLD);
-    drawCenteredText("ADVANCED SETTINGS", width / 2, 139, 23,
+    drawCenteredText("TANKS 3D", width / 2, compact ? 24 : 54,
+                     std::clamp(width / 13, 58, compact ? 66 : 92), GOLD);
+    drawCenteredText("ADVANCED SETTINGS", width / 2, compact ? 96 : 139,
+                     compact ? 18 : 23,
                      Color{180, 218, 225, 255});
 
     const int panelWidth = std::min(900, width - 40);
     const int panelX = (width - panelWidth) / 2;
-    const int panelY = 178;
-    const int rowHeight = 54;
-    const int panelHeight = 28 + kAdvancedMenuRowCount * rowHeight + 96;
+    const int panelY = compact ? 126 : 178;
+    const int rowHeight = compact ? 34 : 48;
+    const int noteRowHeight = compact ? 18 : 26;
+    const int panelHeight = 28 + kAdvancedMenuRowCount * rowHeight +
+                            (compact ? 66 : 96);
     DrawRectangleRounded({static_cast<float>(panelX), static_cast<float>(panelY),
                           static_cast<float>(panelWidth), static_cast<float>(panelHeight)},
                          0.08f, 8, Color{4, 8, 11, 220});
@@ -6898,7 +7166,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
 
     const std::array<std::string, kAdvancedMenuRowCount> labels{{
         "PLAYER HP", "ENEMY SPEED", "FIRE FREQUENCY", "SPAWN PACE",
-        "ANALOG STICK", "BACK TO SETUP"}};
+        "VIEW HORIZONTAL", "VIEW ELEVATION", "BACK TO SETUP"}};
     const std::array<std::string, kAdvancedMenuRowCount> values{{
         settings.advanced.playerMaximumHitPoints == 1
             ? "1  BANDAGE OFF"
@@ -6906,8 +7174,8 @@ void drawAdvancedMenu(const MenuSettings &settings)
         percentageLabel(settings.advanced.enemySpeedPercent),
         percentageLabel(settings.advanced.enemyFireRatePercent),
         percentageLabel(settings.advanced.enemySpawnRatePercent),
-        settings.isometricAnalogStick ? "VIEW-ALIGNED 45 DEG"
-                                      : "CLASSIC CARDINAL",
+        cameraYawLabel(settings.cameraYawDegrees),
+        cameraElevationLabel(settings.cameraElevationDegrees),
         "RETURN"}};
     const int valueCenter = panelX + panelWidth - 190;
     for (int index = 0; index < kAdvancedMenuRowCount; ++index)
@@ -6917,12 +7185,14 @@ void drawAdvancedMenu(const MenuSettings &settings)
         if (selected)
             DrawRectangleRounded(
                 {static_cast<float>(panelX + 20), static_cast<float>(y - 7),
-                 static_cast<float>(panelWidth - 40), 44.0f},
+                 static_cast<float>(panelWidth - 40),
+                 static_cast<float>(rowHeight - 4)},
                 0.16f, 6, Color{42, 72, 76, 235});
         drawTextShadow((selected ? ">  " : "   ") + labels[index],
-                       panelX + 38, y, 21,
+                       panelX + 38, y, compact ? 18 : 21,
                        selected ? RAYWHITE : Color{170, 185, 188, 255});
-        const int valueFont = fittedFontSize(values[index], 270, 22, 13);
+        const int valueFont = fittedFontSize(values[index], 270,
+                                             compact ? 19 : 22, 13);
         drawTextShadow(values[index],
                        valueCenter -
                            MeasureText(values[index].c_str(), valueFont) / 2,
@@ -6936,24 +7206,23 @@ void drawAdvancedMenu(const MenuSettings &settings)
 
     const int noteY = panelY + 30 + kAdvancedMenuRowCount * rowHeight;
     drawCenteredText("HP 1-6 (STEP 1)    RATES -30% TO +30% (STEP 5%)",
-                     width / 2, noteY, 15, Color{170, 198, 203, 255});
-    drawCenteredText("ANALOG GAMEPLAY ONLY; D-PAD / KEYS STAY CARDINAL",
-                     width / 2, noteY + 26, 15,
+                     width / 2, noteY, compact ? 13 : 15,
                      Color{170, 198, 203, 255});
-    drawCenteredText("SPAWN WARNING STAYS 1.0s    PLAYER HP 1 DISABLES BANDAGE",
-                     width / 2, noteY + 52, 15,
-                     settings.advanced.playerMaximumHitPoints == 1
-                         ? Color{255, 159, 89, 255}
-                         : Color{142, 178, 184, 255});
+    drawCenteredText("HORIZONTAL LEFT 45 TO RIGHT 45 (STEP 5 DEG)",
+                     width / 2, noteY + noteRowHeight, compact ? 13 : 15,
+                     Color{170, 198, 203, 255});
+    drawCenteredText("ELEVATION 40 TO 70 (STEP 5 DEG)    HIGHER = MORE TOP-DOWN",
+                     width / 2, noteY + noteRowHeight * 2, compact ? 13 : 15,
+                     Color{142, 178, 184, 255});
 
-    const int helpY = panelY + panelHeight + 14;
+    const int helpY = panelY + panelHeight + (compact ? 10 : 14);
     drawCenteredText("D-PAD / STICK OR KEYS: SELECT / CHANGE", width / 2,
-                     helpY, 17, LIGHTGRAY);
+                     helpY, compact ? 14 : 17, LIGHTGRAY);
     drawCenteredText("BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
-                     width / 2, helpY + 32,
+                     width / 2, helpY + (compact ? 24 : 32),
                      fittedFontSize(
                          "BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
-                         width - 40, 17, 11),
+                         width - 40, compact ? 14 : 17, 11),
                      Color{255, 224, 94, 255});
     EndDrawing();
 }
@@ -7026,9 +7295,21 @@ class GamepadInput
 {
   public:
     GamepadFrame read(bool gameplayActive, bool enabled,
-                      bool isometricAnalogStick)
+                      int cameraYawDegrees = 0)
     {
         GamepadFrame frame;
+        if (hasRead_ && previousGameplayActive_ && !gameplayActive)
+        {
+            // A held stick that was steering a rotated battle must not emit a
+            // fresh menu-navigation edge when menu input returns to 0 degrees.
+            for (GamepadInputState &state : states_)
+            {
+                state.previousStickDirection = CardinalDirection::None;
+                state.suppressStickUntilRelease = true;
+            }
+        }
+        previousGameplayActive_ = gameplayActive;
+        hasRead_ = true;
         if (!enabled)
             return frame;
 
@@ -7045,16 +7326,11 @@ class GamepadInput
 
         assignments_.update(available, gameplayActive);
         reportConnectionChanges(available, backendFrame.names);
-        const GamepadStickOrientation stickOrientation =
-            gameplayActive && isometricAnalogStick
-                ? GamepadStickOrientation::Isometric45
-                : GamepadStickOrientation::Cardinal;
-
         for (std::size_t slot = 0; slot < snapshots.size(); ++slot)
         {
             const GamepadActionFrame actions =
                 mapGamepadInput(snapshots[slot], states_[slot],
-                                stickOrientation);
+                                gameplayActive ? cameraYawDegrees : 0);
             const int playerIndex =
                 assignments_.playerIndexForPhysicalSlot(slot);
             if (!gameplayActive)
@@ -7118,6 +7394,8 @@ class GamepadInput
     GamepadAssignments assignments_;
     std::array<bool, kPhysicalGamepadSlotCount> previousAvailable_{};
     std::array<std::string, kPhysicalGamepadSlotCount> names_{};
+    bool previousGameplayActive_ = false;
+    bool hasRead_ = false;
 };
 
 fs::path locateResourceRoot(const char *programPath)
@@ -7353,7 +7631,7 @@ int main(int argc, char **argv)
         windowFlags |= FLAG_WINDOW_RESIZABLE;
     SetConfigFlags(windowFlags);
     InitWindow(kReleaseScreenshotWidth, kReleaseScreenshotHeight,
-               "TANKS 3D - ISOMETRIC ARMORED COMBAT");
+               "TANKS 3D - TILTED TOP-DOWN ARMORED COMBAT");
     if (!IsWindowReady())
     {
         std::cerr << "Unable to create the game window or graphics context\n";
@@ -7417,28 +7695,56 @@ int main(int argc, char **argv)
             std::istringstream(value.substr(8)) >> requestedStage;
             settings.stage = normalizedStage(requestedStage);
         }
+        else if (value.rfind("--camera-yaw=", 0) == 0)
+        {
+            int requestedYaw = settings.cameraYawDegrees;
+            std::istringstream(value.substr(13)) >> requestedYaw;
+            settings.cameraYawDegrees =
+                normalizedCameraYawDegrees(requestedYaw);
+            game.setCameraYawDegrees(settings.cameraYawDegrees);
+        }
+        else if (value.rfind("--camera-elevation=", 0) == 0 ||
+                 value.rfind("--camera-pitch=", 0) == 0)
+        {
+            int requestedElevation = settings.cameraElevationDegrees;
+            const std::size_t separator = value.find('=');
+            std::istringstream(value.substr(separator + 1)) >>
+                requestedElevation;
+            settings.cameraElevationDegrees =
+                normalizedCameraElevationDegrees(requestedElevation);
+            game.setCameraElevationDegrees(
+                settings.cameraElevationDegrees);
+        }
         else if (value == "--quick-start")
         {
             inGame = game.start(1, settings.lives, settings.stage,
-                                settings.nations, settings.advanced);
+                                settings.nations, settings.advanced,
+                                settings.cameraYawDegrees,
+                                settings.cameraElevationDegrees);
         }
         else if (value == "--quick-start-2p")
         {
             settings.playerCount = 2;
             inGame = game.start(2, settings.lives, settings.stage,
-                                settings.nations, settings.advanced);
+                                settings.nations, settings.advanced,
+                                settings.cameraYawDegrees,
+                                settings.cameraElevationDegrees);
         }
         else if (value == "--quick-start-ussr")
         {
             settings.nations[0] = Nation::SovietUnion;
             inGame = game.start(1, settings.lives, settings.stage,
-                                settings.nations, settings.advanced);
+                                settings.nations, settings.advanced,
+                                settings.cameraYawDegrees,
+                                settings.cameraElevationDegrees);
         }
         else if (value == "--quick-start-germany")
         {
             settings.nations[0] = Nation::Germany;
             inGame = game.start(1, settings.lives, settings.stage,
-                                settings.nations, settings.advanced);
+                                settings.nations, settings.advanced,
+                                settings.cameraYawDegrees,
+                                settings.cameraElevationDegrees);
         }
         else if (value == "--bonus-showcase")
         {
@@ -7483,7 +7789,9 @@ int main(int argc, char **argv)
         settings.nations[0] = Nation::UnitedStates;
         if (!inGame)
             inGame = game.start(1, settings.lives, settings.stage,
-                                settings.nations, settings.advanced);
+                                settings.nations, settings.advanced,
+                                settings.cameraYawDegrees,
+                                settings.cameraElevationDegrees);
         tankShowcase = true;
     }
     if (inGame && bonusShowcase)
@@ -7595,7 +7903,7 @@ int main(int argc, char **argv)
         const GamepadFrame gamepadFrame = gamepadInput.read(
             inGame, !releaseScreenshot.requested() &&
                         !releasePerformance.requested(),
-            settings.isometricAnalogStick);
+            game.cameraYawDegrees());
         mergeUiInputFrame(uiInput, gamepadFrame.ui);
         settings.connectedGamepads = gamepadFrame.connectedCount;
 
@@ -7652,7 +7960,9 @@ int main(int argc, char **argv)
                 }
                 if (game.start(settings.playerCount, settings.lives,
                                settings.stage, settings.nations,
-                               settings.advanced))
+                               settings.advanced,
+                               settings.cameraYawDegrees,
+                               settings.cameraElevationDegrees))
                 {
                     inGame = true;
                     menuError.clear();

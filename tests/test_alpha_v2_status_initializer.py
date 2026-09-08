@@ -245,6 +245,26 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         page = fixture.release_page.read_text(encoding="utf-8")
         qa = fixture.qa_report.read_text(encoding="utf-8")
         self.assertIn("**Release status: BLOCKED.**", page)
+        self.assertIn(
+            "_Classic four-direction tank combat in an adjustable tilted "
+            "3D battlefield._",
+            page,
+        )
+        self.assertIn(
+            "Tanks 3D is a non-commercial, tilted top-down arcade tank game",
+            page,
+        )
+        self.assertIn(
+            "- Adjustable -45° to +45° horizontal and 40° to 70° elevation "
+            "camera plus a\n  global minimap.",
+            page,
+        )
+        self.assertNotIn("isometric", page.lower())
+        self.assertNotIn("45-degree local camera", page)
+        self.assertIn("| Controller menus |", page)
+        self.assertIn("| Controller battle |", page)
+        self.assertIn("Face buttons never exit the game.", page)
+        self.assertIn("defaults 0° / 50°", page)
         self.assertIn("**Overall Alpha gate: BLOCKED.**", qa)
         self.assertIn("Author: **tourzhao**", page)
         self.assertIn("Gatekeeper conclusion: **BLOCKED**", page)
@@ -260,6 +280,17 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
         self.assertIn("Selected option: **NONE — BLOCKED**", qa)
         self.assertIn(fixture.qa_report.name, page)
         requirements = json.loads(REQUIREMENTS.read_text(encoding="utf-8"))
+        self.assertEqual(
+            requirements["interactive_controls_revision"], "camera-controller-v1"
+        )
+        self.assertIn("Control contract revision: `camera-controller-v1`.", qa)
+        self.assertIn("#camera-and-controller-procedure", qa)
+        for context in requirements["published_control_context_requirements"]:
+            for check in context["checks"]:
+                self.assertIn(
+                    "| `{}` | `{}` | NOT RUN | |".format(context["context"], check),
+                    qa,
+                )
         self.assertEqual(
             requirements["performance_artifact_maximum_bytes"],
             {
@@ -434,6 +465,7 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
             "profile_schema",
             "profile_semantics",
             "profile_control_context",
+            "profile_controls_revision",
         ):
             with self.subTest(mutation=mutation):
                 fixture = self.fixture()
@@ -453,12 +485,18 @@ class AlphaV2StatusInitializerTests(unittest.TestCase):
                     profile["gameplay_ids"][0] = "forged_gameplay_check"
                     profile_path.write_text(json.dumps(profile), encoding="utf-8")
                     fragment = "does not match the canonical contract"
-                else:
+                elif mutation == "profile_control_context":
                     profile_path = fixture.root / "docs/release-requirements/macos-alpha-v2.json"
                     profile = json.loads(profile_path.read_text(encoding="utf-8"))
                     profile["published_control_context_requirements"][0][
                         "coverage_token"
                     ] = "controls:forged"
+                    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+                    fragment = "does not match the canonical contract"
+                else:
+                    profile_path = fixture.root / "docs/release-requirements/macos-alpha-v2.json"
+                    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+                    profile.pop("interactive_controls_revision")
                     profile_path.write_text(json.dumps(profile), encoding="utf-8")
                     fragment = "does not match the canonical contract"
                 self.assert_failed(fixture, fixture.run(), fragment)

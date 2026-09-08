@@ -128,6 +128,15 @@ published controls, candidate-bound interactive evidence, clean-Mac download
 and quarantine facts, numeric session criteria, known issues, the audio
 decision, chronology, and both approvals.
 
+The current v2 profile uses `interactive_controls_revision: camera-controller-v1`.
+It requires 35 control/settings checks, including the adjustable camera and
+controller behavior. The older 21-check control evidence cannot approve a new
+candidate. Keep historical Alpha 4 status, evidence, and attestations unchanged;
+review them with the requirements and verifier from their recorded source
+snapshot. Do not copy new check names into an old signed observation or treat
+the current verifier's rejection of that older contract as a failed historical
+test. New candidates must initialize fresh plans using the current contract.
+
 For a new v2 candidate, first place these seven fresh 1280x720 PNGs in
 `build/release-evidence/<tag>/screenshots/`: `one-player.png`,
 `two-player.png`, `base-usa.png`, `base-ussr.png`, `base-germany.png`,
@@ -243,13 +252,24 @@ The three control contexts are exact, not interchangeable:
 
 - `main_menu_and_advanced_settings` covers both menu-navigation families, both
   confirmation keys, both setup exit keys, defaults/reset, every HP/rate range
-  step, and Advanced-menu `Esc` value preservation.
+  and camera-angle step, and Advanced-menu `Esc` value preservation. It also
+  covers controller menu bindings and disconnect/reconnect.
 - `one_player_gameplay` covers all P1 movement/fire alternatives, the shared
   battle/display/stage hotkeys, live tuning after start/restart, and both sides
-  of the Bandage eligibility rule.
+  of the Bandage eligibility rule, plus camera framing/follow and controller
+  mapping, lifecycle, and held-stick return-to-menu behavior.
 - `two_player_gameplay` repeats P1 and shared-hotkey coverage, adds every P2
   movement/fire alternative, and repeats live tuning and Bandage coverage with
-  both players active.
+  both players active. It also checks camera midpoint/separation/respawn,
+  independent controller assignments, and all shared camera/controller checks.
+
+Use the [camera and controller procedure](ALPHA_QA_REPORT_TEMPLATE.md#camera-and-controller-procedure)
+for angle sweeps, portrait/square/wide windows, opposite-edge co-op framing,
+every controller binding, and both held-stick release sequences. Document the
+tested angle/window samples in each context recording and observation notes.
+The control groups remain three observations, but each must confirm every
+expanded check in its own context. Missing physical controllers leave hardware
+checks blocked; synthetic input tests cannot serve as hardware QA evidence.
 
 An `or` in a check ID groups publicly supported alternatives; it never permits
 testing only one. Record both Arrow/WASD menu families, `Enter` and `Space`, all

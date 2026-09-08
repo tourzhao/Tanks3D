@@ -36,7 +36,7 @@ REQUIREMENTS_PATH = Path("docs/release-requirements/macos-alpha-v2.json")
 REQUIREMENTS_SCHEMA = "tanks3d-release-requirements-v2"
 REQUIREMENTS_PROFILE = "macos-alpha-v2"
 CANONICAL_REQUIREMENTS_DIGEST = (
-    "b74646b01fb5c773813df2eb8783711b1afc096c6417a3ca567dfbd6974f78df"
+    "a111f55309213d84c215e217f49fbc7bbf6e48a12701dbff148ff6cc7fe3a387"
 )
 SCREENSHOT_NAMES = (
     "one-player.png",
@@ -675,7 +675,7 @@ def validate_requirements(root: Path) -> Mapping[str, Any]:
             raise InitError("published control context checks are not in profile order")
         covered_control_checks.update(checks)
     if covered_control_checks != set(global_control_checks):
-        raise InitError("published control contexts do not cover all 21 checks")
+        raise InitError("published control contexts do not cover every required check")
     expected_interactive_contract = {
         "interactive_observation_manifest_schema": (
             "tanks3d-alpha-v2-interactive-observation-manifest-v1"
@@ -788,7 +788,7 @@ def render_release_page(
     )
     return """# Tanks 3D {tag}
 
-_Classic four-direction tank combat in a fixed-camera isometric 3D battlefield._
+_Classic four-direction tank combat in an adjustable tilted 3D battlefield._
 
 ![One-player gameplay](../assets/releases/{tag}/one-player.png)
 
@@ -801,7 +801,7 @@ See the [{tag} QA report]({tag}-qa.md) and
 
 ## Game overview
 
-Tanks 3D is a non-commercial, isometric arcade tank game for Apple Silicon
+Tanks 3D is a non-commercial, tilted top-down arcade tank game for Apple Silicon
 macOS. It keeps four-direction movement, destructible defenses, opposing-shell
 cancellation, local two-player co-op, national vehicle progression, 3D pickups,
 a minimap, configurable HP and difficulty, and a classified end-stage report.
@@ -811,7 +811,8 @@ a minimap, configurable HP and difficulty, and a classified end-stage report.
 - Destructible national objectives, temporary Shovel steel, HP/respawn, and
   direct-fire streaks.
 - Nine pickups, including conditional Bandage healing and Star upgrades.
-- Fixed 45-degree local camera plus a global minimap.
+- Adjustable -45° to +45° horizontal and 40° to 70° elevation camera plus a
+  global minimap.
 
 ![Two-player gameplay](../assets/releases/{tag}/two-player.png)
 
@@ -834,11 +835,17 @@ a minimap, configurable HP and difficulty, and a classified end-stage report.
 | Menus | Arrow keys or `WASD`; `Enter` or `Space` confirms |
 | Player 1 | Arrow keys move; `Space`, Right Option, or Right Control fires |
 | Player 2 | `WASD` moves; `F`, Left Option, or Left Control fires |
+| Controller menus | D-pad or left stick navigates; bottom face or Start confirms; Back cancels; top face resets Advanced Settings |
+| Controller battle | Left stick follows the camera; D-pad stays world-cardinal; bottom/left face, right shoulder, or right trigger fires; Start pauses; Back returns to setup |
+| Camera | Advanced Settings: horizontal -45° to +45°, elevation 40° to 70°, both in 5° steps; defaults 0° / 50° |
 | Battle | `Enter` pauses; `Esc` returns to setup; `R` restarts |
 | Display/stage | `F8` quality; `F11` borderless; `N`/`B` stage |
 | Exit | `Esc` or `Q` from the setup screen |
 
 Controls remain unapproved until the linked exact-candidate matrix is signed.
+On a Nintendo-layout controller, bottom/left/top face are `B`/`Y`/`X`,
+Start is `+`, and Back is `-`. Face buttons never exit the game. Keyboard
+movement stays world-cardinal at every camera angle. Restart is keyboard-only.
 
 ## Candidate identity
 
@@ -1002,6 +1009,28 @@ def render_qa_report(
         [
             "",
             "Published control bindings and advanced settings: **NOT RUN — BLOCKED**.",
+            "",
+            "## Published controls and advanced settings",
+            "",
+            "Control contract revision: `{}`.".format(
+                profile["interactive_controls_revision"]
+            ),
+            "Every row below requires observation in its named context and a",
+            "candidate-bound recording; a passing automated test or screenshot",
+            "does not complete the row. Follow the camera/controller procedure in",
+            "[the QA worksheet](../ALPHA_QA_REPORT_TEMPLATE.md#camera-and-controller-procedure).",
+            "",
+            "| Context | Required check | Result | Evidence / notes |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
+    for context in profile["published_control_context_requirements"]:
+        for check in context["checks"]:
+            lines.append(
+                "| `{}` | `{}` | NOT RUN | |".format(context["context"], check)
+            )
+    lines.extend(
+        [
             "",
             "## Clean Mac, Gatekeeper, and extended session",
             "",

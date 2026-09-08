@@ -491,6 +491,16 @@ struct Game3DTestAccess
             position;
     }
 
+    static void refreshCameras(Game3D &game)
+    {
+        game.resetCameras();
+    }
+
+    static void advanceCameras(Game3D &game, float dt)
+    {
+        game.updateCameras(dt);
+    }
+
     static void setPlayerCreationTimer(Game3D &game, int playerIndex,
                                        float timer)
     {
@@ -2226,6 +2236,34 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
             }
     if (!checkTest(forestCell[0] >= 0, "stage 10 lacks a forest test tile"))
         return 1;
+    int forestTileCount = 0;
+    for (int row = 0; row < kMapSize; ++row)
+        for (int column = 0; column < kMapSize; ++column)
+            forestTileCount += forestRuleMap.tile(row, column) == '%' ? 1 : 0;
+    bool forestOrdersAreStable = forestTileCount > 0;
+    for (const int angle : std::array<int, 3>{{-45, 0, 45}})
+    {
+        const std::vector<ForestDrawCell> order =
+            forestDrawOrder(forestRuleMap, angle);
+        forestOrdersAreStable = forestOrdersAreStable &&
+            static_cast<int>(order.size()) == forestTileCount;
+        for (std::size_t index = 1; index < order.size(); ++index)
+        {
+            const ForestDrawCell &previous = order[index - 1];
+            const ForestDrawCell &current = order[index];
+            const bool monotonic = previous.depth <= current.depth + 0.00001f;
+            const bool stableTie =
+                previous.depth != current.depth ||
+                previous.row * kMapSize + previous.column <
+                    current.row * kMapSize + current.column;
+            forestOrdersAreStable = forestOrdersAreStable && monotonic &&
+                                    stableTie;
+        }
+    }
+    if (!checkTest(forestOrdersAreStable,
+                   "forest alpha draw order is not stable far-to-near at "
+                   "the selectable camera endpoints"))
+        return 1;
     const XZ forestCenter{forestCell[1] + 0.5f, forestCell[0] + 0.5f};
     const ImpactKind normalForestImpact = forestRuleMap.impactShell(
         forestCenter, false, CardinalDirection::North);
@@ -3136,27 +3174,113 @@ int runSettingsProgressionAndSettlementSelfTests(
         menuRowCount(menuDefaults) == 5 &&
         advancedMenuRow(menuDefaults) == 4;
     menuDefaults.playerCount = 2;
-    if (!checkTest(onePlayerAdvancedRow && menuRowCount(menuDefaults) == 6 &&
+    if (!checkTest(onePlayerAdvancedRow &&
+                       kAdvancedMenuRowCount == 7 &&
+                       kAdvancedMenuBackRow == 6 &&
+                       menuRowCount(menuDefaults) == 6 &&
                        advancedMenuRow(menuDefaults) == 5 &&
                        advancedSettingsAreDefault(menuDefaults) &&
                        percentageLabel(-30) == "-30%" &&
                        percentageLabel(0) == "0%  DEFAULT" &&
-                       percentageLabel(30) == "+30%",
+                       percentageLabel(30) == "+30%" &&
+                       cameraYawLabel(-45) == "LEFT 45 DEG" &&
+                       cameraYawLabel(0) == "0 DEG  STRAIGHT" &&
+                       cameraYawLabel(45) == "RIGHT 45 DEG" &&
+                       cameraElevationLabel(40) == "40 DEG" &&
+                       cameraElevationLabel(50) == "50 DEG  DEFAULT" &&
+                       cameraElevationLabel(70) == "70 DEG",
                    "advanced menu rows, defaults, or percentage labels are incorrect"))
         return 1;
-    menuDefaults.advancedSelected = 4;
-    UiInputFrame toggleStickLayout;
-    toggleStickLayout.rightPressed = true;
-    const bool stickLayoutChanged =
-        updateAdvancedMenu(menuDefaults, toggleStickLayout);
+    MenuSettings cameraMenu;
+    cameraMenu.advancedSelected = 4;
+    UiInputFrame adjustCameraRight;
+    adjustCameraRight.rightPressed = true;
+    const bool cameraStepChanged =
+        updateAdvancedMenu(cameraMenu, adjustCameraRight);
+    cameraMenu.cameraYawDegrees = kCameraYawMaximumDegrees;
+    updateAdvancedMenu(cameraMenu, adjustCameraRight);
+    const bool cameraMaximumClamped =
+        cameraMenu.cameraYawDegrees == kCameraYawMaximumDegrees;
+    UiInputFrame adjustCameraLeft;
+    adjustCameraLeft.leftPressed = true;
+    updateAdvancedMenu(cameraMenu, adjustCameraLeft);
+    const bool cameraLeftStepExact =
+        cameraMenu.cameraYawDegrees ==
+        kCameraYawMaximumDegrees - kCameraYawStepDegrees;
+    cameraMenu.cameraYawDegrees = kCameraYawMinimumDegrees;
+    updateAdvancedMenu(cameraMenu, adjustCameraLeft);
+    if (!checkTest(cameraStepChanged && cameraMaximumClamped &&
+                       cameraLeftStepExact &&
+                       cameraMenu.cameraYawDegrees ==
+                           kCameraYawMinimumDegrees,
+                   "camera menu step or endpoint clamping is incorrect"))
+        return 1;
+    MenuSettings elevationMenu;
+    elevationMenu.advancedSelected = 5;
+    const bool elevationStepChanged =
+        updateAdvancedMenu(elevationMenu, adjustCameraRight);
+    elevationMenu.cameraElevationDegrees =
+        kCameraElevationMaximumDegrees;
+    updateAdvancedMenu(elevationMenu, adjustCameraRight);
+    const bool elevationMaximumClamped =
+        elevationMenu.cameraElevationDegrees ==
+        kCameraElevationMaximumDegrees;
+    updateAdvancedMenu(elevationMenu, adjustCameraLeft);
+    const bool elevationLeftStepExact =
+        elevationMenu.cameraElevationDegrees ==
+        kCameraElevationMaximumDegrees - kCameraElevationStepDegrees;
+    elevationMenu.cameraElevationDegrees =
+        kCameraElevationMinimumDegrees;
+    updateAdvancedMenu(elevationMenu, adjustCameraLeft);
+    if (!checkTest(
+            elevationStepChanged && elevationMaximumClamped &&
+                elevationLeftStepExact &&
+                elevationMenu.cameraElevationDegrees ==
+                    kCameraElevationMinimumDegrees,
+            "camera elevation menu step or endpoint clamping is incorrect"))
+        return 1;
+    menuDefaults.advanced.enemySpeedPercent = 5;
+    menuDefaults.cameraYawDegrees = 35;
+    menuDefaults.cameraElevationDegrees = 70;
     UiInputFrame resetAdvanced;
     resetAdvanced.resetPressed = true;
     const bool advancedResetChanged =
         updateAdvancedMenu(menuDefaults, resetAdvanced);
-    if (!checkTest(stickLayoutChanged && advancedResetChanged &&
-                       menuDefaults.isometricAnalogStick &&
+    if (!checkTest(advancedResetChanged &&
                        advancedSettingsAreDefault(menuDefaults),
-                   "advanced analogue-stick layout toggle or reset is incorrect"))
+                   "advanced settings reset is incorrect"))
+        return 1;
+    bool elevationGeometryValid = true;
+    for (const int degrees : std::array<int, 3>{{
+             kCameraElevationMinimumDegrees,
+             kDefaultCameraElevationDegrees,
+             kCameraElevationMaximumDegrees}})
+    {
+        const GameplayCameraElevationGeometry geometry =
+            gameplayCameraElevationGeometry(degrees);
+        elevationGeometryValid = elevationGeometryValid &&
+            std::fabs(std::hypot(geometry.depthOffset,
+                                 geometry.verticalOffset) -
+                      kGameplayCameraOrbitDistance) < 0.0001f &&
+            std::fabs(std::atan2(geometry.verticalOffset,
+                                 geometry.depthOffset) *
+                          (180.0f / kPi) -
+                      static_cast<float>(degrees)) < 0.001f &&
+            std::fabs(geometry.verticalOffset /
+                          kGameplayCameraOrbitDistance -
+                      geometry.groundDepthProjection) < 0.0001f;
+    }
+    const GameplayCameraElevationGeometry defaultElevationGeometry =
+        gameplayCameraElevationGeometry(kDefaultCameraElevationDegrees);
+    if (!checkTest(
+            elevationGeometryValid &&
+                std::fabs(defaultElevationGeometry.depthOffset - 13.51f) <
+                    0.001f &&
+                std::fabs(defaultElevationGeometry.verticalOffset - 16.10f) <
+                    0.001f &&
+                std::fabs(defaultElevationGeometry.groundDepthProjection -
+                          0.76603282f) < 0.0001f,
+            "camera elevation geometry changed orbit distance or default framing"))
         return 1;
     const std::array<float, 4> expectedMovement{{5.0f, 6.5f, 6.5f, 6.5f}};
     const std::array<float, 4> expectedShellSpeed{{9.775f, 12.7075f,
@@ -3195,6 +3319,18 @@ int runSettingsProgressionAndSettlementSelfTests(
                        kEnemyTuningMinimumPercent == -30 &&
                        kEnemyTuningMaximumPercent == 30 &&
                        kEnemyTuningPercentStep == 5 &&
+                       kCameraYawMinimumDegrees == -45 &&
+                       kCameraYawMaximumDegrees == 45 &&
+                       kCameraYawStepDegrees == 5 &&
+                       normalizedCameraYawDegrees(-90) == -45 &&
+                       normalizedCameraYawDegrees(90) == 45 &&
+                       kCameraElevationMinimumDegrees == 40 &&
+                       kCameraElevationMaximumDegrees == 70 &&
+                       kCameraElevationStepDegrees == 5 &&
+                       kDefaultCameraElevationDegrees == 50 &&
+                       normalizedCameraElevationDegrees(0) == 40 &&
+                       normalizedCameraElevationDegrees(50) == 50 &&
+                       normalizedCameraElevationDegrees(90) == 70 &&
                        std::fabs(kEnemySpawnInterval - 0.5f) < 0.0001f &&
                        std::fabs(kEnemySpawnRetryInterval - 0.15f) < 0.0001f &&
                        std::fabs(kEnemyInitialFireDelay - 0.1f) < 0.0001f &&
@@ -3207,7 +3343,13 @@ int runSettingsProgressionAndSettlementSelfTests(
                            0.0001f &&
                        std::fabs(kEnemyBlockedEscapeDelay - 0.30f) <
                            0.0001f &&
-                       std::fabs(kSoloCameraSpan - 14.0f) < 0.0001f &&
+                       std::fabs(kSoloCameraSpan - 15.5f) < 0.0001f &&
+                       std::fabs(kGameplayCameraOrbitDistance -
+                                 21.017376f) < 0.0001f &&
+                       std::fabs(kGameplayCameraTargetHeight - 0.35f) <
+                           0.0001f &&
+                       std::fabs(kGameplayCameraFollowResponsiveness - 12.0f) <
+                           0.0001f &&
                        std::fabs(kBonusCarrierChance - 0.12f) < 0.0001f &&
                        bonus_assets::kClassicPickupTypeCount == 8 &&
                        bonus_assets::kBandageWeight == 2 &&
@@ -3345,6 +3487,451 @@ int runSettingsProgressionAndSettlementSelfTests(
     const std::array<Nation, 2> settlementNations{{
         Nation::UnitedStates, Nation::SovietUnion}};
     if (!settlementGame.start(2, 3, 1, settlementNations))
+        return 1;
+    const GameplayCameraElevationGeometry defaultCameraGeometry =
+        gameplayCameraElevationGeometry(kDefaultCameraElevationDegrees);
+    bool cardinalCameraReady =
+        settlementGame.cameraYawDegrees() == 0 &&
+        settlementGame.cameraElevationDegrees() ==
+            kDefaultCameraElevationDegrees;
+    for (const CameraRig &camera : settlementGame.cameraRigs())
+    {
+        cardinalCameraReady = cardinalCameraReady && camera.initialized &&
+            std::fabs(camera.position.x - camera.target.x) < 0.0001f &&
+            std::fabs((camera.position.y - camera.target.y) -
+                      defaultCameraGeometry.verticalOffset) < 0.0001f &&
+            std::fabs((camera.position.z - camera.target.z) -
+                      defaultCameraGeometry.depthOffset) < 0.0001f;
+    }
+    if (!checkTest(cardinalCameraReady,
+                   "default gameplay camera is not cardinal-aligned south "
+                   "of its target"))
+        return 1;
+    const auto cameraMatchesAngles = [](const Game3D &game, int yawDegrees,
+                                        int elevationDegrees) {
+        const CameraPlanarBasis basis = cameraPlanarBasis(yawDegrees);
+        const GameplayCameraElevationGeometry geometry =
+            gameplayCameraElevationGeometry(elevationDegrees);
+        bool matches = game.cameraYawDegrees() ==
+                           normalizedCameraYawDegrees(yawDegrees) &&
+                       game.cameraElevationDegrees() ==
+                           normalizedCameraElevationDegrees(
+                               elevationDegrees);
+        for (int index = 0; index < game.playerCount(); ++index)
+        {
+            const CameraRig &camera =
+                game.cameraRigs()[static_cast<std::size_t>(index)];
+            const float dx = camera.position.x - camera.target.x;
+            const float dz = camera.position.z - camera.target.z;
+            matches = matches && camera.initialized &&
+                std::fabs(dx - basis.offsetX *
+                                   geometry.depthOffset) < 0.0001f &&
+                std::fabs(dz - basis.offsetZ *
+                                   geometry.depthOffset) < 0.0001f &&
+                std::fabs(std::sqrt(dx * dx + dz * dz) -
+                          geometry.depthOffset) < 0.0001f &&
+                std::fabs((camera.position.y - camera.target.y) -
+                          geometry.verticalOffset) < 0.0001f;
+        }
+        return matches;
+    };
+    Game3D leftCameraGame(resourceRoot, 0xcab1e045U);
+    Game3D straightDigestGame(resourceRoot, 0xcab1e046U);
+    Game3D rotatedDigestGame(resourceRoot, 0xcab1e046U);
+    const bool cameraGamesReady =
+        leftCameraGame.start(1, 3, 1, settlementNations,
+                             AdvancedGameSettings{}, -45,
+                             kCameraElevationMinimumDegrees) &&
+        cameraMatchesAngles(leftCameraGame, -45,
+                            kCameraElevationMinimumDegrees) &&
+        leftCameraGame.restart() &&
+        cameraMatchesAngles(leftCameraGame, -45,
+                            kCameraElevationMinimumDegrees) &&
+        straightDigestGame.start(1, 3, 1, settlementNations,
+                                 AdvancedGameSettings{}, 0, 50) &&
+        rotatedDigestGame.start(1, 3, 1, settlementNations,
+                                AdvancedGameSettings{}, 45, 70);
+    if (!checkTest(cameraGamesReady,
+                   "selectable camera games failed to start, restart, or "
+                   "match their requested azimuth"))
+        return 1;
+    leftCameraGame.setCameraYawDegrees(99);
+    leftCameraGame.setCameraElevationDegrees(99);
+    if (!checkTest(
+            cameraMatchesAngles(leftCameraGame, 45, 70) &&
+                straightDigestGame.sessionDigest() ==
+                    rotatedDigestGame.sessionDigest(),
+            "camera angle did not clamp/persist or leaked into deterministic "
+            "gameplay state"))
+        return 1;
+    Game3D centeredCameraGame(resourceRoot, 0xcab1e047U);
+    if (!centeredCameraGame.start(1, 3, 1, settlementNations))
+        return 1;
+    const std::array<XZ, 6> soloTrackingPositions{{
+        {13.0f, 13.0f}, {0.875f, 0.875f}, {25.125f, 0.875f},
+        {0.875f, 25.125f}, {25.125f, 25.125f}, {8.25f, 16.75f}}};
+    bool soloCameraCentered = true;
+    for (const int yawDegrees : std::array<int, 3>{{-45, 0, 45}})
+    {
+        centeredCameraGame.setCameraYawDegrees(yawDegrees);
+        const CameraPlanarBasis basis = cameraPlanarBasis(yawDegrees);
+        for (const int elevationDegrees : std::array<int, 3>{{
+                 kCameraElevationMinimumDegrees,
+                 kDefaultCameraElevationDegrees,
+                 kCameraElevationMaximumDegrees}})
+        {
+            centeredCameraGame.setCameraElevationDegrees(
+                elevationDegrees);
+            const GameplayCameraElevationGeometry geometry =
+                gameplayCameraElevationGeometry(elevationDegrees);
+            for (const XZ position : soloTrackingPositions)
+            {
+                Game3DTestAccess::recenterPlayer(
+                    centeredCameraGame, 0, position);
+                Game3DTestAccess::refreshCameras(centeredCameraGame);
+                const CameraRig &camera =
+                    centeredCameraGame.cameraRigs()[0];
+                soloCameraCentered = soloCameraCentered &&
+                    std::fabs(camera.target.x - position.x) < 0.0001f &&
+                    std::fabs(camera.target.z - position.z) < 0.0001f &&
+                    std::fabs(camera.position.x - camera.target.x -
+                              basis.offsetX * geometry.depthOffset) <
+                        0.0001f &&
+                    std::fabs(camera.position.z - camera.target.z -
+                              basis.offsetZ * geometry.depthOffset) <
+                        0.0001f &&
+                    std::fabs(camera.position.y - camera.target.y -
+                              geometry.verticalOffset) < 0.0001f;
+            }
+        }
+    }
+    if (!checkTest(soloCameraCentered,
+                   "solo camera did not center its active tank across yaw, "
+                   "elevation, and playable positions"))
+        return 1;
+
+    bool smoothCameraFollow = true;
+    constexpr XZ smoothStart{13.0f, 13.0f};
+    constexpr XZ smoothEnd{13.25f, 12.80f};
+    for (const int yawDegrees : std::array<int, 3>{{-45, 0, 45}})
+    {
+        centeredCameraGame.setCameraYawDegrees(yawDegrees);
+        const CameraPlanarBasis basis = cameraPlanarBasis(yawDegrees);
+        for (const int elevationDegrees : std::array<int, 3>{{
+                 kCameraElevationMinimumDegrees,
+                 kDefaultCameraElevationDegrees,
+                 kCameraElevationMaximumDegrees}})
+        {
+            centeredCameraGame.setCameraElevationDegrees(
+                elevationDegrees);
+            const GameplayCameraElevationGeometry geometry =
+                gameplayCameraElevationGeometry(elevationDegrees);
+            Game3DTestAccess::recenterPlayer(
+                centeredCameraGame, 0, smoothStart);
+            Game3DTestAccess::refreshCameras(centeredCameraGame);
+            Game3DTestAccess::recenterPlayer(
+                centeredCameraGame, 0, smoothEnd);
+            Game3DTestAccess::advanceCameras(
+                centeredCameraGame, 1.0f / 60.0f);
+            const CameraRig firstStep = centeredCameraGame.cameraRigs()[0];
+            const float firstError = std::hypot(
+                smoothEnd.x - firstStep.target.x,
+                smoothEnd.z - firstStep.target.z);
+            const float initialError = std::hypot(
+                smoothEnd.x - smoothStart.x,
+                smoothEnd.z - smoothStart.z);
+            const float movedX = firstStep.target.x - smoothStart.x;
+            const float movedZ = firstStep.target.z - smoothStart.z;
+            const float movementCross =
+                movedX * (smoothEnd.z - smoothStart.z) -
+                movedZ * (smoothEnd.x - smoothStart.x);
+            Game3DTestAccess::advanceCameras(
+                centeredCameraGame, 1.0f / 60.0f);
+            const CameraRig secondStep =
+                centeredCameraGame.cameraRigs()[0];
+            const float secondError = std::hypot(
+                smoothEnd.x - secondStep.target.x,
+                smoothEnd.z - secondStep.target.z);
+            smoothCameraFollow = smoothCameraFollow &&
+                movedX > 0.0f && movedX < smoothEnd.x - smoothStart.x &&
+                movedZ < 0.0f && movedZ > smoothEnd.z - smoothStart.z &&
+                std::fabs(movementCross) < 0.0001f &&
+                firstError < initialError && secondError < firstError &&
+                std::fabs(secondStep.position.x - secondStep.target.x -
+                          basis.offsetX * geometry.depthOffset) < 0.0001f &&
+                std::fabs(secondStep.position.z - secondStep.target.z -
+                          basis.offsetZ * geometry.depthOffset) < 0.0001f &&
+                std::fabs(secondStep.position.y - secondStep.target.y -
+                          geometry.verticalOffset) < 0.0001f;
+        }
+    }
+    if (!checkTest(smoothCameraFollow,
+                   "camera did not begin converging on a small tank movement "
+                   "during its first frame"))
+        return 1;
+
+    Game3D coopCameraGame(resourceRoot, 0xcab1e048U);
+    if (!coopCameraGame.start(2, 3, 1, settlementNations))
+        return 1;
+    struct CoopCameraCase
+    {
+        int yawDegrees;
+        int elevationDegrees;
+        XZ first;
+        XZ second;
+    };
+    const std::array<CoopCameraCase, 5> coopCases{{
+        {45, kCameraElevationMinimumDegrees,
+         {17.05f, 8.95f}, {25.125f, 0.875f}},
+        {45, kCameraElevationMaximumDegrees,
+         {17.05f, 17.05f}, {25.125f, 25.125f}},
+        {0, kDefaultCameraElevationDegrees,
+         {5.0f, 7.0f}, {19.0f, 16.0f}},
+        {-45, kCameraElevationMaximumDegrees,
+         {17.05f, 17.05f}, {25.125f, 25.125f}},
+        {-45, kCameraElevationMinimumDegrees,
+         {8.95f, 17.05f}, {0.875f, 25.125f}}}};
+    bool coopCameraCentered = true;
+    for (const CoopCameraCase &testCase : coopCases)
+    {
+        coopCameraGame.setCameraYawDegrees(testCase.yawDegrees);
+        coopCameraGame.setCameraElevationDegrees(
+            testCase.elevationDegrees);
+        Game3DTestAccess::recenterPlayer(
+            coopCameraGame, 0, testCase.first);
+        Game3DTestAccess::recenterPlayer(
+            coopCameraGame, 1, testCase.second);
+        Game3DTestAccess::refreshCameras(coopCameraGame);
+        const XZ midpoint{
+            (testCase.first.x + testCase.second.x) * 0.5f,
+            (testCase.first.z + testCase.second.z) * 0.5f};
+        const CameraPlanarBasis basis =
+            cameraPlanarBasis(testCase.yawDegrees);
+        const GameplayCameraElevationGeometry geometry =
+            gameplayCameraElevationGeometry(testCase.elevationDegrees);
+        for (const CameraRig &camera : coopCameraGame.cameraRigs())
+        {
+            coopCameraCentered = coopCameraCentered &&
+                std::fabs(camera.target.x - midpoint.x) < 0.0001f &&
+                std::fabs(camera.target.z - midpoint.z) < 0.0001f &&
+                std::fabs(camera.position.x - camera.target.x -
+                          basis.offsetX * geometry.depthOffset) <
+                    0.0001f &&
+                std::fabs(camera.position.z - camera.target.z -
+                          basis.offsetZ * geometry.depthOffset) <
+                    0.0001f &&
+                std::fabs(camera.position.y - camera.target.y -
+                          geometry.verticalOffset) < 0.0001f;
+        }
+    }
+    if (!checkTest(coopCameraCentered,
+                   "co-op camera did not center the active player midpoint"))
+        return 1;
+
+    const float cameraTestAspect = gameplayCameraAspectRatio();
+    struct OppositeCoopCameraCase
+    {
+        int yawDegrees;
+        int elevationDegrees;
+        XZ first;
+        XZ second;
+    };
+    const std::array<OppositeCoopCameraCase, 6> oppositeCoopCases{{
+        {45, kCameraElevationMaximumDegrees,
+         {0.875f, 0.875f}, {25.125f, 25.125f}},
+        {45, kCameraElevationMinimumDegrees,
+         {25.125f, 0.875f}, {0.875f, 25.125f}},
+        {0, kCameraElevationMaximumDegrees,
+         {13.0f, 0.875f}, {13.0f, 25.125f}},
+        {0, kDefaultCameraElevationDegrees,
+         {0.875f, 13.0f}, {25.125f, 13.0f}},
+        {-45, kCameraElevationMinimumDegrees,
+         {25.125f, 0.875f}, {0.875f, 25.125f}},
+        {-45, kCameraElevationMaximumDegrees,
+         {0.875f, 0.875f}, {25.125f, 25.125f}}}};
+    bool oppositeCoopFramingSafe = true;
+    for (const OppositeCoopCameraCase &testCase : oppositeCoopCases)
+    {
+        coopCameraGame.setCameraYawDegrees(testCase.yawDegrees);
+        coopCameraGame.setCameraElevationDegrees(
+            testCase.elevationDegrees);
+        Game3DTestAccess::recenterPlayer(
+            coopCameraGame, 0, testCase.first);
+        Game3DTestAccess::recenterPlayer(
+            coopCameraGame, 1, testCase.second);
+        Game3DTestAccess::refreshCameras(coopCameraGame);
+        const CameraPlanarBasis basis =
+            cameraPlanarBasis(testCase.yawDegrees);
+        const GameplayCameraElevationGeometry geometry =
+            gameplayCameraElevationGeometry(testCase.elevationDegrees);
+        const Camera3D camera = coopCameraGame.cameraForPlayer(0);
+        const float horizontalHalfSpan =
+            camera.fovy * cameraTestAspect * 0.5f;
+        const float verticalHalfSpan = camera.fovy * 0.5f;
+        for (const XZ playerPosition :
+             std::array<XZ, 2>{{testCase.first, testCase.second}})
+        {
+            const float remainingRight = std::fabs(
+                (playerPosition.x - camera.target.x) * basis.rightX +
+                (playerPosition.z - camera.target.z) * basis.rightZ);
+            const float projectedDepth = std::fabs(
+                (playerPosition.x - camera.target.x) * basis.offsetX +
+                (playerPosition.z - camera.target.z) * basis.offsetZ) *
+                geometry.groundDepthProjection;
+            oppositeCoopFramingSafe = oppositeCoopFramingSafe &&
+                remainingRight + 3.0f <= horizontalHalfSpan + 0.01f &&
+                projectedDepth + 2.25f <= verticalHalfSpan + 0.01f;
+        }
+    }
+    if (!checkTest(oppositeCoopFramingSafe,
+                   "elevated camera span can crop opposite-corner co-op "
+                   "tanks at a supported camera yaw and elevation"))
+        return 1;
+
+    const std::array<float, 6> cameraAspects{{
+        4.0f / 3.0f, 16.0f / 9.0f, 21.0f / 9.0f,
+        1.0f, 8.0f / 9.0f, 9.0f / 16.0f}};
+    const std::array<XZ, 2> diagonalSeparations{{
+        {24.25f, 24.25f}, {24.25f, -24.25f}}};
+    bool resizedCoopFramingSafe = true;
+    bool landscapeFramingUnchanged = true;
+    for (int yawDegrees = kCameraYawMinimumDegrees;
+         yawDegrees <= kCameraYawMaximumDegrees;
+         yawDegrees += kCameraYawStepDegrees)
+    {
+        coopCameraGame.setCameraYawDegrees(yawDegrees);
+        for (int elevationDegrees = kCameraElevationMinimumDegrees;
+             elevationDegrees <= kCameraElevationMaximumDegrees;
+             elevationDegrees += kCameraElevationStepDegrees)
+        {
+            coopCameraGame.setCameraElevationDegrees(elevationDegrees);
+            const Camera3D camera = coopCameraGame.cameraForPlayer(0);
+            // Derive projection axes from the actual camera pose rather than
+            // repeating the span helper's planar yaw/elevation calculation.
+            const Vector3 forward = Vector3Normalize(
+                Vector3Subtract(camera.target, camera.position));
+            const Vector3 right = Vector3Normalize(
+                Vector3CrossProduct(forward, camera.up));
+            const Vector3 up = Vector3CrossProduct(right, forward);
+            for (float aspect : cameraAspects)
+            {
+                for (const XZ separation : diagonalSeparations)
+                {
+                    const float span = gameplayCameraSpan(
+                        separation, yawDegrees, elevationDegrees, aspect);
+                    const Vector3 playerOffset{
+                        separation.x * 0.5f, 0.0f,
+                        separation.z * 0.5f};
+                    const float projectedRight = std::fabs(
+                        Vector3DotProduct(playerOffset, right));
+                    const float projectedUp = std::fabs(
+                        Vector3DotProduct(playerOffset, up));
+                    resizedCoopFramingSafe = resizedCoopFramingSafe &&
+                        std::isfinite(span) && span >= kSoloCameraSpan &&
+                        projectedRight + 3.0f <= span * aspect * 0.5f +
+                                                       0.0001f &&
+                        projectedUp + 2.25f <= span * 0.5f + 0.0001f;
+                    if (aspect == 16.0f / 9.0f)
+                    {
+                        const float previousSpan = std::clamp(
+                            std::max({kSoloCameraSpan,
+                                      projectedUp * 2.0f + 4.5f,
+                                      (projectedRight * 2.0f + 6.0f) /
+                                          aspect}),
+                            kSoloCameraSpan, 38.0f);
+                        landscapeFramingUnchanged =
+                            landscapeFramingUnchanged &&
+                            std::fabs(span - previousSpan) < 0.0001f;
+                    }
+                }
+            }
+        }
+    }
+    if (!checkTest(resizedCoopFramingSafe && landscapeFramingUnchanged,
+                   "resized co-op view crops a tank or its framing margin, "
+                   "or changes the existing 16:9 composition"))
+        return 1;
+    const float fallbackCameraSpan = gameplayCameraSpan(
+        diagonalSeparations[0], 45, 70, 16.0f / 9.0f);
+    bool invalidCameraAspectsUseFallback = true;
+    for (float aspect : std::array<float, 4>{{
+             0.0f, -1.0f, std::numeric_limits<float>::infinity(),
+             std::numeric_limits<float>::quiet_NaN()}})
+    {
+        invalidCameraAspectsUseFallback = invalidCameraAspectsUseFallback &&
+            gameplayCameraSpan(diagonalSeparations[0], 45, 70, aspect) ==
+                fallbackCameraSpan;
+    }
+    if (!checkTest(invalidCameraAspectsUseFallback &&
+                       gameplayCameraSpan({}, 0, 50, 16.0f / 9.0f) ==
+                           kSoloCameraSpan,
+                   "camera aspect fallback or minimum local span changed"))
+        return 1;
+
+    bool hudRegionsStaySeparate = true;
+    for (const Rectangle viewport : std::array<Rectangle, 9>{{
+             {0.0f, 0.0f, 1280.0f, 720.0f},
+             {0.0f, 0.0f, 800.0f, 900.0f},
+             {0.0f, 0.0f, 720.0f, 1280.0f},
+             {0.0f, 0.0f, 640.0f, 480.0f},
+             {0.0f, 0.0f, 699.0f, 900.0f},
+             {0.0f, 0.0f, 700.0f, 900.0f},
+             {0.0f, 0.0f, 1024.0f, 768.0f},
+             {0.0f, 0.0f, 2560.0f, 1080.0f},
+             {31.0f, 23.0f, 800.0f, 900.0f}}})
+    {
+        for (const int playerCount : {1, 2})
+        {
+            float previousFooterRight = viewport.x;
+            for (int playerIndex = 0; playerIndex < playerCount;
+                 ++playerIndex)
+            {
+                const ViewportHudLayout layout = viewportHudLayout(
+                    viewport, playerCount, playerIndex);
+                const int panelLeft = layout.panelTextX - 7;
+                const int panelRight = panelLeft + layout.panelWidth;
+                const int mapLeft = layout.mapX - 4;
+                const int mapRight = layout.mapX +
+                                     kMapSize * layout.mapCellSize + 4;
+                const float footerLeft = layout.footerCenterX -
+                                          layout.footerWidth * 0.5f;
+                const float footerRight = layout.footerCenterX +
+                                           layout.footerWidth * 0.5f;
+                hudRegionsStaySeparate = hudRegionsStaySeparate &&
+                    layout.panelWidth > 0 && layout.footerWidth > 0 &&
+                    panelLeft >= viewport.x &&
+                    panelRight <= viewport.x + viewport.width &&
+                    mapLeft >= viewport.x &&
+                    mapRight <= viewport.x + viewport.width &&
+                    (panelRight + 12 <= mapLeft ||
+                     mapRight + 12 <= panelLeft) &&
+                    footerLeft >= previousFooterRight &&
+                    footerRight <= viewport.x + viewport.width;
+                previousFooterRight = footerRight;
+            }
+        }
+    }
+    const Rectangle defaultHudViewport{0.0f, 0.0f, 1280.0f, 720.0f};
+    const ViewportHudLayout defaultSoloHud =
+        viewportHudLayout(defaultHudViewport, 1, 0);
+    const ViewportHudLayout defaultFirstHud =
+        viewportHudLayout(defaultHudViewport, 2, 0);
+    const ViewportHudLayout defaultSecondHud =
+        viewportHudLayout(defaultHudViewport, 2, 1);
+    if (!checkTest(hudRegionsStaySeparate &&
+                       defaultSoloHud.panelWidth == 390 &&
+                       defaultSoloHud.panelTextX == 14 &&
+                       defaultSoloHud.mapX == 1134 &&
+                       defaultFirstHud.panelWidth == 390 &&
+                       defaultSecondHud.panelWidth == 390 &&
+                       defaultFirstHud.panelTextX == 14 &&
+                       defaultSecondHud.panelTextX == 876 &&
+                       defaultFirstHud.mapX == 575 &&
+                       defaultSecondHud.mapX == 575 &&
+                       defaultFirstHud.footerCenterX == 320 &&
+                       defaultSecondHud.footerCenterX == 960,
+                   "HUD panels, minimap, or player hints overlap after resize, "
+                   "or the default HUD placement changed"))
         return 1;
     const auto initialSpawnMatches = [](const Player &player, int id,
                                         Nation nation, XZ position) {
@@ -3939,7 +4526,8 @@ int runSettingsProgressionAndSettlementSelfTests(
     const AdvancedGameSettings alternateStartSettings{
         6, -30, 30, -25};
     const bool rejectedDifferentStart = !restartLoadFailureGame.start(
-        1, 87, 24, alternateStartNations, alternateStartSettings);
+        1, 87, 24, alternateStartNations, alternateStartSettings,
+        45, kCameraElevationMaximumDegrees);
     if (!checkTest(
             errorBeforeRejectedStart.empty() && rejectedDifferentStart &&
                 restartLoadFailureGame.sessionDigest() ==
@@ -3967,6 +4555,9 @@ int runSettingsProgressionAndSettlementSelfTests(
                 Game3DTestAccess::hasSessionConfiguration(
                     restartLoadFailureGame, 2, 4, settlementNations,
                     AdvancedGameSettings{}) &&
+                restartLoadFailureGame.cameraYawDegrees() == 0 &&
+                restartLoadFailureGame.cameraElevationDegrees() ==
+                    kDefaultCameraElevationDegrees &&
                 restartLoadFailureGame.lastError() ==
                     "Injected next-stage validation failure" &&
                 restartFailureAudio.size() == audioBeforeRejectedStart,
@@ -11046,7 +11637,7 @@ int runSelfTests(const fs::path &resourceRoot,
     gSelfTestReporter.finish();
     if (selection == SelfTestSelection::All)
     {
-        std::cout << "Tanks3D self-test passed: classic stage 1 plus 34 deterministic generated stages with validated spawn routes, three national bases, 12 distinct WWII player vehicles, scripted two-player cardinal/ice/fire input, deterministic session digests and observable rule events, configurable 1-6 HP with 1-HP Bandage disable, advanced +/-30% enemy movement/fire/spawn tuning, strict classic AABBs, cardinal/ice movement with collision-safe local escape, hit-first shell cancellation, 200/490 ms projectile/tank destruction states, death-reset direct-fire streaks and classified K.O. tallies, 20-second shovel steel, 12.5-second 3D/icon bonuses, fixed ten-frame spawn warnings, and all 22 enabled 2D audio cues.\n";
+        std::cout << "Tanks3D self-test passed: classic stage 1 plus 34 deterministic generated stages with validated spawn routes, three national bases, 12 distinct WWII player vehicles, scripted two-player cardinal/ice/fire input, selectable -45 to +45 degree camera rotation and 40 to 70 degree elevation, deterministic session digests and observable rule events, configurable 1-6 HP with 1-HP Bandage disable, advanced +/-30% enemy movement/fire/spawn tuning, strict classic AABBs, cardinal/ice movement with collision-safe local escape, hit-first shell cancellation, 200/490 ms projectile/tank destruction states, death-reset direct-fire streaks and classified K.O. tallies, 20-second shovel steel, 12.5-second 3D/icon bonuses, fixed ten-frame spawn warnings, and all 22 enabled 2D audio cues.\n";
     }
     else
     {
