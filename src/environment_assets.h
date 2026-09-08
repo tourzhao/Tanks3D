@@ -2,6 +2,19 @@
 #define TANKS3D_ENVIRONMENT_ASSETS_H
 
 #include <raylib.h>
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+#include <raymath.h>
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include <rlgl.h>
 
 #include <algorithm>
@@ -148,10 +161,9 @@ public:
         return profile;
     }
 
-    // Visible geometry and the shadow pass consume this same mass plan. Full
-    // buildings use a body, a thin roof cap, and one separated low roof
-    // feature; damaged buildings use only their surviving classic brick
-    // quadrants as shortened ruins.
+    // The original profile height is divided between walls and a readable
+    // roof silhouette. Neighboring cells meet at their shared lot boundary;
+    // only exposed faces receive the projecting architectural trim.
     static UrbanMassPlan urbanMassPlan(const UrbanBuildingProfile &profile,
                                        int row, int column,
                                        unsigned char brickMask)
@@ -165,13 +177,14 @@ public:
         constexpr float baseY = 0.05f;
         if (brickMask == 0x0fU)
         {
-            plan.masses[0] = {{x, baseY + profile.coreHeight * 0.5f, z},
-                              {0.92f, profile.coreHeight, 0.92f}};
-            const float bodyTop = baseY + profile.coreHeight;
+            const float wallHeight = urbanWallHeight(profile);
+            plan.masses[0] = {{x, baseY + wallHeight * 0.5f, z},
+                              {1.0f, wallHeight, 1.0f}};
+            const float bodyTop = baseY + wallHeight;
             constexpr float capHeight = 0.024f;
             constexpr float accessoryClearance = 0.008f;
             plan.masses[1] = {{x, bodyTop + capHeight * 0.5f, z},
-                              {0.96f, capHeight, 0.96f}};
+                              {1.0f, capHeight, 1.0f}};
             plan.count = 2;
 
             const float roofBase = bodyTop + capHeight + accessoryClearance;
@@ -181,15 +194,14 @@ public:
                 (static_cast<float>((profile.seed >> 21U) & 3U) - 1.5f) * 0.065f;
             const float offsetZ =
                 (static_cast<float>((profile.seed >> 23U) & 3U) - 1.5f) * 0.065f;
-            Vector3 roofSize{0.34f, roofHeight, 0.30f};
-            if (profile.kind == UrbanBuildingKind::Residence)
-                roofSize = {0.15f, roofHeight, 0.15f};
-            else if (profile.kind == UrbanBuildingKind::Mall)
-                roofSize = {0.38f, roofHeight, 0.32f};
+            Vector3 roofSize{1.0f, roofHeight, 1.0f};
+            const bool pitchedRoof = profile.kind != UrbanBuildingKind::Mall;
+            if (!pitchedRoof)
+                roofSize = {0.38f, roofHeight, 0.34f};
             plan.masses[2] = {
-                {x + offsetX,
+                {x + (pitchedRoof ? 0.0f : offsetX),
                  roofBase + roofHeight * 0.5f,
-                 z + offsetZ},
+                 z + (pitchedRoof ? 0.0f : offsetZ)},
                 roofSize};
             plan.count = 3;
             plan.topHeight = std::min(profile.totalHeight,
@@ -229,11 +241,10 @@ public:
 
         const float x = column + 0.5f;
         const float z = row + 0.5f;
-        const Color body = material(urbanBodyColor(profile), 7);
         const Color accent = material(urbanAccentColor(profile), 7);
-        const Color glass = material(urbanGlassColor(profile), 4);
-        const Color dark = material(shade(urbanBodyColor(profile), 0.48f), 7);
-        const Color light = material(shade(urbanBodyColor(profile), 1.16f), 7);
+        const Color glass = material(urbanGlassColor(profile), 7);
+        const Color dark = material(shade(urbanBodyColor(profile), 0.54f), 7);
+        const Color light = material(Color{219, 194, 146, 255}, 7);
 
         DrawCube({x + 0.10f, 0.006f, z + 0.09f}, 0.98f, 0.012f, 0.98f,
                  Color{18, 24, 21, 82});
@@ -242,28 +253,14 @@ public:
             for (int index = 0; index < plan.count; ++index)
             {
                 const UrbanMass &mass = plan.masses[static_cast<std::size_t>(index)];
-                drawMasonryCore(mass.center.x, mass.center.z,
-                                mass.size.x, mass.size.y, mass.size.z);
-                DrawCube({mass.center.x, 0.047f, mass.center.z},
-                         mass.size.x + 0.025f, 0.085f,
-                         mass.size.z + 0.025f, dark);
-                const float top = mass.center.y + mass.size.y * 0.5f;
-                DrawCube({mass.center.x, top + 0.018f, mass.center.z},
-                         mass.size.x + 0.018f, 0.036f,
-                         mass.size.z + 0.018f,
-                         ((profile.seed >> index) & 1U) != 0U ? accent : light);
-                DrawCube({mass.center.x + 0.09f, top + 0.043f,
-                          mass.center.z - 0.07f},
-                         0.028f, 0.07f, 0.028f,
-                         Color{74, 70, 63, 2});
+                drawUrbanRuin(profile, mass, row, column, false);
             }
             return;
         }
 
         const UrbanMass &bodyMass = plan.masses[0];
-        DrawCube(bodyMass.center, bodyMass.size.x, bodyMass.size.y,
-                 bodyMass.size.z, body);
-        DrawCube({x, 0.055f, z}, 0.98f, 0.10f, 0.98f, dark);
+        drawUrbanBody(profile, bodyMass, row, column, exposedFaces);
+        DrawCube({x, 0.055f, z}, 1.0f, 0.10f, 1.0f, dark);
         const UrbanMass &roofCap = plan.masses[1];
         DrawCube(roofCap.center, roofCap.size.x, roofCap.size.y,
                  roofCap.size.z, light);
@@ -278,27 +275,10 @@ public:
                 drawResidenceFacade(profile, face, x, z, glass, accent, dark);
             else
                 drawMallFacade(profile, face, x, z, glass, accent, light);
+            drawWeatheredFacade(profile, face, x, z, light);
         }
 
-        const UrbanMass &roof = plan.masses[2];
-        const Color roughSkylight = material(urbanGlassColor(profile), 7);
-        const Color roofColor = profile.kind == UrbanBuildingKind::Mall
-                                    ? roughSkylight
-                                    : profile.kind == UrbanBuildingKind::Office
-                                          ? dark
-                                          : accent;
-        DrawCube(roof.center, roof.size.x, roof.size.y, roof.size.z,
-                 roofColor);
-        if (profile.kind == UrbanBuildingKind::Office)
-        {
-            constexpr float panelDepth = 0.018f;
-            const float side = profile.roofVariant == 0U ? -1.0f : 1.0f;
-            const float panelZ = roof.center.z + side *
-                (roof.size.z * 0.5f + panelDepth * 0.5f + 0.002f);
-            DrawCube({roof.center.x, roof.center.y, panelZ},
-                     roof.size.x * 0.72f, roof.size.y * 0.46f, panelDepth,
-                     material(Color{119, 139, 143, 255}, 7));
-        }
+        drawUrbanRoof(profile, plan.masses[2], row, column, false);
     }
 
     static void drawUrbanBuildingShadow(int stage, int row, int column,
@@ -306,17 +286,21 @@ public:
     {
         const UrbanBuildingProfile profile = urbanProfile(stage, row, column);
         const UrbanMassPlan plan = urbanMassPlan(profile, row, column, brickMask);
-        // Tiny roof accessories do not cast into the shared shadow map. Their
-        // sub-pixel self-shadow used to crawl during camera shake; the body and
-        // cap retain the complete readable building silhouette.
+        // Roofs are substantial geometry now. Share their exact silhouette
+        // with the lit pass, but omit the small seams and facade trim.
         const int shadowMassCount = brickMask == 0x0fU
                                         ? std::min(plan.count, 2)
                                         : plan.count;
         for (int index = 0; index < shadowMassCount; ++index)
         {
             const UrbanMass &mass = plan.masses[static_cast<std::size_t>(index)];
-            DrawCube(mass.center, mass.size.x, mass.size.y, mass.size.z, WHITE);
+            if (brickMask == 0x0fU)
+                DrawCube(mass.center, mass.size.x, mass.size.y, mass.size.z, WHITE);
+            else
+                drawUrbanRuin(profile, mass, row, column, true);
         }
+        if (brickMask == 0x0fU)
+            drawUrbanRoof(profile, plan.masses[2], row, column, true);
     }
 
     void load(const std::filesystem::path &resourceRoot)
@@ -423,15 +407,15 @@ public:
         // Buildings sit beyond the playfield, so they establish scale and a
         // war-era urban setting without altering the original collision map.
         static constexpr std::array<Building, 9> buildings{{
-            {-5.0f, -4.8f, 5.2f, 4.1f, 5.8f, Color{76, 86, 91, 255}, Color{132, 89, 63, 255}, 1},
-            { 0.3f, -5.4f, 4.1f, 3.3f, 4.2f, Color{109, 99, 84, 255}, Color{66, 80, 82, 255}, 0},
-            { 5.0f, -5.6f, 4.7f, 3.8f, 6.8f, Color{81, 94, 101, 255}, Color{151, 102, 65, 255}, 2},
-            {10.2f, -6.1f, 4.8f, 4.4f, 5.1f, Color{116, 105, 91, 255}, Color{64, 78, 83, 255}, 1},
-            {15.6f, -5.8f, 5.0f, 3.9f, 7.4f, Color{74, 87, 94, 255}, Color{145, 94, 61, 255}, 2},
-            {21.2f, -5.7f, 4.6f, 3.5f, 5.7f, Color{104, 96, 84, 255}, Color{57, 72, 78, 255}, 0},
-            {26.4f, -5.3f, 4.9f, 4.1f, 6.5f, Color{74, 86, 91, 255}, Color{139, 88, 57, 255}, 1},
-            {31.7f, -5.0f, 5.5f, 4.0f, 4.8f, Color{105, 96, 82, 255}, Color{60, 76, 80, 255}, 0},
-            {37.3f, -5.2f, 5.2f, 4.2f, 7.0f, Color{71, 84, 91, 255}, Color{144, 92, 58, 255}, 2}}};
+            {-5.0f, -4.8f, 5.2f, 4.1f, 5.8f, Color{149, 145, 112, 255}, Color{111, 79, 53, 255}, 1},
+            { 0.3f, -5.4f, 4.1f, 3.3f, 4.2f, Color{176, 151, 110, 255}, Color{66, 106, 91, 255}, 0},
+            { 5.0f, -5.6f, 4.7f, 3.8f, 6.8f, Color{139, 154, 136, 255}, Color{139, 89, 53, 255}, 2},
+            {10.2f, -6.1f, 4.8f, 4.4f, 5.1f, Color{178, 152, 116, 255}, Color{66, 108, 93, 255}, 1},
+            {15.6f, -5.8f, 5.0f, 3.9f, 7.4f, Color{132, 149, 134, 255}, Color{131, 86, 57, 255}, 2},
+            {21.2f, -5.7f, 4.6f, 3.5f, 5.7f, Color{173, 143, 108, 255}, Color{66, 97, 83, 255}, 0},
+            {26.4f, -5.3f, 4.9f, 4.1f, 6.5f, Color{149, 153, 126, 255}, Color{134, 84, 54, 255}, 1},
+            {31.7f, -5.0f, 5.5f, 4.0f, 4.8f, Color{180, 153, 115, 255}, Color{65, 103, 87, 255}, 0},
+            {37.3f, -5.2f, 5.2f, 4.2f, 7.0f, Color{139, 151, 130, 255}, Color{137, 89, 58, 255}, 2}}};
 
         for (const Building &building : buildings)
             drawBuilding(building);
@@ -666,6 +650,13 @@ public:
 private:
     static constexpr float kForestPi = 3.14159265358979323846f;
 
+    static float urbanWallHeight(const UrbanBuildingProfile &profile)
+    {
+        const float roofAllowance = profile.kind == UrbanBuildingKind::Mall
+                                        ? 0.11f : 0.18f;
+        return profile.coreHeight - roofAllowance;
+    }
+
     static float forestUnit(std::uint32_t value)
     {
         const std::uint32_t mixed = mixUrbanSeed(value);
@@ -680,12 +671,12 @@ private:
     static std::array<Color, 4> forestPalette(unsigned char requestedPalette)
     {
         static constexpr std::array<std::array<Color, 4>, 3> palettes{{
-            {{Color{24, 50, 29, 132}, Color{39, 76, 35, 126},
-              Color{61, 97, 42, 116}, Color{83, 119, 53, 104}}},
-            {{Color{22, 47, 32, 132}, Color{34, 70, 39, 126},
-              Color{53, 91, 46, 116}, Color{73, 111, 56, 104}}},
-            {{Color{32, 53, 27, 132}, Color{51, 78, 33, 126},
-              Color{72, 98, 40, 116}, Color{94, 118, 50, 104}}}}};
+            {{Color{31, 61, 47, 132}, Color{52, 88, 48, 126},
+              Color{86, 113, 55, 116}, Color{137, 149, 72, 104}}},
+            {{Color{25, 61, 53, 132}, Color{42, 89, 63, 126},
+              Color{71, 117, 68, 116}, Color{113, 143, 81, 104}}},
+            {{Color{46, 63, 39, 132}, Color{73, 94, 44, 126},
+              Color{106, 120, 53, 116}, Color{152, 153, 76, 104}}}}};
         return palettes[requestedPalette % palettes.size()];
     }
 
@@ -694,6 +685,46 @@ private:
         return {first.x + (second.x - first.x) * amount,
                 first.y + (second.y - first.y) * amount,
                 first.z + (second.z - first.z) * amount};
+    }
+
+    static void drawForestCylinder(Vector3 start, Vector3 end,
+                                    float startRadius, float endRadius,
+                                    int sides, Color color)
+    {
+        const Vector3 axis = Vector3Subtract(end, start);
+        if (axis.x == 0.0f && axis.y == 0.0f && axis.z == 0.0f)
+            return;
+
+        // Keep the existing raylib cylinder's ring orientation and vertices,
+        // but emit an explicit outward normal for every facet and cap. The
+        // stock DrawCylinderEx inherits whichever normal was emitted last.
+        const Vector3 tangent = Vector3Normalize(Vector3Perpendicular(axis));
+        const Vector3 bitangent = Vector3Normalize(Vector3CrossProduct(tangent, axis));
+        const float step = (2.0f * kForestPi) / static_cast<float>(sides);
+        const auto point = [&](Vector3 center, float radius, int index)
+        {
+            const float sine = std::sin(step * index) * radius;
+            const float cosine = std::cos(step * index) * radius;
+            return Vector3{center.x + sine * tangent.x + cosine * bitangent.x,
+                           center.y + sine * tangent.y + cosine * bitangent.y,
+                           center.z + sine * tangent.z + cosine * bitangent.z};
+        };
+
+        rlBegin(RL_TRIANGLES);
+        for (int side = 0; side < sides; ++side)
+        {
+            const Vector3 lower = point(start, startRadius, side);
+            const Vector3 lowerNext = point(start, startRadius, side + 1);
+            const Vector3 upper = point(end, endRadius, side);
+            const Vector3 upperNext = point(end, endRadius, side + 1);
+            emitSurfaceTriangle(lower, lowerNext, upper, color);
+            emitSurfaceTriangle(lowerNext, upperNext, upper, color);
+            if (startRadius > 0.0f)
+                emitSurfaceTriangle(start, lowerNext, lower, color);
+            if (endRadius > 0.0f)
+                emitSurfaceTriangle(end, upper, upperNext, color);
+        }
+        rlEnd();
     }
 
     static void drawForestTrunk(const ForestTree &tree)
@@ -706,9 +737,23 @@ private:
             tree.sapling ? Color{105, 79, 46, 255}
                          : Color{101, 74, 43, 255},
             8);
-        DrawCylinderEx(tree.trunkBase, tree.trunkTop,
-                       tree.trunkBaseRadius, tree.trunkTopRadius,
-                       tree.sapling ? 7 : 8, bark);
+        drawForestCylinder(tree.trunkBase, tree.trunkTop,
+                           tree.trunkBaseRadius, tree.trunkTopRadius,
+                           tree.sapling ? 7 : 8, bark);
+
+        if (!tree.sapling)
+        {
+            // Broad buttress roots ground the arcade jungle silhouettes.
+            for (int root = 0; root < 3; ++root)
+            {
+                const float angle = tree.crownTwist + root * 2.094395f;
+                const Vector3 toe{
+                    tree.trunkBase.x + std::cos(angle) * 0.125f, 0.018f,
+                    tree.trunkBase.z + std::sin(angle) * 0.125f};
+                drawForestCylinder(toe, forestLerp(tree.trunkBase, tree.trunkTop, 0.18f),
+                                   0.020f, tree.trunkBaseRadius * 0.42f, 5, bark);
+            }
+        }
 
         for (unsigned char branch = 0U; branch < tree.branchCount; ++branch)
         {
@@ -726,12 +771,12 @@ private:
                 start.y + 0.15f + forestUnit(
                     tree.seed ^ (0xc2b2ae35U + static_cast<std::uint32_t>(branch))) * 0.08f,
                 start.z + std::sin(angle) * length};
-            DrawCylinderEx(start, end, tree.trunkTopRadius * 0.72f,
-                           tree.trunkTopRadius * 0.24f, 6, branchColor);
+            drawForestCylinder(start, end, tree.trunkTopRadius * 0.72f,
+                               tree.trunkTopRadius * 0.24f, 6, branchColor);
         }
     }
 
-    static void emitForestTriangle(Vector3 first, Vector3 second, Vector3 third,
+    static void emitSurfaceTriangle(Vector3 first, Vector3 second, Vector3 third,
                                    Color color)
     {
         const Vector3 firstEdge{second.x - first.x, second.y - first.y,
@@ -766,12 +811,12 @@ private:
         const ForestTree &tree, const std::array<Color, 4> &colors,
         float radiusScale)
     {
-        static constexpr int segmentCount = 8;
+        static constexpr int segmentCount = 10;
         static constexpr int ringCount = 4;
         static constexpr std::array<float, ringCount> ringHeight{{
-            0.0f, 0.27f, 0.57f, 0.81f}};
+            0.0f, 0.23f, 0.61f, 0.88f}};
         static constexpr std::array<float, ringCount> ringRadius{{
-            0.46f, 0.98f, 1.0f, 0.72f}};
+            0.48f, 0.99f, 0.94f, 0.60f}};
         std::array<std::array<Vector3, segmentCount>, ringCount> rings{};
         const float crownHeight = tree.crownTopHeight - tree.crownBaseHeight;
 
@@ -793,19 +838,21 @@ private:
                     tree.seed ^
                     (0x165667b1U * static_cast<std::uint32_t>(ring + 1)) ^
                     (0xd3a2646cU * static_cast<std::uint32_t>(segment + 1));
-                const float irregularity = 0.96f + forestUnit(detailSeed) * 0.08f;
+                const float irregularity = 0.87f + forestUnit(detailSeed) * 0.16f;
                 const float angle = tree.crownTwist +
                                     static_cast<float>(segment) *
                                         (2.0f * kForestPi /
                                          static_cast<float>(segmentCount)) +
-                                    static_cast<float>(ring) * 0.055f;
+                                    static_cast<float>(ring) * 0.065f;
                 const float radius = tree.crownRadius *
                                      ringRadius[static_cast<std::size_t>(ring)] *
                                      radiusScale * irregularity;
                 rings[static_cast<std::size_t>(ring)]
                      [static_cast<std::size_t>(segment)] = {
                     centerX + std::cos(angle) * radius * tree.crownScaleX,
-                    y,
+                    y + (ring > 0 && ring < ringCount - 1
+                             ? forestSigned(detailSeed ^ 0xb7e15162U) * crownHeight * 0.05f
+                             : 0.0f),
                     centerZ + std::sin(angle) * radius * tree.crownScaleZ};
             }
         }
@@ -833,8 +880,9 @@ private:
                     rings[static_cast<std::size_t>(ring + 1)]
                          [static_cast<std::size_t>(next)];
                 const Color color = colors[static_cast<std::size_t>(ring)];
-                emitForestTriangle(lower, upperNext, lowerNext, color);
-                emitForestTriangle(lower, upper, upperNext, color);
+                const float facetLight = (segment % 3) == 0 ? 1.09f : 0.97f;
+                emitSurfaceTriangle(lower, upperNext, lowerNext, color);
+                emitSurfaceTriangle(lower, upper, upperNext, shade(color, facetLight));
             }
         }
         for (int segment = 0; segment < segmentCount; ++segment)
@@ -844,7 +892,7 @@ private:
                 rings[ringCount - 1][static_cast<std::size_t>(segment)];
             const Vector3 lowerNext =
                 rings[ringCount - 1][static_cast<std::size_t>(next)];
-            emitForestTriangle(lower, apex, lowerNext, colors[3]);
+            emitSurfaceTriangle(lower, apex, lowerNext, colors[3]);
         }
         rlEnd();
     }
@@ -862,14 +910,14 @@ private:
     static Color urbanBodyColor(const UrbanBuildingProfile &profile)
     {
         static constexpr std::array<Color, 3> office{{
-            Color{72, 91, 103, 255}, Color{91, 101, 109, 255},
-            Color{68, 85, 92, 255}}};
+            Color{148, 149, 121, 255}, Color{179, 151, 110, 255},
+            Color{139, 159, 145, 255}}};
         static constexpr std::array<Color, 3> residence{{
-            Color{166, 132, 99, 255}, Color{151, 111, 91, 255},
-            Color{180, 158, 119, 255}}};
+            Color{208, 177, 125, 255}, Color{191, 140, 108, 255},
+            Color{218, 197, 152, 255}}};
         static constexpr std::array<Color, 3> mall{{
-            Color{145, 147, 139, 255}, Color{167, 151, 126, 255},
-            Color{132, 153, 151, 255}}};
+            Color{197, 175, 134, 255}, Color{189, 145, 109, 255},
+            Color{167, 181, 156, 255}}};
         const std::size_t palette = profile.palette % 3U;
         if (profile.kind == UrbanBuildingKind::Office)
             return office[palette];
@@ -881,14 +929,14 @@ private:
     static Color urbanAccentColor(const UrbanBuildingProfile &profile)
     {
         static constexpr std::array<Color, 3> office{{
-            Color{38, 53, 62, 255}, Color{55, 68, 75, 255},
-            Color{42, 73, 76, 255}}};
+            Color{65, 104, 95, 255}, Color{109, 71, 55, 255},
+            Color{66, 91, 84, 255}}};
         static constexpr std::array<Color, 3> residence{{
-            Color{103, 66, 49, 255}, Color{78, 88, 81, 255},
-            Color{119, 76, 57, 255}}};
+            Color{65, 115, 104, 255}, Color{89, 111, 87, 255},
+            Color{129, 70, 56, 255}}};
         static constexpr std::array<Color, 3> mall{{
-            Color{207, 105, 49, 255}, Color{45, 139, 145, 255},
-            Color{197, 150, 49, 255}}};
+            Color{143, 65, 54, 255}, Color{63, 117, 107, 255},
+            Color{153, 107, 54, 255}}};
         const std::size_t palette = profile.palette % 3U;
         if (profile.kind == UrbanBuildingKind::Office)
             return office[palette];
@@ -900,14 +948,14 @@ private:
     static Color urbanGlassColor(const UrbanBuildingProfile &profile)
     {
         static constexpr std::array<Color, 3> office{{
-            Color{38, 75, 91, 255}, Color{47, 83, 106, 255},
-            Color{41, 96, 104, 255}}};
+            Color{38, 66, 66, 255}, Color{50, 66, 63, 255},
+            Color{45, 76, 73, 255}}};
         static constexpr std::array<Color, 3> residence{{
-            Color{35, 50, 57, 255}, Color{48, 64, 68, 255},
-            Color{38, 60, 70, 255}}};
+            Color{42, 58, 55, 255}, Color{48, 62, 58, 255},
+            Color{41, 62, 60, 255}}};
         static constexpr std::array<Color, 3> mall{{
-            Color{27, 71, 84, 255}, Color{33, 85, 91, 255},
-            Color{44, 70, 93, 255}}};
+            Color{37, 64, 63, 255}, Color{37, 72, 65, 255},
+            Color{43, 61, 59, 255}}};
         const std::size_t palette = profile.palette % 3U;
         if (profile.kind == UrbanBuildingKind::Office)
             return office[palette];
@@ -920,7 +968,7 @@ private:
                                   float lateral, float width, float height,
                                   float thickness, Color color)
     {
-        constexpr float halfBody = 0.46f;
+        constexpr float halfBody = 0.50f;
         const float outward = halfBody + thickness * 0.5f - 0.008f;
         if (face == 0)
             DrawCube({x + lateral, y, z - outward}, width, height, thickness,
@@ -936,71 +984,632 @@ private:
                      color);
     }
 
+    static Vector3 facadePoint(int face, float x, float z, float lateral,
+                                float y, float outward)
+    {
+        if (face == 0)
+            return {x + lateral, y, z - outward};
+        if (face == 1)
+            return {x + lateral, y, z + outward};
+        if (face == 2)
+            return {x - outward, y, z + lateral};
+        return {x + outward, y, z + lateral};
+    }
+
+    static void emitSurfaceQuad(Vector3 first, Vector3 second, Vector3 third,
+                                Vector3 fourth, Color color)
+    {
+        emitSurfaceTriangle(first, second, third, color);
+        emitSurfaceTriangle(first, third, fourth, color);
+    }
+
+    static void drawFramedWindow(int face, float x, float z, float y,
+                                 float lateral, float width, float height,
+                                 Color inset, Color frame, bool crossbar)
+    {
+        drawFacadeElement(face, x, z, y, lateral,
+                          width + 0.065f, height + 0.055f, 0.034f, frame);
+        drawFacadeElement(face, x, z, y, lateral,
+                          width, height, 0.048f, inset);
+        drawFacadeElement(face, x, z, y - height * 0.5f - 0.024f, lateral,
+                          width + 0.11f, 0.043f, 0.085f, frame);
+        if (crossbar)
+        {
+            drawFacadeElement(face, x, z, y, lateral,
+                              0.026f, height, 0.063f, frame);
+            drawFacadeElement(face, x, z, y - height * 0.11f, lateral,
+                              width, 0.020f, 0.063f, frame);
+        }
+    }
+
+    static void drawUrbanBody(const UrbanBuildingProfile &profile,
+                               const UrbanMass &body, int row, int column,
+                               const std::array<bool, 4> &exposedFaces)
+    {
+        const float bottom = body.center.y - body.size.y * 0.5f;
+        const float top = body.center.y + body.size.y * 0.5f;
+        const Color plaster = material(urbanBodyColor(profile), 7);
+        const Color interior = material(shade(urbanBodyColor(profile), 0.72f), 7);
+        const Color timber = material(Color{87, 75, 55, 255}, 7);
+        const Color brick = material(Color{141, 90, 63, 255}, 6);
+        rlBegin(RL_TRIANGLES);
+        for (int face = 0; face < 4; ++face)
+        {
+            const auto panel = [&](float left, float right, float low,
+                                   float high, Color color)
+            {
+                const Vector3 a = facadePoint(face, body.center.x, body.center.z,
+                                               left, low, 0.5f);
+                const Vector3 b = facadePoint(face, body.center.x, body.center.z,
+                                               right, low, 0.5f);
+                const Vector3 c = facadePoint(face, body.center.x, body.center.z,
+                                               right, high, 0.5f);
+                const Vector3 d = facadePoint(face, body.center.x, body.center.z,
+                                               left, high, 0.5f);
+                if (face == 0 || face == 3)
+                    emitSurfaceQuad(d, c, b, a, color);
+                else
+                    emitSurfaceQuad(a, b, c, d, color);
+            };
+            const bool insideLot = face == 0 ? (row & 1) != 0
+                                 : face == 1 ? (row & 1) == 0
+                                 : face == 2 ? (column & 1) != 0
+                                             : (column & 1) == 0;
+            if (!insideLot || exposedFaces[static_cast<std::size_t>(face)])
+            {
+                panel(-0.5f, 0.5f, bottom, top, plaster);
+                continue;
+            }
+
+            // A damaged neighboring cell reveals a room section, not a new
+            // featureless exterior. These coplanar panels replace the body
+            // face and stay exactly inside its original mass envelope.
+            const float floor = bottom + body.size.y * 0.47f;
+            const float band = bottom + body.size.y * 0.20f;
+            panel(-0.5f, -0.44f, bottom, top, brick);
+            panel(0.44f, 0.5f, bottom, top, brick);
+            panel(-0.44f, 0.44f, bottom, band, timber);
+            panel(-0.44f, 0.44f, band, floor - 0.025f, interior);
+            panel(-0.44f, 0.44f, floor - 0.025f, floor + 0.025f, timber);
+            const float partition = ((profile.seed >> (face + 2U)) & 1U) != 0U
+                                        ? 0.17f : -0.13f;
+            panel(-0.44f, partition - 0.025f, floor + 0.025f, top,
+                  material(Color{153, 145, 109, 255}, 7));
+            panel(partition - 0.025f, partition + 0.025f,
+                  floor + 0.025f, top, timber);
+            panel(partition + 0.025f, 0.44f, floor + 0.025f, top,
+                  material(Color{116, 131, 113, 255}, 7));
+        }
+        rlEnd();
+    }
+
+    static void drawStripedAwning(int face, float x, float z, float y,
+                                  Color accent, Color canvas)
+    {
+        // The awning is a sloping canvas prism, not a horizontal shelf.
+        // Four broad stripes per cell align across the adjoining shopfront.
+        rlBegin(RL_TRIANGLES);
+        for (int stripe = 0; stripe < 4; ++stripe)
+        {
+            const float left = -0.48f + stripe * 0.24f;
+            const float right = left + 0.24f;
+            const Color color = (stripe & 1) == 0 ? accent : canvas;
+            const Vector3 a = facadePoint(face, x, z, left, y + 0.07f, 0.505f);
+            const Vector3 b = facadePoint(face, x, z, left, y, 0.67f);
+            const Vector3 c = facadePoint(face, x, z, right, y, 0.67f);
+            const Vector3 d = facadePoint(face, x, z, right, y + 0.07f, 0.505f);
+            const Vector3 e = facadePoint(face, x, z, left, y - 0.04f, 0.67f);
+            const Vector3 f = facadePoint(face, x, z, right, y - 0.04f, 0.67f);
+            if (face == 0 || face == 3)
+            {
+                emitSurfaceQuad(d, c, b, a, color);
+                emitSurfaceQuad(c, f, e, b, shade(color, 0.82f));
+            }
+            else
+            {
+                emitSurfaceQuad(a, b, c, d, color);
+                emitSurfaceQuad(b, e, f, c, shade(color, 0.82f));
+            }
+        }
+        rlEnd();
+    }
+
+    static void drawWeatheredFacade(const UrbanBuildingProfile &profile,
+                                    int face, float x, float z, Color stone)
+    {
+        const float wallTop = 0.05f + urbanWallHeight(profile);
+        const bool secondCell = (static_cast<int>(face < 2 ? x : z) & 1) != 0;
+        const float corner = secondCell ? 0.46f : -0.46f;
+        drawFacadeElement(face, x, z, wallTop - 0.005f, 0.0f,
+                          1.0f, 0.045f, 0.068f, stone);
+        drawFacadeElement(face, x, z, 0.115f, 0.0f,
+                          1.0f, 0.12f, 0.030f,
+                          material(shade(urbanBodyColor(profile), 0.71f), 7));
+        for (int block = 0; block < 3; ++block)
+            drawFacadeElement(face, x, z, 0.21f + block * (wallTop - 0.28f) / 3.0f,
+                              corner, (block & 1) == 0 ? 0.09f : 0.065f,
+                              0.09f, 0.048f, stone);
+
+        const std::uint32_t wearSeed = mixUrbanSeed(profile.seed ^
+            static_cast<std::uint32_t>(face * 17 + (secondCell ? 3 : 0)));
+        const float patchSide = secondCell ? -0.34f : 0.34f;
+        if ((wearSeed & 3U) != 3U)
+        {
+            const float patchY = wallTop * 0.47f;
+            const Color wornPlaster = material(shade(urbanBodyColor(profile), 0.80f), 7);
+            static constexpr std::array<std::array<float, 2>, 7> edge{{
+                {{-0.10f, -0.13f}}, {{0.08f, -0.11f}}, {{0.11f, -0.02f}},
+                {{0.075f, 0.02f}}, {{0.09f, 0.12f}}, {{-0.04f, 0.14f}},
+                {{-0.11f, 0.05f}}}};
+            const Vector3 center = facadePoint(face, x, z, patchSide, patchY, 0.505f);
+            rlBegin(RL_TRIANGLES);
+            for (std::size_t point = 0; point < edge.size(); ++point)
+            {
+                const auto &first = edge[point];
+                const auto &second = edge[(point + 1U) % edge.size()];
+                const Vector3 a = facadePoint(face, x, z, patchSide + first[0],
+                                               patchY + first[1], 0.505f);
+                const Vector3 b = facadePoint(face, x, z, patchSide + second[0],
+                                               patchY + second[1], 0.505f);
+                if (face == 0 || face == 3)
+                    emitSurfaceTriangle(center, b, a, wornPlaster);
+                else
+                    emitSurfaceTriangle(center, a, b, wornPlaster);
+            }
+            rlEnd();
+        }
+        const Color brick = material(Color{149, 94, 65, 255}, 6);
+        drawFacadeElement(face, x, z, 0.155f, patchSide,
+                          0.18f, 0.11f, 0.040f, brick);
+        drawFacadeElement(face, x, z, 0.215f, patchSide + 0.025f,
+                          0.12f, 0.06f, 0.041f, brick);
+        drawFacadeElement(face, x, z, 0.152f, patchSide,
+                          0.16f, 0.012f, 0.054f,
+                          material(Color{191, 154, 106, 255}, 7));
+        if ((wearSeed & 3U) == 0U)
+        {
+            const Color pipe = material(Color{93, 110, 91, 255}, 7);
+            const Vector3 bottom = facadePoint(face, x, z, corner * 0.80f,
+                                                0.15f, 0.56f);
+            const Vector3 top = facadePoint(face, x, z, corner * 0.80f,
+                                             wallTop - 0.075f, 0.56f);
+            DrawCylinderEx(bottom, top, 0.018f, 0.018f, 6, pipe);
+            drawFacadeElement(face, x, z, wallTop * 0.46f, corner * 0.80f,
+                              0.05f, 0.035f, 0.095f, stone);
+        }
+    }
+
     static void drawOfficeFacade(const UrbanBuildingProfile &profile, int face,
                                  float x, float z, Color glass, Color accent)
     {
-        const float usableHeight = std::max(0.54f, profile.coreHeight - 0.16f);
-        const float floorStep = usableHeight / static_cast<float>(profile.floors);
-        for (int floor = 0; floor < profile.floors; ++floor)
+        const float wallTop = 0.05f + urbanWallHeight(profile);
+        const Color stone = material(Color{204, 183, 138, 255}, 7);
+        const Color iron = material(Color{62, 74, 67, 255}, 7);
+        const bool gateCell = (static_cast<int>(face < 2 ? x : z) & 1) == 0;
+        const float gateHeight = wallTop * 0.47f;
+        drawFramedWindow(face, x, z, 0.12f + gateHeight * 0.5f,
+                         0.0f, 0.62f, gateHeight, glass, stone, false);
+        if (gateCell)
         {
-            const float y = 0.14f + (floor + 0.5f) * floorStep;
-            const float windowHeight = std::min(0.15f, floorStep * 0.52f);
-            drawFacadeElement(face, x, z, y, -0.20f, 0.29f,
-                              windowHeight, 0.032f, glass);
-            drawFacadeElement(face, x, z, y, 0.20f, 0.29f,
-                              windowHeight, 0.032f,
-                              ((profile.seed >> floor) & 7U) == 0U
-                                  ? material(Color{225, 174, 93, 255}, 4)
-                                  : glass);
+            drawFacadeElement(face, x, z, 0.12f + gateHeight * 0.5f,
+                              0.0f, 0.53f, gateHeight - 0.04f, 0.055f, accent);
+            for (int rib = 0; rib < 4; ++rib)
+                drawFacadeElement(face, x, z,
+                                  0.155f + rib * (gateHeight - 0.07f) / 3.0f,
+                                  0.0f, 0.54f, 0.013f, 0.068f, iron);
+            drawFacadeElement(face, x, z, 0.22f, 0.18f,
+                              0.045f, 0.018f, 0.083f, stone);
         }
-        drawFacadeElement(face, x, z, 0.14f + usableHeight * 0.5f,
-                          0.0f, 0.045f, usableHeight, 0.040f, accent);
+        else
+        {
+            for (float divider : {-0.17f, 0.0f, 0.17f})
+                drawFacadeElement(face, x, z, 0.12f + gateHeight * 0.5f,
+                                  divider, 0.025f, gateHeight - 0.025f,
+                                  0.064f, accent);
+        }
+        const float windowY = wallTop - 0.17f;
+        drawFramedWindow(face, x, z, windowY, 0.0f,
+                         0.60f, 0.20f, glass, stone, false);
+        drawFacadeElement(face, x, z, windowY, 0.0f,
+                          0.025f, 0.17f, 0.062f, accent);
+        drawFacadeElement(face, x, z, windowY, 0.0f,
+                          0.53f, 0.018f, 0.062f, accent);
+        drawFacadeElement(face, x, z, 0.14f + gateHeight, 0.0f,
+                          0.74f, 0.045f, 0.080f, accent);
     }
 
     static void drawResidenceFacade(const UrbanBuildingProfile &profile,
                                     int face, float x, float z, Color glass,
                                     Color accent, Color dark)
     {
-        const float usableHeight = std::max(0.48f, profile.coreHeight - 0.18f);
-        const float floorStep = usableHeight / static_cast<float>(profile.floors);
-        for (int floor = 0; floor < profile.floors; ++floor)
+        const float wallTop = 0.05f + urbanWallHeight(profile);
+        const Color stone = material(Color{227, 205, 160, 255}, 7);
+        const bool doorCell = (static_cast<int>(face < 2 ? x : z) & 1) == 0;
+        if (doorCell)
         {
-            const float y = 0.15f + (floor + 0.5f) * floorStep;
-            const float windowHeight = std::min(0.19f, floorStep * 0.52f);
-            drawFacadeElement(face, x, z, y, -0.20f, 0.20f,
-                              windowHeight, 0.035f, glass);
-            drawFacadeElement(face, x, z, y, 0.20f, 0.20f,
-                              windowHeight, 0.035f, glass);
-            if (floor > 0 && ((profile.seed >> (face + floor)) & 1U) != 0U)
-            {
-                drawFacadeElement(face, x, z, y - windowHeight * 0.55f,
-                                  0.0f, 0.72f, 0.040f, 0.12f, accent);
-                drawFacadeElement(face, x, z, y + 0.02f,
-                                  0.0f, 0.055f, windowHeight * 0.95f,
-                                  0.135f, dark);
-            }
+            drawFramedWindow(face, x, z, 0.255f, -0.06f,
+                             0.27f, 0.34f, dark, stone, false);
+            drawFacadeElement(face, x, z, 0.25f, -0.06f,
+                              0.20f, 0.29f, 0.055f, accent);
+            drawFacadeElement(face, x, z, 0.28f, 0.005f,
+                              0.022f, 0.025f, 0.072f,
+                              material(Color{213, 172, 90, 255}, 7));
+            drawFacadeElement(face, x, z, 0.073f, -0.06f,
+                              0.38f, 0.05f, 0.12f, stone);
         }
-        if (face == static_cast<int>((profile.seed >> 25U) & 3U))
-            drawFacadeElement(face, x, z, 0.245f, 0.0f,
-                              0.25f, 0.36f, 0.045f, dark);
+        else
+        {
+            drawFramedWindow(face, x, z, 0.285f, 0.03f,
+                             0.31f, 0.25f, glass, stone, true);
+        }
+        const float windowY = wallTop - 0.155f;
+        drawFramedWindow(face, x, z, windowY, 0.0f,
+                         0.29f, 0.23f, glass, stone, true);
+        for (float side : {-1.0f, 1.0f})
+        {
+            const float shutter = side * 0.225f;
+            drawFacadeElement(face, x, z, windowY, shutter,
+                              0.105f, 0.24f, 0.055f, accent);
+            for (int slat = 0; slat < 3; ++slat)
+                drawFacadeElement(face, x, z, windowY - 0.068f + slat * 0.067f,
+                                  shutter, 0.075f, 0.012f, 0.070f,
+                                  material(shade(urbanAccentColor(profile), 1.28f), 7));
+        }
+        drawFacadeElement(face, x, z, 0.47f, 0.0f,
+                          1.0f, 0.026f, 0.042f, stone);
     }
 
     static void drawMallFacade(const UrbanBuildingProfile &profile, int face,
                                float x, float z, Color glass, Color accent,
                                Color light)
     {
-        const float coreTop = 0.05f + profile.coreHeight;
-        drawFacadeElement(face, x, z, 0.29f, 0.0f,
-                          0.72f, 0.32f, 0.038f, glass);
-        drawFacadeElement(face, x, z, coreTop - 0.14f, 0.0f,
-                          0.77f, 0.13f, 0.045f, accent);
-        drawFacadeElement(face, x, z, coreTop - 0.30f, 0.0f,
-                          0.82f, 0.050f, 0.14f, light);
-        const float signOffset =
-            ((profile.seed >> (face + 4U)) & 1U) != 0U ? -0.22f : 0.22f;
-        drawFacadeElement(face, x, z, coreTop - 0.14f, signOffset,
-                          0.18f, 0.055f, 0.055f,
-                          material(Color{244, 207, 107, 255}, 4));
+        const float wallTop = 0.05f + urbanWallHeight(profile);
+        const Color frame = material(Color{77, 87, 71, 255}, 7);
+        drawFramedWindow(face, x, z, 0.27f, 0.0f,
+                         0.72f, 0.34f, glass, light, false);
+        const bool doorCell = (static_cast<int>(face < 2 ? x : z) & 1) == 0;
+        if (doorCell)
+        {
+            drawFacadeElement(face, x, z, 0.27f, -0.15f,
+                              0.032f, 0.30f, 0.064f, frame);
+            drawFacadeElement(face, x, z, 0.19f, 0.17f,
+                              0.30f, 0.12f, 0.061f, accent);
+        }
+        else
+        {
+            drawFacadeElement(face, x, z, 0.27f, 0.0f,
+                              0.65f, 0.28f, 0.057f,
+                              material(Color{139, 147, 121, 255}, 7));
+            for (int rib = 0; rib < 4; ++rib)
+                drawFacadeElement(face, x, z, 0.17f + rib * 0.064f,
+                                  0.0f, 0.65f, 0.014f, 0.072f, frame);
+        }
+        const float signY = wallTop - 0.09f;
+        drawFacadeElement(face, x, z, signY, 0.0f,
+                          0.77f, 0.16f, 0.043f, light);
+        drawFacadeElement(face, x, z, signY, 0.0f,
+                          0.70f, 0.115f, 0.058f, accent);
+        // Broad worn sign strokes remain legible from the combat camera.
+        for (int stroke = 0; stroke < 3; ++stroke)
+            drawFacadeElement(face, x, z, signY, -0.22f + stroke * 0.22f,
+                              0.115f, 0.032f, 0.073f, light);
+        drawStripedAwning(face, x, z, 0.455f, accent, light);
+    }
+
+    static void drawBrokenWall(float width, float thickness, float height,
+                                 std::uint32_t seed, bool plasterFront,
+                                 Color brick, Color plaster, Color stone)
+    {
+        // One continuous fractured wall replaces the repeated stair-step
+        // columns. Unequal break positions and a missing upper corner are
+        // stable per surviving quadrant and shared by both render passes.
+        const bool reverse = ((seed >> 6U) & 1U) != 0U;
+        static constexpr std::array<float, 7> positions{{
+            -0.5f, -0.28f, -0.20f, -0.05f, 0.04f, 0.26f, 0.5f}};
+        static constexpr std::array<std::array<float, 7>, 4> fractures{{
+            {{1.0f, 0.94f, 0.66f, 0.72f, 0.49f, 0.45f, 0.24f}},
+            {{0.28f, 0.34f, 0.76f, 1.0f, 0.91f, 0.56f, 0.61f}},
+            {{0.75f, 0.65f, 0.70f, 0.30f, 0.38f, 0.20f, 0.23f}},
+            {{0.18f, 0.48f, 0.42f, 0.85f, 1.0f, 0.64f, 0.69f}}}};
+        const auto &heights = fractures[(seed >> 2U) & 3U];
+        const float half = thickness * 0.5f;
+        rlBegin(RL_TRIANGLES);
+        for (int section = 0; section < 6; ++section)
+        {
+            const float left = positions[static_cast<std::size_t>(section)] * width;
+            const float right = positions[static_cast<std::size_t>(section + 1)] * width;
+            const int first = reverse ? 6 - section : section;
+            const int second = reverse ? 5 - section : section + 1;
+            const float leftY = heights[static_cast<std::size_t>(first)] * height;
+            const float rightY = heights[static_cast<std::size_t>(second)] * height;
+            const float leftSkin = std::max(0.005f, leftY - 0.095f);
+            const float rightSkin = std::max(0.005f, rightY - 0.065f);
+            const Color outer = plasterFront ? plaster : brick;
+            emitSurfaceQuad({left, 0.0f, half}, {right, 0.0f, half},
+                            {right, rightSkin, half}, {left, leftSkin, half}, outer);
+            emitSurfaceQuad({left, leftSkin, half}, {right, rightSkin, half},
+                            {right, rightY, half}, {left, leftY, half}, brick);
+            emitSurfaceQuad({right, 0.0f, -half}, {left, 0.0f, -half},
+                            {left, leftY, -half}, {right, rightY, -half}, brick);
+            emitSurfaceQuad({left, leftY, -half}, {left, leftY, half},
+                            {right, rightY, half}, {right, rightY, -half}, stone);
+            if (section == 0)
+                emitSurfaceQuad({left, 0.0f, -half}, {left, 0.0f, half},
+                                {left, leftY, half}, {left, leftY, -half}, brick);
+            if (section == 5)
+                emitSurfaceQuad({right, 0.0f, half}, {right, 0.0f, -half},
+                                {right, rightY, -half}, {right, rightY, half}, brick);
+        }
+        rlEnd();
+    }
+
+    static void drawUrbanRuin(const UrbanBuildingProfile &profile,
+                               const UrbanMass &mass, int row, int column,
+                               bool shadow)
+    {
+        const float x = mass.center.x;
+        const float z = mass.center.z;
+        const float sideX = x < column + 0.5f ? -1.0f : 1.0f;
+        const float sideZ = z < row + 0.5f ? -1.0f : 1.0f;
+        const unsigned int quadrant = (sideX > 0.0f ? 1U : 0U) |
+                                      (sideZ > 0.0f ? 2U : 0U);
+        const std::uint32_t fracture = mixUrbanSeed(profile.seed ^
+            static_cast<std::uint32_t>((row & 1) * 47 + (column & 1) * 131) ^
+            ((quadrant + 1U) * 0x7f4a7c15U));
+        const Color brick = shadow ? WHITE : material(Color{148, 94, 66, 255}, 6);
+        const Color plaster = shadow ? WHITE : material(urbanBodyColor(profile), 7);
+        const Color stone = shadow ? WHITE : material(Color{174, 155, 113, 255}, 7);
+        const Color inside = shadow ? WHITE : material(Color{91, 91, 70, 255}, 7);
+        constexpr float base = 0.05f;
+        constexpr float thickness = 0.088f;
+        const float halfWidth = mass.size.x * 0.5f;
+        const float halfDepth = mass.size.z * 0.5f;
+        const bool shortReturn = ((fracture >> 9U) & 1U) != 0U;
+        DrawCube({x, base + 0.025f, z}, mass.size.x, 0.05f, mass.size.z, inside);
+
+        rlPushMatrix();
+        rlTranslatef(x, base, z + sideZ * (halfDepth - thickness * 0.5f));
+        if (sideZ < 0.0f)
+            rlRotatef(180.0f, 0.0f, 1.0f, 0.0f);
+        drawBrokenWall(mass.size.x, thickness, mass.size.y, fracture,
+                       (fracture & 3U) != 0U, brick, plaster, stone);
+        rlPopMatrix();
+
+        rlPushMatrix();
+        rlTranslatef(x + sideX * (halfWidth - thickness * 0.5f), base, z);
+        rlRotatef(sideX > 0.0f ? 90.0f : -90.0f, 0.0f, 1.0f, 0.0f);
+        drawBrokenWall(mass.size.z, thickness,
+                       mass.size.y * (shortReturn ? 0.43f : 0.82f),
+                       mixUrbanSeed(fracture ^ 0x85ebca6bU),
+                       (fracture & 4U) != 0U, brick, plaster, stone);
+        rlPopMatrix();
+
+        // The broken floor and fallen beam stay inside the same living
+        // quadrant; no debris bridges a cleared path or creates new cover.
+        DrawCube({x - sideX * 0.028f, base + 0.065f,
+                  z - sideZ * 0.02f}, 0.25f, 0.048f, 0.24f, stone);
+        const float lean = ((fracture >> 12U) & 1U) != 0U ? 0.14f : 0.075f;
+        DrawCylinderEx({x - sideX * 0.135f, base + 0.09f, z + sideZ * 0.075f},
+                       {x + sideX * 0.045f, base + lean, z - sideZ * 0.10f},
+                       0.027f, 0.022f, 4,
+                       shadow ? WHITE : material(Color{90, 69, 48, 255}, 7));
+        DrawCube({x - sideX * 0.10f, base + 0.065f, z - sideZ * 0.12f},
+                 0.105f, 0.055f, 0.074f, brick);
+    }
+
+    static void drawRoofBand(float firstX, float secondX, float firstY,
+                               float secondY, float bottom,
+                               Color surface, Color gable)
+    {
+        if (secondX < firstX)
+        {
+            std::swap(firstX, secondX);
+            std::swap(firstY, secondY);
+        }
+        emitSurfaceQuad({firstX, firstY, -0.5f}, {firstX, firstY, 0.5f},
+                        {secondX, secondY, 0.5f}, {secondX, secondY, -0.5f}, surface);
+        emitSurfaceQuad({firstX, bottom, 0.5f}, {secondX, bottom, 0.5f},
+                        {secondX, secondY, 0.5f}, {firstX, firstY, 0.5f}, gable);
+        emitSurfaceQuad({secondX, bottom, -0.5f}, {firstX, bottom, -0.5f},
+                        {firstX, firstY, -0.5f}, {secondX, secondY, -0.5f}, gable);
+        if (firstX == -0.5f)
+            emitSurfaceQuad({firstX, bottom, -0.5f}, {firstX, bottom, 0.5f},
+                            {firstX, firstY, 0.5f}, {firstX, firstY, -0.5f}, gable);
+        if (secondX == 0.5f)
+            emitSurfaceQuad({secondX, bottom, 0.5f}, {secondX, bottom, -0.5f},
+                            {secondX, secondY, -0.5f}, {secondX, secondY, 0.5f}, gable);
+    }
+
+    static void drawUrbanRoof(const UrbanBuildingProfile &profile,
+                               const UrbanMass &roof, int row, int column,
+                               bool shadow)
+    {
+        const float bottom = roof.center.y - roof.size.y * 0.5f;
+        const float top = roof.center.y + roof.size.y * 0.5f;
+        if (profile.kind != UrbanBuildingKind::Mall)
+        {
+            const bool alongX = profile.roofVariant == 1U;
+            const bool rising = alongX ? (row & 1) != 0 : (column & 1) == 0;
+            const bool farEnd = alongX ? (column & 1) != 0 : (row & 1) != 0;
+            const float low = bottom + 0.022f;
+            const float roofTop = top - 0.032f;
+            static constexpr std::array<Color, 3> roofColors{{
+                Color{153, 79, 52, 255}, Color{158, 93, 59, 255},
+                Color{172, 110, 65, 255}}};
+            Color roofColor = material(roofColors[profile.roofVariant % 3U], 7);
+            if (profile.kind == UrbanBuildingKind::Office)
+                roofColor = material(Color{74, 112, 97, 255}, 7);
+            const Color topColor = shadow ? WHITE : roofColor;
+            const Color edgeColor = shadow ? WHITE : shade(roofColor, 0.73f);
+            const auto fromEdge = [rising](float amount)
+            {
+                return rising ? -0.5f + amount : 0.5f - amount;
+            };
+
+            rlPushMatrix();
+            rlTranslatef(roof.center.x, 0.0f, roof.center.z);
+            if (alongX)
+                rlRotatef(90.0f, 0.0f, 1.0f, 0.0f);
+            if (profile.kind == UrbanBuildingKind::Office)
+            {
+                // A raised glazed monitor gives the workshop a factory
+                // silhouette. Its two halves meet at the lot ridge, and
+                // every panel remains below the original profile height.
+                const float shoulder = low + (roofTop - low) * 0.28f;
+                const float clerestory = roofTop - 0.045f;
+                const Color glass = shadow ? WHITE
+                    : material(Color{46, 75, 70, 255}, 7);
+                rlBegin(RL_TRIANGLES);
+                drawRoofBand(fromEdge(0.0f), fromEdge(0.60f), low, shoulder,
+                             bottom, topColor, edgeColor);
+                drawRoofBand(fromEdge(0.60f), fromEdge(0.60f),
+                             rising ? shoulder : clerestory,
+                             rising ? clerestory : shoulder,
+                             bottom, glass, edgeColor);
+                drawRoofBand(fromEdge(0.60f), fromEdge(1.0f), clerestory, roofTop,
+                             bottom, topColor, edgeColor);
+                rlEnd();
+                if (!shadow)
+                {
+                    const Color seam = material(shade(roofColor, 1.17f), 7);
+                    DrawCube({fromEdge(0.605f), clerestory - 0.008f, 0.0f},
+                             0.028f, 0.024f, 0.99f, seam);
+                    DrawCube({fromEdge(0.30f), low + (shoulder - low) * 0.5f,
+                              0.0f}, 0.014f, 0.012f, 0.99f, seam);
+                }
+            }
+            else
+            {
+                // Terracotta hips turn down toward the ends of the lot.
+                // The center bend creates a heavy, slightly bellied roof
+                // rather than four identical flat wedge tiles.
+                const bool hipped = profile.roofVariant != 1U;
+                const auto heightAt = [&](float px, float pz)
+                {
+                    const float across = rising ? px + 0.5f : 0.5f - px;
+                    const float along = farEnd ? 0.5f - pz : pz + 0.5f;
+                    const float pitch = across < 0.5f ? across * 1.12f
+                        : 0.56f + (across - 0.5f) * 0.88f;
+                    return low + (roofTop - low) *
+                        (hipped ? std::min(pitch, along * 2.0f) : pitch);
+                };
+                rlBegin(RL_TRIANGLES);
+                for (int strip = 0; strip < 2; ++strip)
+                {
+                    for (int end = 0; end < 2; ++end)
+                    {
+                        const float x0 = -0.5f + strip * 0.5f;
+                        const float x1 = x0 + 0.5f;
+                        const float z0 = -0.5f + end * 0.5f;
+                        const float z1 = z0 + 0.5f;
+                        emitSurfaceQuad({x0, heightAt(x0, z0), z0},
+                                        {x0, heightAt(x0, z1), z1},
+                                        {x1, heightAt(x1, z1), z1},
+                                        {x1, heightAt(x1, z0), z0}, topColor);
+                        if (end == 0)
+                            emitSurfaceQuad({x1, bottom, z0}, {x0, bottom, z0},
+                                            {x0, heightAt(x0, z0), z0},
+                                            {x1, heightAt(x1, z0), z0}, edgeColor);
+                        if (end == 1)
+                            emitSurfaceQuad({x0, bottom, z1}, {x1, bottom, z1},
+                                            {x1, heightAt(x1, z1), z1},
+                                            {x0, heightAt(x0, z1), z1}, edgeColor);
+                        if (strip == 0)
+                            emitSurfaceQuad({x0, bottom, z0}, {x0, bottom, z1},
+                                            {x0, heightAt(x0, z1), z1},
+                                            {x0, heightAt(x0, z0), z0}, edgeColor);
+                        if (strip == 1)
+                            emitSurfaceQuad({x1, bottom, z1}, {x1, bottom, z0},
+                                            {x1, heightAt(x1, z0), z0},
+                                            {x1, heightAt(x1, z1), z1}, edgeColor);
+                    }
+                }
+                rlEnd();
+                const int lotPart = (row & 1) * 2 + (column & 1);
+                if (lotPart == static_cast<int>((profile.seed >> 24U) & 3U))
+                {
+                    const float chimneyX = fromEdge(0.24f);
+                    const float chimneyZ = farEnd ? -0.14f : 0.14f;
+                    const float chimneyBase = heightAt(chimneyX, chimneyZ) - 0.020f;
+                    const Color brick = shadow ? WHITE
+                        : material(Color{129, 87, 63, 255}, 6);
+                    const Color cap = shadow ? WHITE
+                        : material(Color{196, 166, 116, 255}, 7);
+                    DrawCube({chimneyX, (top + chimneyBase) * 0.5f, chimneyZ},
+                             0.13f, top - chimneyBase, 0.16f, brick);
+                    DrawCube({chimneyX, top - 0.017f, chimneyZ},
+                             0.18f, 0.034f, 0.20f, cap);
+                    if (!shadow)
+                        DrawCube({chimneyX, top - 0.001f, chimneyZ},
+                                 0.084f, 0.002f, 0.105f,
+                                 material(Color{51, 57, 48, 255}, 7));
+                }
+                if (!shadow)
+                {
+                    const Color course = material(shade(roofColor, 1.12f), 7);
+                    // Two broad courses follow the facets; no tiled micro-
+                    // geometry is needed at the actual gameplay distance.
+                    for (int strip = 0; strip < 2; ++strip)
+                    {
+                        const float px = fromEdge(0.22f + strip * 0.43f);
+                        const float z0 = hipped ? (farEnd ? -0.495f : -0.02f) : -0.495f;
+                        const float z1 = hipped ? (farEnd ? 0.02f : 0.495f) : 0.495f;
+                        rlBegin(RL_TRIANGLES);
+                        emitSurfaceQuad({px - 0.009f, heightAt(px - 0.009f, z0) + 0.002f, z0},
+                                        {px - 0.009f, heightAt(px - 0.009f, z1) + 0.002f, z1},
+                                        {px + 0.009f, heightAt(px + 0.009f, z1) + 0.002f, z1},
+                                        {px + 0.009f, heightAt(px + 0.009f, z0) + 0.002f, z0}, course);
+                        rlEnd();
+                    }
+                }
+            }
+            rlPopMatrix();
+            return;
+        }
+
+        const int lotPart = (row & 1) * 2 + (column & 1);
+        const Color iron = shadow ? WHITE : material(Color{72, 96, 87, 255}, 7);
+        const Color rim = shadow ? WHITE : material(Color{150, 157, 126, 255}, 7);
+        const float x = roof.center.x;
+        const float z = roof.center.z;
+        if (lotPart == 0)
+        {
+            // One water drum per lot, accompanied by three different utility
+            // forms rather than repeating the same tank on every roof cell.
+            const float radius = roof.size.z * 0.45f;
+            DrawCylinder({x, bottom, z}, radius, radius,
+                         roof.size.y, 10, iron);
+            DrawCylinder({x, top - 0.022f, z}, radius + 0.012f, radius + 0.012f,
+                         0.022f, 10, rim);
+            DrawCylinder({x, bottom + 0.020f, z}, radius + 0.010f, radius + 0.010f,
+                         0.018f, 10, rim);
+        }
+        else if (lotPart == 1)
+        {
+            DrawCube({x, bottom + roof.size.y * 0.38f, z},
+                     0.26f, roof.size.y * 0.76f, 0.24f, iron);
+            DrawCube({x, top - roof.size.y * 0.12f, z},
+                     0.34f, roof.size.y * 0.24f, 0.30f, rim);
+        }
+        else if (lotPart == 2)
+        {
+            DrawCube({x, bottom + 0.025f, z}, 0.30f, 0.05f, 0.28f, rim);
+            DrawCylinder({x, bottom + 0.05f, z}, 0.073f, 0.073f,
+                         roof.size.y - 0.068f, 8, iron);
+            DrawCylinder({x, top - 0.018f, z}, 0.113f, 0.083f,
+                         0.018f, 8, rim);
+        }
+        else
+        {
+            DrawCube(roof.center, roof.size.x, roof.size.y,
+                     roof.size.z, iron);
+            if (!shadow)
+            {
+                DrawCube({x, top - 0.018f, z}, 0.31f, 0.024f, 0.27f,
+                         material(Color{128, 159, 134, 255}, 7));
+                DrawCube({x, top - 0.002f, z}, 0.025f, 0.004f, 0.27f, rim);
+            }
+        }
     }
 
     struct Building
@@ -1040,10 +1649,10 @@ private:
         DrawCube({building.x, building.height + 0.10f, building.z},
                  building.width + 0.22f, 0.20f, building.depth + 0.22f, light);
 
-        // Vertical pilasters and recessed south-facing window bays give the
-        // skyline readable architecture instead of featureless cuboids.
-        const int columns = std::max(2, static_cast<int>(building.width / 0.9f));
-        const int floors = std::max(2, static_cast<int>(building.height / 1.15f));
+        // The distant town uses the same broad plaster frames, shutters and
+        // workshop doors as the destructible streets, at a quieter density.
+        const int columns = std::max(2, static_cast<int>(building.width / 1.8f));
+        const int floors = std::max(2, static_cast<int>(building.height / 1.8f));
         const float frontZ = building.z + building.depth * 0.5f + 0.016f;
         for (int column = 0; column < columns; ++column)
         {
@@ -1051,40 +1660,90 @@ private:
                             (column + 0.5f) * building.width / columns;
             for (int floor = 0; floor < floors; ++floor)
             {
-                const float y = 0.55f + floor * (building.height - 0.75f) / floors;
-                const bool warm = ((column * 7 + floor * 3 + building.style) % 11) == 0;
-                DrawCube({x, y, frontZ}, building.width / columns * 0.54f,
-                         std::min(0.52f, building.height / floors * 0.48f), 0.035f,
-                         warm ? Color{237, 184, 103, 4} : Color{29, 43, 50, 4});
-                DrawCube({x, y + 0.30f, frontZ + 0.006f},
-                         building.width / columns * 0.68f, 0.055f, 0.045f,
-                         accent);
+                const float y = 0.76f + floor * (building.height - 0.60f) / floors;
+                const float width = building.width / columns * 0.49f;
+                const float height = floor == 0 ? 1.05f : 0.69f;
+                DrawCube({x, y, frontZ}, width + 0.19f, height + 0.17f, 0.10f, light);
+                DrawCube({x, y, frontZ + 0.065f}, width, height, 0.065f,
+                         material(Color{36, 61, 55, 255}, 7));
+                DrawCube({x, y - height * 0.5f - 0.075f, frontZ + 0.08f},
+                         width + 0.30f, 0.12f, 0.21f, light);
+                if (floor == 0 && building.style != 0)
+                {
+                    DrawCube({x, y, frontZ + 0.11f}, width - 0.08f,
+                             height - 0.06f, 0.06f, accent);
+                    for (int rib = 0; rib < 4; ++rib)
+                        DrawCube({x, y - 0.36f + rib * 0.24f, frontZ + 0.16f},
+                                 width - 0.09f, 0.025f, 0.04f, dark);
+                }
+                else
+                {
+                    DrawCube({x, y, frontZ + 0.13f}, 0.065f, height, 0.035f, light);
+                    DrawCube({x, y, frontZ + 0.13f}, width, 0.055f, 0.035f, light);
+                    if (building.style == 0)
+                        for (float side : {-1.0f, 1.0f})
+                            DrawCube({x + side * (width * 0.5f + 0.22f), y,
+                                      frontZ + 0.08f}, 0.24f, height + 0.08f, 0.12f, accent);
+                }
             }
         }
-        for (int column = 0; column <= columns; ++column)
+        for (float side : {-1.0f, 1.0f})
         {
-            const float x = building.x - building.width * 0.5f +
-                            column * building.width / columns;
-            DrawCube({x, baseY, frontZ + 0.025f}, 0.095f, building.height,
-                     0.08f, accent);
+            const float x = building.x + side * (building.width * 0.5f - 0.10f);
+            DrawCube({x, baseY, frontZ + 0.015f}, 0.17f, building.height,
+                     0.12f, light);
         }
+        DrawCube({building.x, 1.47f, frontZ + 0.05f},
+                 building.width, 0.12f, 0.18f, accent);
+        const float sideX = building.x + building.width * 0.5f + 0.035f;
+        for (int floor = 1; floor < floors; ++floor)
+            for (float side : {-1.0f, 1.0f})
+            {
+                const float y = 0.76f + floor * (building.height - 0.60f) / floors;
+                const float z = building.z + side * building.depth * 0.25f;
+                DrawCube({sideX, y, z}, 0.10f, 0.86f, 0.88f, light);
+                DrawCube({sideX + 0.068f, y, z}, 0.06f, 0.69f, 0.69f,
+                         material(Color{36, 61, 55, 255}, 7));
+                DrawCube({sideX + 0.11f, y, z}, 0.045f, 0.69f, 0.055f, accent);
+            }
 
-        // Rooftop utility silhouette: lift housing, vents and an antenna.
+        // Low pitched roofs and factory water towers replace the office-block
+        // skyline. These structures remain entirely outside the playfield.
         if (building.style == 2)
         {
             DrawCube({building.x - building.width * 0.18f, building.height + 0.42f, building.z},
                      building.width * 0.28f, 0.65f, building.depth * 0.35f, dark);
-            DrawCylinder({building.x + building.width * 0.18f, building.height + 0.36f, building.z},
-                         0.24f, 0.19f, 0.52f, 12, accent);
+            const float tankX = building.x + building.width * 0.20f;
+            DrawCylinder({tankX, building.height + 0.20f, building.z},
+                         0.48f, 0.48f, 0.88f, 10, accent);
+            DrawCylinder({tankX, building.height + 1.02f, building.z},
+                         0.53f, 0.53f, 0.09f, 10, light);
+            DrawCube({building.x - building.width * 0.31f,
+                      building.height + 0.96f, building.z - 0.48f},
+                     0.36f, 1.50f, 0.42f, accent);
         }
         else
         {
-            DrawCube({building.x, building.height + 0.32f, building.z},
-                     building.width * 0.32f, 0.45f, building.depth * 0.36f, dark);
+            const float x0 = building.x - building.width * 0.525f;
+            const float x1 = building.x + building.width * 0.525f;
+            const float z0 = building.z - building.depth * 0.525f;
+            const float z1 = building.z + building.depth * 0.525f;
+            const float edgeY = building.height + 0.21f;
+            const float ridgeY = building.height + 0.87f;
+            const Color roofColor = building.style == 0
+                                       ? material(Color{140, 81, 54, 255}, 7)
+                                       : material(Color{69, 106, 89, 255}, 7);
+            rlBegin(RL_TRIANGLES);
+            emitSurfaceQuad({x0, edgeY, z0}, {x0, edgeY, z1},
+                            {building.x, ridgeY, z1}, {building.x, ridgeY, z0}, roofColor);
+            emitSurfaceQuad({building.x, ridgeY, z0}, {building.x, ridgeY, z1},
+                            {x1, edgeY, z1}, {x1, edgeY, z0}, roofColor);
+            emitSurfaceTriangle({x0, edgeY, z1}, {x1, edgeY, z1},
+                                {building.x, ridgeY, z1}, shade(roofColor, 0.72f));
+            emitSurfaceTriangle({x1, edgeY, z0}, {x0, edgeY, z0},
+                                {building.x, ridgeY, z0}, shade(roofColor, 0.72f));
+            rlEnd();
         }
-        DrawCylinderEx({building.x, building.height + 0.18f, building.z},
-                       {building.x, building.height + 1.35f, building.z},
-                       0.025f, 0.012f, 8, Color{62, 70, 72, 2});
     }
 
     static Color material(Color color, unsigned char tag)

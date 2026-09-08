@@ -2314,12 +2314,9 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                        std::fabs(kGovernmentWallThickness - 1.16f) < 0.0001f &&
                        std::fabs(kGovernmentFoundationRadius - 2.62f) < 0.0001f &&
                        std::fabs(kGovernmentCourtyardRadius - 1.02f) < 0.0001f &&
-                       std::fabs(kGovernmentEagleVisualScale - 2.48f) < 0.0001f &&
-                       std::fabs(kGovernmentEagleVisualScale * 1.25f -
-                                 3.10f) < 0.0001f &&
+                       tanks3d::base_model::kCommandCoreFootprint <=
+                           kGovernmentCoreRadius * 2.0f &&
                        std::fabs(kGovernmentCoreRadius - 0.92f) < 0.0001f &&
-                       std::fabs(kGovernmentEagleForward.x) < 0.0001f &&
-                       std::fabs(kGovernmentEagleForward.z + 1.0f) < 0.0001f &&
                        std::fabs(testedWall.halfLength -
                                  (testedWall.length * 0.5f +
                                   kGovernmentWallEndOverlap)) < 0.0001f &&
@@ -11280,6 +11277,113 @@ struct FakeViewTargetAllocator
 
 int runViewTargetAllocationSelfTests()
 {
+    {
+        // Compare the terrain rejection against raylib's actual screen
+        // projection across the selectable camera orbit, including tall
+        // crowns at map edges, shake, and uncapped portrait co-op framing.
+        int rejectedCells = 0;
+        bool testedUncappedPortraitSpan = false;
+        const auto visibleCellsRetained = [&rejectedCells](
+            const Camera3D &camera, int width, int height) {
+            const TerrainView view(camera, width, height);
+            for (int row = 0; row < kMapSize; ++row)
+            {
+                for (int column = 0; column < kMapSize; ++column)
+                {
+                    if (view.containsCell(row, column))
+                        continue;
+                    ++rejectedCells;
+                    Vector2 minimum{100000.0f, 100000.0f};
+                    Vector2 maximum{-100000.0f, -100000.0f};
+                    for (const float x : {-0.10f, 1.10f})
+                    {
+                        for (const float y : {-0.05f, 1.44f})
+                        {
+                            for (const float z : {-0.10f, 1.10f})
+                            {
+                                const Vector2 screen = GetWorldToScreenEx(
+                                    {column + x, y, row + z}, camera,
+                                    width, height);
+                                minimum.x = std::min(minimum.x, screen.x);
+                                minimum.y = std::min(minimum.y, screen.y);
+                                maximum.x = std::max(maximum.x, screen.x);
+                                maximum.y = std::max(maximum.y, screen.y);
+                            }
+                        }
+                    }
+                    if (!(maximum.x < 0.0f || minimum.x > width ||
+                          maximum.y < 0.0f || minimum.y > height))
+                        return false;
+                }
+            }
+            return true;
+        };
+        for (const Vector3 focus : {
+                 Vector3{0.875f, kGameplayCameraTargetHeight, 25.125f},
+                 Vector3{13.0f, kGameplayCameraTargetHeight, 13.0f},
+                 Vector3{25.125f, kGameplayCameraTargetHeight, 0.875f}})
+        {
+            for (const Vector2 viewport : {Vector2{1280, 720},
+                                           Vector2{720, 1280},
+                                           Vector2{900, 900}})
+            {
+                const float aspect = viewport.x / viewport.y;
+                for (const int yawDegrees : {-45, 0, 15, 45})
+                {
+                    const CameraPlanarBasis basis =
+                        cameraPlanarBasis(yawDegrees);
+                    for (const int elevationDegrees : {40, 50, 70})
+                    {
+                        const GameplayCameraElevationGeometry geometry =
+                            gameplayCameraElevationGeometry(elevationDegrees);
+                        const float coopSpan = std::max(
+                            gameplayCameraSpan({24.25f, 24.25f}, yawDegrees,
+                                               elevationDegrees, aspect),
+                            gameplayCameraSpan({24.25f, -24.25f}, yawDegrees,
+                                               elevationDegrees, aspect));
+                        testedUncappedPortraitSpan |=
+                            viewport.x < viewport.y && coopSpan > 38.0f;
+                        for (const float span : {kSoloCameraSpan, coopSpan})
+                        {
+                            for (const float shake : {0.0f, 0.12f})
+                            {
+                                Camera3D camera{};
+                                camera.target = {
+                                    focus.x + basis.rightX * shake,
+                                    focus.y,
+                                    focus.z + basis.rightZ * shake};
+                                camera.position = {
+                                    camera.target.x + basis.offsetX *
+                                        (geometry.depthOffset + shake * 0.4f),
+                                    camera.target.y + geometry.verticalOffset +
+                                        shake * 0.55f,
+                                    camera.target.z + basis.offsetZ *
+                                        (geometry.depthOffset + shake * 0.4f)};
+                                camera.up = {0, 1, 0};
+                                camera.fovy = span;
+                                camera.projection = CAMERA_ORTHOGRAPHIC;
+                                const int width = static_cast<int>(viewport.x);
+                                const int height = static_cast<int>(viewport.y);
+                                if (!checkTest(
+                                        visibleCellsRetained(camera, width, height),
+                                        "terrain view rejected a visible roof or crown "
+                                        "at a selectable camera angle or viewport"))
+                                    return 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Camera3D invalidCamera{};
+        const TerrainView unsupported(invalidCamera, 1280, 720);
+        if (!checkTest(rejectedCells > 100 && testedUncappedPortraitSpan &&
+                           unsupported.containsCell(1000, 1000) &&
+                           TerrainView{}.containsCell(1000, 1000),
+                       "terrain view did not cull offscreen cells or retain its safe fallback"))
+            return 1;
+    }
+
     {
         RenderTexture2D metadata{};
         metadata.id = 1U;

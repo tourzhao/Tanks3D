@@ -12,6 +12,22 @@ by the root PolyForm Noncommercial license to the extent they are protectable.
 Historical names and vehicle facts are descriptive; no trademark or design
 endorsement is claimed.
 
+The September 2026 arcade art revision is original procedural geometry and
+shader work by the Tanks3D project contributors, under the same root license:
+
+| Source | In-game mapping |
+| --- | --- |
+| `src/wwii_tank_model.h` | Twelve national player vehicles and four enemy roles; cast armor, continuous tracks, running gear, attachments and wear |
+| `src/environment_assets.h` | Residential blocks, shops, workshops, damage fragments, trees and backdrop architecture |
+| `src/base_model.h` | Three national field headquarters, their command cores, wall damage and steel-protection appearance |
+| `src/main.cpp`, `src/post_process.h` | Armored redoubts, water edges, contact shadows and the shared painted lighting treatment |
+
+SNK's *Metal Slug* is an art-direction reference for compact military
+machinery and richly layered arcade scenery. No SNK sprites, textures, meshes,
+logos, sound or extracted game content were imported. Reference:
+[SNK's Metal Slug page](https://www.snk-corp.co.jp/official/akeaka/titles/metalslug/).
+See `docs/ART_DIRECTION.md` for the visual design and gameplay boundaries.
+
 The following neutral albedo textures were generated for this project with
 OpenAI image generation and no supplied reference image:
 

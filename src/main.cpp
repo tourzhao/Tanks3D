@@ -29,6 +29,7 @@
 #include "audio/audio_cue.h"
 #include "audio/audio_output.h"
 #include "battle_fx.h"
+#include "base_model.h"
 #include "bonus_assets.h"
 #include "core/coordinates.h"
 #include "core/gameplay_rules.h"
@@ -969,10 +970,10 @@ void main()
     int materialTag = materialTagOverride >= 0
                           ? materialTagOverride
                           : vertexMaterialTag;
-    // Tags 9..13 mirror the five vehicle materials in tags 1..5, but keep
-    // tanks on a separate arcade/cel-lighting path. World geometry remains
-    // on the existing PBR response.
+    // Vehicles use their own painted metal response. Architecture and earth
+    // share a softer painted ramp so the whole battlefield belongs together.
     bool vehicleMaterial = materialTag >= 9 && materialTag <= 13;
+    bool paintedWorld = materialTag >= 6 && materialTag <= 8;
     bool taggedMaterial = (materialTag >= 1 && materialTag <= 8) ||
                           vehicleMaterial;
 
@@ -1062,6 +1063,20 @@ void main()
                     ambientOcclusion;
 
     vec3 linearColor = direct + indirect;
+    if (paintedWorld)
+    {
+        // Broad warm highlights, blue-green recesses, and a little bounce
+        // retain the authored plaster/brick colors throughout the camera orbit.
+        float wrappedLight = clamp(normalLight*0.82 + 0.18, 0.0, 1.0);
+        float paintedLight = mix(0.48, 0.79, smoothstep(0.22, 0.40, wrappedLight));
+        paintedLight = mix(paintedLight, 1.12, smoothstep(0.70, 0.87, wrappedLight));
+        float castShade = mix(0.55, 1.0, visibility);
+        vec3 warm = vec3(1.10, 1.01, 0.84);
+        vec3 cool = vec3(0.66, 0.81, 0.80);
+        vec3 pigment = mix(cool, warm, wrappedLight*castShade);
+        linearColor = albedo*paintedLight*castShade*pigment;
+        linearColor += albedo*vec3(0.045, 0.050, 0.030);
+    }
     float vehicleInkEdge = 0.0;
     float vehicleUnderside = 0.0;
     vec3 vehicleInkColor = vec3(0.006, 0.008, 0.004);
@@ -1071,10 +1086,10 @@ void main()
         // Three hard painted tones retain the authored base colors while making
         // the rendering read as a 1990s arcade animation at normal game zoom.
         vec3 inkTone = mix(vec3(0.004, 0.006, 0.003), albedo*0.10, 0.28);
-        vec3 shadowTone = mix(inkTone, albedo*0.44, 0.75) +
-                          vec3(0.004, 0.006, 0.002);
-        vec3 middleTone = albedo*0.78 + vec3(0.010, 0.012, 0.004);
-        vec3 lightTone = albedo*1.18 + vec3(0.072, 0.043, 0.014);
+        vec3 shadowTone = albedo*vec3(0.40, 0.49, 0.46) +
+                          vec3(0.006, 0.010, 0.008);
+        vec3 middleTone = albedo*0.88 + vec3(0.012, 0.014, 0.006);
+        vec3 lightTone = albedo*1.22 + vec3(0.046, 0.035, 0.016);
         float shadeCoordinate = normalLight*(visibility < 0.55 ? 0.30 : 1.0);
         shadeCoordinate += normal.y > 0.56 ? 0.055 : 0.0;
         linearColor = shadeCoordinate < 0.30 ? shadowTone :
@@ -1126,11 +1141,10 @@ void main()
                               step(0.42, normal.y*0.5 + 0.5);
         if (materialTag == 9)
             linearColor = mix(linearColor,
-                              albedo*0.50 + vec3(0.52, 0.36, 0.13),
-                              hardHighlight*0.42);
+                              albedo*1.04 + vec3(0.10, 0.074, 0.031),
+                              hardHighlight*0.26);
         else if (materialTag == 10)
-            linearColor = mix(linearColor, vec3(0.58, 0.66, 0.65),
-                              hardHighlight*0.46);
+            linearColor += vec3(0.045, 0.054, 0.050)*hardHighlight;
         else if (materialTag == 12)
             linearColor = mix(linearColor, vec3(0.66, 0.94, 1.10),
                               hardHighlight*0.70);
@@ -1138,20 +1152,20 @@ void main()
         // Save ink masks until after fog so the tank's lower edge and silhouette
         // remain grounded instead of being washed into the environment.
         vehicleInkEdge = 1.0 - smoothstep(0.075, 0.25, normalView);
-        float heightInk = 1.0 - smoothstep(0.10, 0.50, fragPosition.y);
+        float heightInk = 1.0 - smoothstep(0.045, 0.25, fragPosition.y);
         float downwardInk = 1.0 - smoothstep(-0.48, 0.18, normal.y);
-        vehicleUnderside = clamp(heightInk*0.72 + downwardInk*0.40, 0.0, 1.0);
+        vehicleUnderside = clamp(heightInk*0.42 + downwardInk*0.30, 0.0, 1.0);
         vehicleInkColor = mix(vec3(0.003, 0.005, 0.002), albedo*0.045, 0.20);
     }
     float distanceToCamera = length(viewPos - fragPosition);
-    float fogDensity = 0.016*exp(-0.10*max(0.0, 0.5*(fragPosition.y + viewPos.y)));
+    float fogDensity = 0.003*exp(-0.10*max(0.0, 0.5*(fragPosition.y + viewPos.y)));
     float transmittance = exp(-fogDensity*max(distanceToCamera - 6.0, 0.0));
-    vec3 fogColor = vec3(0.28, 0.40, 0.50);
+    vec3 fogColor = vec3(0.21, 0.25, 0.22);
     linearColor = mix(fogColor, linearColor,
                       clamp(transmittance, vehicleMaterial ? 0.78 : 0.42, 1.0));
     if (vehicleMaterial)
     {
-        float inkAmount = clamp(vehicleInkEdge*0.52 + vehicleUnderside*0.54,
+        float inkAmount = clamp(vehicleInkEdge*0.36 + vehicleUnderside*0.42,
                                 0.0, materialTag == 12 ? 0.34 : 0.78);
         linearColor = mix(linearColor, vehicleInkColor, inkAmount);
     }
@@ -1420,11 +1434,8 @@ XZ forwardFromYaw(float yaw)
 
 // These parameters affect only the visible national-base models. Shared
 // collision geometry and health rules live with StageMap in game/.
-constexpr float kGovernmentFoundationRadius = 2.62f;
-constexpr float kGovernmentCourtyardRadius = 1.02f;
-constexpr float kGovernmentEagleVisualScale = 2.48f;
-constexpr XZ kGovernmentEagleForward{0.0f, -1.0f};
-constexpr XZ kGovernmentEagleRight{1.0f, 0.0f};
+constexpr float kGovernmentFoundationRadius = tanks3d::base_model::kFoundationRadius;
+constexpr float kGovernmentCourtyardRadius = tanks3d::base_model::kCourtyardRadius;
 
 
 struct SessionDigest
@@ -3746,84 +3757,47 @@ void drawGroundDetail(int row, int column)
 void drawSteelTile(int row, int column, bool permanent,
                    bool shadowPass = false)
 {
-    // Keep the classic one-cell collision footprint, but model steel as a
-    // compact defensive work instead of a featureless metal cube. Permanent
-    // eagle-ring modules are reinforced concrete; ordinary power-shell steel
-    // remains a lighter prefabricated armored pillbox.
+    // Cast armored redoubts: broad chamfers, a heavy lid and unmistakable
+    // dark embrasures. The one-cell collision footprint remains unchanged.
+    using tanks3d::base_model::detail::armoredBlock;
     const float x = column + 0.5f;
     const float z = row + 0.5f;
-    const Color shadow = WHITE;
-    const Color footing = shadowPass
-                              ? shadow
-                              : materialColor(permanent
-                                                  ? Color{67, 72, 70, 255}
-                                                  : Color{55, 64, 66, 255},
-                                              7);
-    const Color core = shadowPass
-                           ? shadow
-                           : materialColor(permanent
-                                               ? Color{104, 111, 108, 255}
-                                               : Color{100, 124, 139, 255},
-                                           permanent ? 7 : 2);
-    const Color cap = shadowPass
-                          ? shadow
-                          : materialColor(permanent
-                                              ? Color{174, 204, 216, 255}
-                                              : Color{151, 177, 189, 255},
-                                          2);
-
-    if (permanent)
-    {
-        DrawCube({x, 0.09f, z}, 0.98f, 0.18f, 0.98f, footing);
-        DrawCube({x, 0.39f, z}, 0.88f, 0.56f, 0.88f, core);
-        DrawCube({x, 0.71f, z}, 0.96f, 0.12f, 0.96f, cap);
-    }
-    else
-    {
-        DrawCube({x, 0.08f, z}, 0.94f, 0.16f, 0.94f, footing);
-        DrawCube({x, 0.39f, z}, 0.80f, 0.58f, 0.80f, core);
-        DrawCube({x, 0.70f, z}, 0.90f, 0.10f, 0.90f, cap);
-    }
-
-    // Fine facade pieces intentionally stay out of the shadow pass. The three
-    // shared masses above own the complete silhouette and cannot fall back to
-    // the obsolete cube-shaped caster.
+    const auto paint = [shadowPass](Color color) {
+        return shadowPass ? WHITE : materialColor(color, 7);
+    };
+    const Color dark = paint({39, 53, 51, 255});
+    const Color body = paint(permanent ? Color{131, 128, 98, 255}
+                                      : Color{104, 139, 130, 255});
+    const Color light = paint(permanent ? Color{186, 174, 132, 255}
+                                       : Color{162, 182, 151, 255});
+    const Color edge = paint({75, 102, 92, 255});
+    const Color ochre = paint({224, 167, 66, 255});
+    armoredBlock({x, 0.09f, z}, {0.98f, 0.18f, 0.98f}, dark);
+    armoredBlock({x, 0.40f, z}, {0.90f, 0.56f, 0.90f}, body);
+    armoredBlock({x, 0.70f, z}, {0.98f, 0.15f, 0.98f}, light);
+    DrawCylinder({x - 0.06f, 0.774f, z - 0.045f}, 0.23f, 0.25f,
+                 0.055f, 12, edge);
+    DrawCylinder({x - 0.06f, 0.83f, z - 0.045f}, 0.19f, 0.20f,
+                 0.025f, 12, body);
     if (shadowPass)
         return;
-
-    const Color plate = materialColor(
-        permanent ? Color{73, 97, 111, 255} : Color{66, 82, 91, 255}, 2);
-    const Color slit = materialColor(Color{22, 29, 33, 255}, 7);
-    const float faceOffset = permanent ? 0.466f : 0.422f;
-    const float plateLength = permanent ? 0.72f : 0.50f;
-    const float plateHeight = permanent ? 0.27f : 0.19f;
-    const float slitLength = permanent ? 0.48f : 0.32f;
-    for (float side : {-1.0f, 1.0f})
+    DrawCube({x - 0.06f, 0.873f, z - 0.045f}, 0.13f, 0.04f, 0.035f, dark);
+    for (int face = 0; face < 4; ++face)
     {
-        DrawCube({x, 0.42f, z + side * faceOffset},
-                 plateLength, plateHeight, 0.040f, plate);
-        DrawCube({x, 0.45f, z + side * (faceOffset + 0.023f)},
-                 slitLength, 0.065f, 0.018f, slit);
-        DrawCube({x + side * faceOffset, 0.42f, z},
-                 0.040f, plateHeight, plateLength, plate);
-        DrawCube({x + side * (faceOffset + 0.023f), 0.45f, z},
-                 0.018f, 0.065f, slitLength, slit);
-    }
-
-    const Color hardware = materialColor(
-        permanent ? Color{190, 215, 222, 255} : Color{178, 194, 200, 255}, 2);
-    if (permanent)
-    {
-        for (float dx : {-0.39f, 0.39f})
-            for (float dz : {-0.39f, 0.39f})
-                DrawCube({x + dx, 0.40f, z + dz},
-                         0.10f, 0.46f, 0.10f, hardware);
-    }
-    else
-    {
-        for (float dx : {-0.31f, 0.31f})
-            for (float dz : {-0.31f, 0.31f})
-                DrawSphere({x + dx, 0.755f, z + dz}, 0.025f, hardware);
+        rlPushMatrix();
+        rlTranslatef(x, 0, z);
+        rlRotatef(face*90.0f, 0, 1, 0);
+        DrawCube({0, 0.46f, 0.451f}, 0.59f, 0.20f, 0.038f, dark);
+        DrawCube({0, 0.55f, 0.472f}, 0.67f, 0.065f, 0.08f, light);
+        DrawCube({0, 0.365f, 0.472f}, 0.64f, 0.055f, 0.075f, edge);
+        DrawCube({0, 0.45f, 0.478f}, 0.040f, 0.12f, 0.025f, body);
+        for (float side : {-1.0f, 1.0f})
+        {
+            DrawCube({side*0.33f, 0.32f, 0.465f}, 0.09f, 0.24f, 0.07f, edge);
+            DrawSphereEx({side*0.33f, 0.36f, 0.51f}, 0.029f, 4, 6, light);
+            DrawCube({side*0.21f, 0.20f, 0.458f}, 0.13f, 0.08f, 0.019f, ochre);
+        }
+        rlPopMatrix();
     }
 }
 
@@ -3841,7 +3815,62 @@ unsigned char forestEdgeMask(const StageMap &map, int row, int column)
     return mask;
 }
 
-void drawTerrain(const StageMap &map, const EnvironmentAssets &environment)
+// Reject only terrain cells entirely beyond the orthographic image. The
+// generous cell bounds include roofs, foliage overhang and facade trim;
+// shadows still use the complete arena so offscreen casters remain visible.
+class TerrainView
+{
+public:
+    TerrainView() = default;
+
+    TerrainView(const Camera3D &camera, int width, int height)
+    {
+        const Vector3 forward = Vector3Subtract(camera.target, camera.position);
+        const Vector3 cross = Vector3CrossProduct(forward, camera.up);
+        if (camera.projection != CAMERA_ORTHOGRAPHIC || width <= 0 ||
+            height <= 0 || !std::isfinite(camera.fovy) || camera.fovy <= 0.0f ||
+            Vector3LengthSqr(forward) < 0.000001f ||
+            Vector3LengthSqr(cross) < 0.000001f)
+            return;
+
+        right_ = Vector3Normalize(cross);
+        up_ = Vector3CrossProduct(right_, Vector3Normalize(forward));
+        center_ = camera.target;
+        halfWidth_ = camera.fovy * 0.5f * static_cast<float>(width) / height;
+        halfHeight_ = camera.fovy * 0.5f;
+        enabled_ = true;
+    }
+
+    bool containsCell(int row, int column) const
+    {
+        if (!enabled_)
+            return true;
+        // Includes the authored [-0.10, +1.10] forest extent and 1.44 m
+        // canopy cap, with additional room for trim and numerical boundaries.
+        const Vector3 delta{column + 0.5f - center_.x,
+                            0.78f - center_.y,
+                            row + 0.5f - center_.z};
+        const auto intersects = [&](Vector3 axis, float halfSpan) {
+            const float radius = std::fabs(axis.x) * 0.70f +
+                                 std::fabs(axis.y) * 0.90f +
+                                 std::fabs(axis.z) * 0.70f;
+            return std::fabs(Vector3DotProduct(delta, axis)) <=
+                   halfSpan + radius;
+        };
+        return intersects(right_, halfWidth_) && intersects(up_, halfHeight_);
+    }
+
+private:
+    Vector3 center_{};
+    Vector3 right_{};
+    Vector3 up_{};
+    float halfWidth_ = 0.0f;
+    float halfHeight_ = 0.0f;
+    bool enabled_ = false;
+};
+
+void drawTerrain(const StageMap &map, const EnvironmentAssets &environment,
+                 const TerrainView &view = {})
 {
     // Continuous player tracking can frame beyond the 26x26 collision arena.
     // A darker textured apron keeps the view grounded without disguising the
@@ -3853,6 +3882,8 @@ void drawTerrain(const StageMap &map, const EnvironmentAssets &environment)
     {
         for (int column = 0; column < kMapSize; ++column)
         {
+            if (!view.containsCell(row, column))
+                continue;
             const char value = map.tile(row, column);
             if (value == '.')
                 drawGroundDetail(row, column);
@@ -3866,16 +3897,31 @@ void drawTerrain(const StageMap &map, const EnvironmentAssets &environment)
             }
             else if (value == '~')
             {
-                const float wave = std::sin(static_cast<float>(GetTime()) * 2.4f + row * 0.7f + column * 0.5f);
-                DrawCube({column + 0.5f, 0.012f + wave * 0.012f, row + 0.5f},
-                         0.98f, 0.055f, 0.98f, Color{28, 115, 181, 220});
-                DrawLine3D({column + 0.12f, 0.052f + wave * 0.012f, row + 0.34f},
-                           {column + 0.88f, 0.052f + wave * 0.012f, row + 0.26f},
-                           Color{114, 220, 246, 175});
+                const float wave = std::sin(static_cast<float>(GetTime()) * 1.6f + row * 0.7f + column * 0.5f);
+                const Color water = materialColor(Color{49, 125, 123, 255}, 7);
+                const Color foam = materialColor(Color{155, 195, 159, 255}, 7);
+                // Joined water cells form a single pool, edged with a narrow
+                // worn bank only where the simulation's water really ends.
+                DrawCube({column + 0.5f, -0.015f, row + 0.5f},
+                         1.0f, 0.05f, 1.0f, water);
+                DrawCube({column + 0.45f + wave*0.05f, 0.018f, row + 0.32f},
+                         0.42f, 0.008f, 0.024f, foam);
+                DrawCube({column + 0.65f - wave*0.03f, 0.017f, row + 0.68f},
+                         0.19f, 0.006f, 0.018f, foam);
+                const Color bank = materialColor(Color{123, 116, 78, 255}, 8);
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    if (map.tile(row + side, column) != '~')
+                        DrawCube({column + 0.5f, 0.01f, row + 0.5f + side*0.48f},
+                                 1.0f, 0.07f, 0.04f, bank);
+                    if (map.tile(row, column + side) != '~')
+                        DrawCube({column + 0.5f + side*0.48f, 0.01f, row + 0.5f},
+                                 0.04f, 0.07f, 1.0f, bank);
+                }
             }
             else if (value == '-')
             {
-                DrawCube({column + 0.5f, -0.005f, row + 0.5f}, 0.98f, 0.04f, 0.98f, Color{160, 220, 230, 235});
+                DrawCube({column + 0.5f, -0.005f, row + 0.5f}, 1.0f, 0.04f, 1.0f, Color{166, 209, 206, 235});
                 DrawLine3D({column + 0.18f, 0.025f, row + 0.75f},
                            {column + 0.82f, 0.025f, row + 0.25f}, Color{225, 252, 255, 210});
             }
@@ -3935,7 +3981,8 @@ std::vector<ForestDrawCell> forestDrawOrder(const StageMap &map,
 
 void drawForestForeground(const StageMap &map,
                           const EnvironmentAssets &environment,
-                          int cameraYawDegrees)
+                          int cameraYawDegrees,
+                          const TerrainView &view = {})
 {
     BeginBlendMode(BLEND_ALPHA);
     rlDrawRenderBatchActive();
@@ -3945,6 +3992,8 @@ void drawForestForeground(const StageMap &map,
     for (const ForestDrawCell &cell :
          forestDrawOrder(map, cameraYawDegrees))
     {
+        if (!view.containsCell(cell.row, cell.column))
+            continue;
         environment.drawForestCanopy(
             map.stage(), cell.row, cell.column,
             forestEdgeMask(map, cell.row, cell.column));
@@ -3954,1360 +4003,16 @@ void drawForestForeground(const StageMap &map,
     EndBlendMode();
 }
 
-void drawYawCube(Vector3 center, Vector3 size, float yaw, Color color)
-{
-    rlPushMatrix();
-    rlTranslatef(center.x, center.y, center.z);
-    rlRotatef(-yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
-    DrawCube({0.0f, 0.0f, 0.0f}, size.x, size.y, size.z, color);
-    rlPopMatrix();
-}
-
-void drawEllipsoid(Vector3 center, Vector3 radii, Color color,
-                   float roll = 0.0f)
-{
-    rlPushMatrix();
-    rlTranslatef(center.x, center.y, center.z);
-    if (roll != 0.0f)
-        rlRotatef(roll * RAD2DEG, 0.0f, 0.0f, 1.0f);
-    rlScalef(radii.x, radii.y, radii.z);
-    DrawSphereEx({0.0f, 0.0f, 0.0f}, 1.0f, 8, 12, color);
-    rlPopMatrix();
-}
-
-void drawFeatherBlade(Vector3 root, Vector3 tip, float halfWidth,
-                      float thickness, Vector3 planeNormal, Color color)
-{
-    Vector3 axis = Vector3Subtract(tip, root);
-    if (Vector3LengthSqr(axis) < 0.000001f)
-        return;
-    axis = Vector3Normalize(axis);
-    Vector3 broad = Vector3CrossProduct(planeNormal, axis);
-    if (Vector3LengthSqr(broad) < 0.000001f)
-        broad = Vector3CrossProduct(Vector3{0.0f, 1.0f, 0.0f}, axis);
-    broad = Vector3Normalize(broad);
-    Vector3 normal = Vector3Normalize(Vector3CrossProduct(axis, broad));
-    const Vector3 normalOffset = Vector3Scale(normal, thickness * 0.5f);
-    const Vector3 rootBroad = Vector3Scale(broad, halfWidth * 0.48f);
-    const Vector3 middle = Vector3Add(root,
-                                      Vector3Scale(Vector3Subtract(tip, root),
-                                                   0.48f));
-    const Vector3 middleBroad = Vector3Scale(broad, halfWidth);
-
-    const std::array<Vector3, 5> face{{
-        Vector3Subtract(root, rootBroad),
-        Vector3Add(root, rootBroad),
-        Vector3Add(middle, middleBroad),
-        tip,
-        Vector3Subtract(middle, middleBroad)}};
-    std::array<Vector3, 5> top{};
-    std::array<Vector3, 5> bottom{};
-    for (std::size_t index = 0; index < face.size(); ++index)
-    {
-        top[index] = Vector3Add(face[index], normalOffset);
-        bottom[index] = Vector3Subtract(face[index], normalOffset);
-    }
-
-    const auto emitTriangle = [](Vector3 first, Vector3 second,
-                                 Vector3 third) {
-        Vector3 faceNormal = Vector3CrossProduct(
-            Vector3Subtract(second, first), Vector3Subtract(third, first));
-        if (Vector3LengthSqr(faceNormal) > 0.000001f)
-            faceNormal = Vector3Normalize(faceNormal);
-        rlNormal3f(faceNormal.x, faceNormal.y, faceNormal.z);
-        rlVertex3f(first.x, first.y, first.z);
-        rlVertex3f(second.x, second.y, second.z);
-        rlVertex3f(third.x, third.y, third.z);
-    };
-    const auto emitQuad = [&](Vector3 first, Vector3 second,
-                              Vector3 third, Vector3 fourth) {
-        emitTriangle(first, second, third);
-        emitTriangle(first, third, fourth);
-    };
-
-    rlBegin(RL_TRIANGLES);
-    rlColor4ub(color.r, color.g, color.b, color.a);
-    emitTriangle(top[0], top[1], top[2]);
-    emitTriangle(top[0], top[2], top[4]);
-    emitTriangle(top[4], top[2], top[3]);
-    emitTriangle(bottom[2], bottom[1], bottom[0]);
-    emitTriangle(bottom[4], bottom[2], bottom[0]);
-    emitTriangle(bottom[3], bottom[2], bottom[4]);
-    for (std::size_t index = 0; index < face.size(); ++index)
-    {
-        const std::size_t next = (index + 1U) % face.size();
-        emitQuad(top[index], bottom[index], bottom[next], top[next]);
-    }
-    rlEnd();
-}
-
-void drawUnitedStatesBaseGeometry(const StageMap &map, bool alive,
-                                  bool shadowPass)
-{
-    constexpr float centerX = kGovernmentBaseCenter.x;
-    constexpr float centerZ = kGovernmentBaseCenter.z;
-    const bool steelVisible = alive && map.governmentSteelVisible();
-    const unsigned char wallMaterial = steelVisible ? 2 : 7;
-    // A warm buff limestone facade and muted gray-brown roof match the real
-    // Pentagon. Shovel protection replaces only the five vulnerable wings
-    // with cool gunmetal armor; courtyard, monument, and foundation stay put.
-    const Color limestone = shadowPass ? WHITE : materialColor(
-        alive ? (steelVisible ? Color{91, 111, 118, 255}
-                              : Color{184, 168, 141, 255})
-              : Color{83, 78, 70, 255}, wallMaterial);
-    const Color limestoneLight = shadowPass
-                                     ? WHITE
-                                     : materialColor(
-                                           alive ? (steelVisible
-                                                        ? Color{163, 184, 190, 255}
-                                                        : Color{214, 200, 174, 255})
-                                                 : Color{108, 101, 89, 255},
-                                           wallMaterial);
-    const Color limestoneShadow = shadowPass
-                                      ? WHITE
-                                      : materialColor(
-                                            alive ? (steelVisible
-                                                         ? Color{48, 61, 66, 255}
-                                                         : Color{145, 132, 109, 255})
-                                                  : Color{61, 57, 52, 255},
-                                            wallMaterial);
-    const Color stoneDark = shadowPass
-                                ? WHITE
-                                : materialColor(
-                                      alive ? (steelVisible
-                                                   ? Color{24, 34, 38, 255}
-                                                   : Color{64, 61, 57, 255})
-                                            : Color{48, 45, 41, 255},
-                                      wallMaterial);
-    const Color roofSlate = shadowPass
-                                ? WHITE
-                                : materialColor(
-                                      alive ? (steelVisible
-                                                   ? Color{55, 72, 79, 255}
-                                                   : Color{93, 86, 80, 255})
-                                            : Color{52, 51, 48, 255},
-                                      wallMaterial);
-    const Color roofMetal = shadowPass
-                                ? WHITE
-                                : materialColor(
-                                      alive ? (steelVisible
-                                                   ? Color{119, 143, 150, 255}
-                                                   : Color{118, 109, 100, 255})
-                                            : Color{69, 66, 59, 255},
-                                      wallMaterial);
-    const Color glassDark = shadowPass
-                                ? WHITE
-                                : materialColor(steelVisible
-                                                    ? Color{19, 31, 36, 255}
-                                                    : Color{28, 34, 36, 255},
-                                                wallMaterial);
-    const Color glassLight = shadowPass
-                                 ? WHITE
-                                 : materialColor(steelVisible
-                                                     ? Color{72, 99, 108, 255}
-                                                     : Color{49, 57, 59, 255},
-                                                 wallMaterial);
-
-    rlPushMatrix();
-    rlTranslatef(centerX, 0.0f, centerZ);
-    rlRotatef(kGovernmentPentagonYaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
-    DrawCylinder({0.0f, 0.0f, 0.0f}, kGovernmentFoundationRadius,
-                 kGovernmentFoundationRadius, 0.10f, 5,
-                 shadowPass ? WHITE : materialColor(
-                     alive ? Color{124, 118, 108, 255}
-                           : Color{48, 43, 39, 255}, 7));
-    DrawCylinder({0.0f, 0.105f, 0.0f}, kGovernmentCourtyardRadius,
-                 kGovernmentCourtyardRadius, 0.045f, 5,
-                 shadowPass ? WHITE : materialColor(
-                     alive ? Color{70, 87, 69, 255}
-                           : Color{38, 39, 35, 255}, 7));
-    rlPopMatrix();
-
-    for (int index = 0; index < kGovernmentWallCount; ++index)
-    {
-        const GovernmentWallSegment segment = governmentWallSegment(index);
-        const int health = map.governmentWallHealth(index);
-        if (health > 0)
-        {
-            const float wallLength = segment.halfLength * 2.0f;
-            const bool entranceWing = segment.outward.z > 0.80f;
-
-            // Main office mass, rusticated base course, floor belt, cornice
-            // and slate roof deck.  The shallow relief survives the fixed
-            // tilted top-down view without making the building taller.
-            drawYawCube({segment.center.x, 0.405f, segment.center.z},
-                        {wallLength, 0.61f, kGovernmentWallThickness},
-                        segment.yaw, limestone);
-            drawYawCube({segment.center.x, 0.155f, segment.center.z},
-                        {wallLength + 0.04f, 0.11f,
-                         kGovernmentWallThickness + 0.08f},
-                        segment.yaw, limestoneShadow);
-            drawYawCube({segment.center.x, 0.425f, segment.center.z},
-                        {wallLength + 0.025f, 0.038f,
-                         kGovernmentWallThickness + 0.045f},
-                        segment.yaw, limestoneLight);
-            drawYawCube({segment.center.x, 0.705f, segment.center.z},
-                        {wallLength + 0.06f, 0.065f,
-                         kGovernmentWallThickness + 0.10f},
-                        segment.yaw, limestoneLight);
-            drawYawCube({segment.center.x, 0.775f, segment.center.z},
-                        {wallLength + 0.035f, 0.075f,
-                         kGovernmentWallThickness + 0.08f},
-                        segment.yaw, roofSlate);
-
-            // Shallow pilasters divide the long facade into recognizable
-            // office bays and also make wall damage easier to read.
-            for (int divider = 0; divider <= 5; ++divider)
-            {
-                const float offset = (static_cast<float>(divider) - 2.5f) *
-                                     segment.halfLength * 0.31f;
-                const Vector3 pilaster{
-                    segment.center.x + segment.along.x * offset +
-                        segment.outward.x * (segment.halfThickness + 0.025f),
-                    0.435f,
-                    segment.center.z + segment.along.z * offset +
-                        segment.outward.z * (segment.halfThickness + 0.025f)};
-                drawYawCube(pilaster, {0.055f, 0.50f, 0.048f},
-                            segment.yaw, limestoneLight);
-                drawYawCube({pilaster.x, 0.665f, pilaster.z},
-                            {0.085f, 0.045f, 0.060f},
-                            segment.yaw, limestoneShadow);
-            }
-
-            // Two compact rooftop air-handling housings per wing.  They are
-            // kept below one tile high so they add scale without blocking play.
-            for (float equipmentSide : {-1.0f, 1.0f})
-            {
-                const float offset = equipmentSide * segment.halfLength * 0.36f;
-                const Vector3 equipment{
-                    segment.center.x + segment.along.x * offset -
-                        segment.outward.x * 0.13f,
-                    0.875f,
-                    segment.center.z + segment.along.z * offset -
-                        segment.outward.z * 0.13f};
-                drawYawCube(equipment, {0.22f, 0.085f, 0.24f},
-                            segment.yaw, roofMetal);
-                drawYawCube({equipment.x, 0.925f, equipment.z},
-                            {0.15f, 0.025f, 0.17f},
-                            segment.yaw, limestoneShadow);
-            }
-
-            if (!shadowPass)
-            {
-                // Five bays and two storeys of framed, recessed glass replace
-                // the old single row of flat blue rectangles.
-                for (int bay = -2; bay <= 2; ++bay)
-                {
-                    const float offset = static_cast<float>(bay) *
-                                         segment.halfLength * 0.31f;
-                    for (int storey = 0; storey < 2; ++storey)
-                    {
-                        if (entranceWing && bay == 0 && storey == 0)
-                            continue;
-                        const float height = storey == 0 ? 0.315f : 0.535f;
-                        const Vector3 frame{
-                            segment.center.x + segment.along.x * offset +
-                                segment.outward.x *
-                                    (segment.halfThickness + 0.035f),
-                            height,
-                            segment.center.z + segment.along.z * offset +
-                                segment.outward.z *
-                                    (segment.halfThickness + 0.035f)};
-                        drawYawCube(frame, {0.245f, 0.145f, 0.036f},
-                                    segment.yaw, limestoneShadow);
-                        const Vector3 glass{
-                            frame.x + segment.outward.x * 0.022f,
-                            height,
-                            frame.z + segment.outward.z * 0.022f};
-                        drawYawCube(glass, {0.190f, 0.092f, 0.018f},
-                                    segment.yaw,
-                                    ((bay + storey) & 1) == 0
-                                        ? glassDark
-                                        : glassLight);
-                        drawYawCube({glass.x, height + 0.006f, glass.z},
-                                    {0.020f, 0.098f, 0.022f},
-                                    segment.yaw, limestoneShadow);
-                    }
-                }
-
-                if (steelVisible)
-                {
-                    // Overlapping armored shutters, seams, and raised bolt
-                    // heads make the shovel state readable as manufactured
-                    // steel rather than a simple gray color swap.
-                    for (int bay = -2; bay <= 2; ++bay)
-                    {
-                        if (entranceWing && bay == 0)
-                            continue;
-                        const float offset = static_cast<float>(bay) *
-                                             segment.halfLength * 0.31f;
-                        const Vector3 plate{
-                            segment.center.x + segment.along.x * offset +
-                                segment.outward.x *
-                                    (segment.halfThickness + 0.070f),
-                            0.425f,
-                            segment.center.z + segment.along.z * offset +
-                                segment.outward.z *
-                                    (segment.halfThickness + 0.070f)};
-                        drawYawCube(plate, {0.275f, 0.455f, 0.032f},
-                                    segment.yaw, roofMetal);
-                        drawYawCube({plate.x, plate.y, plate.z},
-                                    {0.035f, 0.405f, 0.042f},
-                                    segment.yaw, limestoneShadow);
-                        drawYawCube({plate.x, plate.y + 0.115f, plate.z},
-                                    {0.205f, 0.032f, 0.045f},
-                                    segment.yaw, stoneDark);
-                        for (float alongSide : {-1.0f, 1.0f})
-                        {
-                            for (float heightSide : {-1.0f, 1.0f})
-                            {
-                                const Vector3 rivet{
-                                    plate.x + segment.along.x *
-                                                  alongSide * 0.105f +
-                                        segment.outward.x * 0.018f,
-                                    plate.y + heightSide * 0.185f,
-                                    plate.z + segment.along.z *
-                                                  alongSide * 0.105f +
-                                        segment.outward.z * 0.018f};
-                                DrawSphereEx(rivet, 0.018f, 5, 5,
-                                             limestoneLight);
-                            }
-                        }
-                    }
-                }
-
-                // The south-facing wing receives a centered recessed doorway,
-                // projecting canopy and paired stone columns.
-                if (entranceWing)
-                {
-                    const Vector3 doorFrame{
-                        segment.center.x + segment.outward.x *
-                            (segment.halfThickness + 0.038f),
-                        0.315f,
-                        segment.center.z + segment.outward.z *
-                            (segment.halfThickness + 0.038f)};
-                    drawYawCube(doorFrame, {0.38f, 0.36f, 0.040f},
-                                segment.yaw, limestoneShadow);
-                    const Vector3 doors{
-                        doorFrame.x + segment.outward.x * 0.024f,
-                        0.305f,
-                        doorFrame.z + segment.outward.z * 0.024f};
-                    drawYawCube(doors, {0.29f, 0.30f, 0.020f},
-                                segment.yaw, glassDark);
-                    drawYawCube({doors.x, doors.y, doors.z},
-                                {0.018f, 0.30f, 0.025f},
-                                segment.yaw, limestoneLight);
-                    const Vector3 canopy{
-                        segment.center.x + segment.outward.x *
-                            (segment.halfThickness + 0.15f),
-                        0.575f,
-                        segment.center.z + segment.outward.z *
-                            (segment.halfThickness + 0.15f)};
-                    drawYawCube(canopy, {0.56f, 0.055f, 0.31f},
-                                segment.yaw, roofSlate);
-                    for (float columnSide : {-1.0f, 1.0f})
-                    {
-                        const Vector3 column{
-                            segment.center.x + segment.along.x *
-                                columnSide * 0.21f +
-                                segment.outward.x *
-                                    (segment.halfThickness + 0.21f),
-                            0.35f,
-                            segment.center.z + segment.along.z *
-                                columnSide * 0.21f +
-                                segment.outward.z *
-                                    (segment.halfThickness + 0.21f)};
-                        drawYawCube(column, {0.055f, 0.38f, 0.055f},
-                                    segment.yaw, limestoneLight);
-                    }
-                }
-
-                const int missingHealth = kGovernmentWallMaximumHealth - health;
-                for (int crack = 0; crack < missingHealth; ++crack)
-                {
-                    const float offset = (static_cast<float>(crack) -
-                                          static_cast<float>(missingHealth - 1) *
-                                              0.5f) *
-                                         0.27f;
-                    const Vector3 crackCenter{
-                            segment.center.x + segment.along.x * offset +
-                            segment.outward.x *
-                                (segment.halfThickness + 0.066f),
-                        0.32f + (crack % 2) * 0.10f,
-                        segment.center.z + segment.along.z * offset +
-                            segment.outward.z *
-                                (segment.halfThickness + 0.066f)};
-                    drawYawCube(crackCenter, {0.035f, 0.25f, 0.024f},
-                                segment.yaw, stoneDark);
-                }
-            }
-        }
-        else
-        {
-            // A breached wing leaves two fractured end masses plus varied
-            // masonry and roof rubble rather than two identical abstract bars.
-            for (float side : {-1.0f, 1.0f})
-            {
-                const float offset = side * segment.halfLength * 0.78f;
-                const float height = side < 0.0f ? 0.23f : 0.18f;
-                drawYawCube({segment.center.x + segment.along.x * offset,
-                             0.08f + height * 0.5f,
-                             segment.center.z + segment.along.z * offset},
-                            {segment.halfLength * 0.38f, height,
-                             kGovernmentWallThickness + 0.06f},
-                            segment.yaw,
-                            side < 0.0f ? limestoneShadow : stoneDark);
-            }
-            for (int rubble = 0; rubble < 7; ++rubble)
-            {
-                const float amount = static_cast<float>(rubble) / 6.0f;
-                const float offset = (amount - 0.5f) *
-                                     segment.halfLength * 1.15f;
-                const float across = ((rubble * 37) % 5 - 2) * 0.105f;
-                const float height = 0.055f + (rubble % 3) * 0.028f;
-                const Vector3 chunk{
-                    segment.center.x + segment.along.x * offset +
-                        segment.outward.x * across,
-                    height * 0.5f + 0.018f,
-                    segment.center.z + segment.along.z * offset +
-                        segment.outward.z * across};
-                drawYawCube(chunk,
-                            {0.16f + (rubble % 2) * 0.07f,
-                             height,
-                             0.18f + ((rubble + 1) % 3) * 0.06f},
-                            segment.yaw + (rubble - 3) * 0.08f,
-                            rubble % 3 == 0 ? roofSlate : limestoneShadow);
-            }
-        }
-    }
-
-    const Color bronze = shadowPass
-                             ? WHITE
-                             : materialColor(Color{102, 70, 38, 255}, 7);
-    const Color bronzeLight = shadowPass
-                                  ? WHITE
-                                  : materialColor(Color{160, 103, 51, 255}, 7);
-    const Color featherCopper = shadowPass
-                                    ? WHITE
-                                    : materialColor(Color{126, 76, 35, 255}, 7);
-    const Color darkBrown = shadowPass
-                                ? WHITE
-                                : materialColor(Color{42, 28, 20, 255}, 7);
-    const Color featherBrown = shadowPass
-                                   ? WHITE
-                                   : materialColor(Color{83, 49, 27, 255}, 7);
-    const Color whiteFeather = shadowPass
-                                   ? WHITE
-                                   : materialColor(Color{239, 236, 215, 255}, 7);
-    const Color featherShade = shadowPass
-                                   ? WHITE
-                                   : materialColor(Color{187, 188, 172, 255}, 7);
-    const Color beak = shadowPass
-                           ? WHITE
-                           : materialColor(Color{255, 191, 32, 255}, 7);
-    const Color beakShade = shadowPass
-                                ? WHITE
-                                : materialColor(Color{205, 112, 18, 255}, 7);
-
-    // Scale the complete monument around its ground anchor.  Keeping this as
-    // one parent transform guarantees the visible eagle and its shadow use
-    // precisely the same enlarged silhouette.
-    rlPushMatrix();
-    rlTranslatef(centerX, 0.0f, centerZ);
-    rlScalef(kGovernmentEagleVisualScale,
-             kGovernmentEagleVisualScale,
-             kGovernmentEagleVisualScale);
-    rlTranslatef(-centerX, 0.0f, -centerZ);
-
-    // The monument faces map north, directly toward the three enemy spawn
-    // lanes. Author every detail in the same forward/lateral basis so the
-    // visible model, destroyed pose and shadow cannot drift in orientation.
-    const auto eaglePoint = [&](float lateral, float height,
-                                float ahead) {
-        return Vector3{centerX + kGovernmentEagleRight.x * lateral +
-                                   kGovernmentEagleForward.x * ahead,
-                       height,
-                       centerZ + kGovernmentEagleRight.z * lateral +
-                                   kGovernmentEagleForward.z * ahead};
-    };
-    // Wings span world x, matching the straight default camera's horizontal
-    // axis. The torso and head remain pointed north at the enemy line.
-    const auto eagleWingPoint = [&](float lateral, float height,
-                                    float depth) {
-        return eaglePoint(lateral, height, depth);
-    };
-
-    if (!alive)
-    {
-        DrawCylinder({centerX, 0.07f, centerZ}, 0.24f, 0.27f, 0.13f,
-                     12, stoneDark);
-        DrawCylinder({centerX, 0.17f, centerZ}, 0.19f, 0.22f, 0.08f,
-                     12, stoneDark);
-        drawEllipsoid(eaglePoint(-0.05f, 0.25f, 0.00f),
-                      {0.30f, 0.14f, 0.20f}, stoneDark, -kPi * 0.45f);
-        drawEllipsoid(eaglePoint(0.20f, 0.19f, -0.04f),
-                      {0.22f, 0.07f, 0.10f}, darkBrown, 0.35f);
-        drawEllipsoid(eaglePoint(-0.23f, 0.18f, -0.02f),
-                      {0.24f, 0.065f, 0.11f}, featherBrown, -0.30f);
-        DrawSphereEx(eaglePoint(0.13f, 0.23f, 0.16f), 0.10f,
-                     8, 10, featherShade);
-        DrawCylinderEx(eaglePoint(0.13f, 0.23f, 0.23f),
-                       eaglePoint(0.13f, 0.20f, 0.34f),
-                       0.045f, 0.0f, 7, beakShade);
-        for (int feather = -1; feather <= 1; ++feather)
-            DrawCylinderEx(eaglePoint(feather * 0.06f, 0.19f, -0.12f),
-                           eaglePoint(feather * 0.09f, 0.12f, -0.30f),
-                           0.035f, 0.012f, 7, featherShade);
-        rlPopMatrix();
-        return;
-    }
-
-    // Layered memorial plinth.  Its stepped profile stays visible even when
-    // the eagle overlaps the courtyard floor from the oblique camera.
-    DrawCylinder({centerX, 0.07f, centerZ}, 0.24f, 0.27f, 0.13f,
-                 12, darkBrown);
-    DrawCylinder({centerX, 0.17f, centerZ}, 0.19f, 0.22f, 0.09f,
-                 12, bronze);
-    DrawCylinder({centerX, 0.225f, centerZ}, 0.21f, 0.21f, 0.035f,
-                 12, bronzeLight);
-
-    // Five long white tail feathers point back toward the player and remain
-    // visible below the raised wings from the straight default camera.
-    for (int feather = -2; feather <= 2; ++feather)
-    {
-        const float lateral = static_cast<float>(feather) * 0.052f;
-        drawFeatherBlade(
-            eaglePoint(lateral * 0.35f, 0.50f, -0.055f),
-            eaglePoint(lateral * 1.30f,
-                       0.30f + 0.010f * std::abs(feather),
-                       -0.30f - 0.008f * std::abs(feather)),
-            0.052f, 0.022f, Vector3{0.0f, 1.0f, 0.0f},
-            (feather & 1) == 0 ? whiteFeather : featherShade);
-    }
-
-    // Powerful separated legs and broad talons anchor the emblem to the
-    // pedestal instead of leaving it balanced on two thin pegs.
-    for (float side : {-1.0f, 1.0f})
-    {
-        const float leg = side * 0.082f;
-        DrawCylinderEx(eaglePoint(leg, 0.53f, 0.015f),
-                       eaglePoint(leg, 0.29f, 0.070f),
-                       0.032f, 0.024f, 8, beakShade);
-        DrawSphereEx(eaglePoint(leg, 0.282f, 0.075f), 0.034f,
-                     8, 9, beak);
-        for (int toe = -1; toe <= 1; ++toe)
-        {
-            const float toeSpread = static_cast<float>(toe) * 0.042f;
-            DrawCylinderEx(eaglePoint(leg, 0.275f, 0.085f),
-                           eaglePoint(leg + toeSpread, 0.232f,
-                                      0.175f + (toe == 0 ? 0.020f : 0.0f)),
-                           0.014f, 0.004f, 7, beak);
-        }
-        DrawCylinderEx(eaglePoint(leg, 0.275f, 0.055f),
-                       eaglePoint(leg + side * 0.024f, 0.232f, -0.030f),
-                       0.013f, 0.004f, 7, beakShade);
-    }
-
-    // A narrow abdomen, deep chest and broad shoulder mantle form the tall
-    // inverted-triangle silhouette used by heroic advertising emblems.
-    drawEllipsoid(eaglePoint(0.0f, 0.59f, -0.005f),
-                  {0.090f, 0.250f, 0.105f}, darkBrown);
-    drawEllipsoid(eaglePoint(0.0f, 0.765f, 0.028f),
-                  {0.135f, 0.285f, 0.130f}, featherBrown);
-    drawEllipsoid(eaglePoint(0.0f, 0.895f, -0.030f),
-                  {0.205f, 0.130f, 0.150f}, bronze);
-    // A warm back plate faces the camera and separates the torso from the far
-    // wing without restoring the old round belly.
-    drawEllipsoid(eaglePoint(0.0f, 0.735f, -0.115f),
-                  {0.090f, 0.175f, 0.040f}, featherCopper);
-
-    // High shoulder arches and descending primary feathers create an M-shaped
-    // half-spread wing line across the camera-horizontal axis.
-    for (float side : {-1.0f, 1.0f})
-    {
-        constexpr float nearDrop = 0.0f;
-        const Color shoulderColor = bronze;
-        const Color midWingColor = featherBrown;
-        const Vector3 shoulder = eaglePoint(side * 0.115f,
-                                             0.800f - nearDrop, -0.020f);
-        const Vector3 elbow = eagleWingPoint(side * 0.300f,
-                                             0.905f - nearDrop, -0.038f);
-        const Vector3 wrist = eagleWingPoint(side * 0.420f,
-                                             0.775f - nearDrop, -0.062f);
-        DrawCylinderEx(shoulder, elbow, 0.105f, 0.075f,
-                       9, shoulderColor);
-        DrawCylinderEx(elbow, wrist, 0.082f, 0.038f,
-                       9, midWingColor);
-        DrawSphereEx(shoulder, 0.105f, 8, 9, shoulderColor);
-        DrawSphereEx(elbow, 0.078f, 8, 9, midWingColor);
-
-        for (int secondary = 0; secondary < 4; ++secondary)
-        {
-            const float tier = static_cast<float>(secondary);
-            drawFeatherBlade(
-                eaglePoint(side * (0.135f + tier * 0.018f),
-                           0.790f - tier * 0.015f - nearDrop,
-                           -0.030f - tier * 0.006f),
-                eagleWingPoint(side * (0.275f + tier * 0.055f),
-                               0.895f - tier * 0.060f - nearDrop,
-                               -0.052f - tier * 0.010f),
-                0.110f - tier * 0.009f, 0.034f,
-                Vector3{0.0f, 0.0f, 1.0f},
-                secondary < 2 ? shoulderColor : midWingColor);
-        }
-
-        static constexpr std::array<float, 6> tipHeights{{
-            0.780f, 0.710f, 0.640f, 0.570f, 0.500f, 0.440f}};
-        for (int feather = 0; feather < 6; ++feather)
-        {
-            const float tier = static_cast<float>(feather);
-            const Vector3 root = eagleWingPoint(
-                side * (0.265f + tier * 0.010f),
-                0.805f - tier * 0.015f - nearDrop,
-                -0.040f - tier * 0.008f);
-            const Vector3 tip = eagleWingPoint(
-                side * (0.480f + tier * 0.014f),
-                tipHeights[static_cast<std::size_t>(feather)] - nearDrop,
-                -0.075f - tier * 0.012f);
-            const Color primary = feather % 2 == 0
-                                      ? featherBrown
-                                      : bronze;
-            drawFeatherBlade(root, tip, 0.085f - tier * 0.006f,
-                             0.030f,
-                             Vector3{0.0f, 0.0f, 1.0f},
-                             primary);
-        }
-    }
-
-    // A jagged white neck ruff leads into a forward-thrust head rather than a
-    // sphere balanced on top of the torso.
-    drawEllipsoid(eaglePoint(0.0f, 0.965f, 0.020f),
-                  {0.112f, 0.150f, 0.116f}, featherShade);
-    for (int feather = -3; feather <= 3; ++feather)
-    {
-        const float lateral = static_cast<float>(feather) * 0.038f;
-        drawEllipsoid(eaglePoint(lateral,
-                                 0.940f - 0.007f * std::abs(feather),
-                                 -0.005f),
-                      {0.042f, 0.063f, 0.043f},
-                      (feather & 1) == 0 ? whiteFeather : featherShade,
-                      lateral * 2.0f);
-    }
-    drawEllipsoid(eaglePoint(-0.060f, 1.040f, 0.100f),
-                  {0.108f, 0.130f, 0.122f}, whiteFeather);
-    drawEllipsoid(eaglePoint(-0.070f, 1.098f, 0.125f),
-                  {0.094f, 0.050f, 0.098f}, featherShade);
-
-    // Short, thick yellow bill turns slightly west while still addressing the
-    // northern enemy line, preserving a readable elevated-view profile.
-    DrawSphereEx(eaglePoint(-0.105f, 1.035f, 0.195f), 0.070f,
-                 8, 10, beak);
-    DrawCylinderEx(eaglePoint(-0.095f, 1.047f, 0.185f),
-                   eaglePoint(-0.215f, 1.002f, 0.300f),
-                   0.076f, 0.015f, 9, beak);
-    DrawCylinderEx(eaglePoint(-0.095f, 1.005f, 0.180f),
-                   eaglePoint(-0.195f, 0.972f, 0.275f),
-                   0.044f, 0.010f, 8, beakShade);
-    DrawCylinderEx(eaglePoint(-0.210f, 1.002f, 0.292f),
-                   eaglePoint(-0.222f, 0.936f, 0.315f),
-                   0.025f, 0.004f, 7, beakShade);
-
-    if (!shadowPass)
-    {
-        const Color eye = materialColor(Color{13, 12, 10, 255}, 7);
-        const Color iris = materialColor(Color{222, 157, 29, 255}, 7);
-        // The west eye is dominant because the head keeps its intentionally
-        // turned three-quarter profile while the body faces the enemy line.
-        for (float side : {-1.0f, 1.0f})
-        {
-            const float eyeRadius = side < 0.0f ? 0.021f : 0.014f;
-            const Vector3 irisCenter = eaglePoint(side * 0.078f - 0.060f,
-                                                   1.065f, 0.128f);
-            DrawSphereEx(irisCenter, eyeRadius, 7, 8, iris);
-            DrawSphereEx(eaglePoint(side * 0.078f - 0.060f,
-                                    1.065f, 0.141f),
-                         eyeRadius * 0.56f, 7, 8, eye);
-            if (side < 0.0f)
-                DrawSphereEx(eaglePoint(-0.136f, 1.071f, 0.151f),
-                             0.0045f, 6, 6, RAYWHITE);
-        }
-        // A sloped brow gives the visible eye the severe advertising-emblem
-        // expression without introducing a separate facial texture.
-        DrawCylinderEx(eaglePoint(-0.090f, 1.103f, 0.094f),
-                       eaglePoint(-0.160f, 1.077f, 0.148f),
-                       0.018f, 0.007f, 7, featherShade);
-
-    }
-    rlPopMatrix();
-}
-
-void drawNationalBaseRubble(const GovernmentWallSegment &segment,
-                            Color wall, Color dark, Color roof)
-{
-    for (float side : {-1.0f, 1.0f})
-    {
-        const float offset = side * segment.halfLength * 0.76f;
-        const float height = side < 0.0f ? 0.22f : 0.17f;
-        drawYawCube({segment.center.x + segment.along.x * offset,
-                     0.04f + height * 0.5f,
-                     segment.center.z + segment.along.z * offset},
-                    {segment.halfLength * 0.34f, height,
-                     kGovernmentWallThickness * 0.78f},
-                    segment.yaw, side < 0.0f ? wall : dark);
-    }
-    for (int rubble = 0; rubble < 8; ++rubble)
-    {
-        const float amount = static_cast<float>(rubble) / 7.0f;
-        const float offset = (amount - 0.5f) * segment.halfLength * 1.12f;
-        const float across = ((rubble * 31) % 5 - 2) * 0.09f;
-        const float height = 0.045f + (rubble % 3) * 0.026f;
-        drawYawCube(
-            {segment.center.x + segment.along.x * offset +
-                 segment.outward.x * across,
-             0.018f + height * 0.5f,
-             segment.center.z + segment.along.z * offset +
-                 segment.outward.z * across},
-            {0.14f + (rubble % 2) * 0.07f, height,
-             0.15f + ((rubble + 1) % 3) * 0.05f},
-            segment.yaw + (rubble - 3) * 0.10f,
-            rubble % 4 == 0 ? roof : rubble % 2 == 0 ? wall : dark);
-    }
-}
-
-void drawStalinMonument(bool alive, bool shadowPass)
-{
-    // Human monuments face the southern courtyard/camera so their uniforms
-    // and facial silhouettes remain identifiable in the cardinal view. The
-    // US eagle intentionally remains north-facing toward the enemy lanes.
-    constexpr XZ forward{0.0f, 1.0f};
-    constexpr XZ right{-1.0f, 0.0f};
-    constexpr XZ faceForward{0.0f, 1.0f};
-    constexpr XZ faceRight{-1.0f, 0.0f};
-    const auto bodyPoint = [&](float lateral, float height, float ahead) {
-        return Vector3{kGovernmentBaseCenter.x + right.x * lateral +
-                           forward.x * ahead,
-                       height,
-                       kGovernmentBaseCenter.z + right.z * lateral +
-                           forward.z * ahead};
-    };
-    const auto facePoint = [&](float lateral, float height, float ahead) {
-        return Vector3{kGovernmentBaseCenter.x + faceRight.x * lateral +
-                           faceForward.x * ahead,
-                       height,
-                       kGovernmentBaseCenter.z + faceRight.z * lateral +
-                           faceForward.z * ahead};
-    };
-    const Color granite = shadowPass
-                              ? WHITE
-                              : materialColor(Color{86, 62, 56, 255}, 7);
-    const Color graniteLight = shadowPass
-                                   ? WHITE
-                                   : materialColor(Color{139, 95, 76, 255}, 7);
-    const Color bronze = shadowPass
-                             ? WHITE
-                             : materialColor(Color{75, 88, 69, 255}, 2);
-    const Color bronzeLight = shadowPass
-                                  ? WHITE
-                                  : materialColor(Color{133, 126, 78, 255}, 2);
-    const Color bronzeDark = shadowPass
-                                 ? WHITE
-                                 : materialColor(Color{39, 49, 43, 255}, 2);
-
-    DrawCylinder({kGovernmentBaseCenter.x, 0.0f, kGovernmentBaseCenter.z},
-                 0.34f, 0.39f, 0.14f, 12, granite);
-    DrawCylinder({kGovernmentBaseCenter.x, 0.14f, kGovernmentBaseCenter.z},
-                 0.29f, 0.34f, 0.13f, 12, graniteLight);
-    if (!alive)
-    {
-        drawEllipsoid(bodyPoint(-0.18f, 0.31f, -0.08f),
-                      {0.48f, 0.14f, 0.19f}, bronzeDark, 0.18f);
-        DrawSphereEx(bodyPoint(0.30f, 0.25f, 0.12f), 0.15f,
-                     8, 10, bronze);
-        DrawCylinderEx(bodyPoint(0.04f, 0.20f, -0.24f),
-                       bodyPoint(-0.28f, 0.17f, -0.45f),
-                       0.08f, 0.05f, 8, bronzeDark);
-        return;
-    }
-
-    // Broad boots, long greatcoat and a rolled plan make this silhouette
-    // distinct from the shorter German tunic while remaining readable from
-    // the straight default camera.
-    for (float side : {-1.0f, 1.0f})
-    {
-        DrawCylinderEx(bodyPoint(side * 0.115f, 0.26f, 0.0f),
-                       bodyPoint(side * 0.115f, 0.70f, 0.0f),
-                       0.092f, 0.078f, 8, bronzeDark);
-        drawEllipsoid(bodyPoint(side * 0.115f, 0.31f, 0.075f),
-                      {0.12f, 0.10f, 0.19f}, bronzeDark);
-    }
-    DrawCylinder(bodyPoint(0.0f, 0.61f, 0.0f),
-                 0.24f, 0.34f, 0.64f, 10, bronze);
-    drawEllipsoid(bodyPoint(0.0f, 1.18f, 0.0f),
-                  {0.31f, 0.25f, 0.22f}, bronze);
-    drawYawCube(bodyPoint(0.0f, 1.04f, 0.205f),
-                {0.39f, 0.085f, 0.055f}, 0.0f, bronzeLight);
-    DrawCylinderEx(bodyPoint(0.25f, 1.22f, 0.0f),
-                   bodyPoint(0.28f, 0.83f, 0.08f),
-                   0.095f, 0.070f, 9, bronze);
-    DrawSphereEx(bodyPoint(0.28f, 0.80f, 0.10f), 0.075f,
-                 8, 9, bronzeLight);
-    DrawCylinderEx(bodyPoint(-0.25f, 1.21f, 0.0f),
-                   bodyPoint(-0.15f, 0.96f, 0.20f),
-                   0.095f, 0.068f, 9, bronze);
-    DrawSphereEx(bodyPoint(-0.14f, 0.93f, 0.22f), 0.074f,
-                 8, 9, bronzeLight);
-    DrawCylinderEx(bodyPoint(-0.105f, 0.93f, 0.25f),
-                   bodyPoint(-0.24f, 0.93f, 0.25f),
-                   0.052f, 0.052f, 8, graniteLight);
-
-    drawEllipsoid(facePoint(0.0f, 1.48f, 0.02f),
-                  {0.16f, 0.19f, 0.15f}, bronzeLight);
-    DrawCylinderEx(facePoint(0.0f, 1.49f, 0.12f),
-                   facePoint(0.0f, 1.46f, 0.225f),
-                   0.037f, 0.020f, 7, bronzeLight);
-    drawEllipsoid(facePoint(-0.052f, 1.425f, 0.145f),
-                  {0.073f, 0.022f, 0.027f}, bronzeDark, -0.12f);
-    drawEllipsoid(facePoint(0.052f, 1.425f, 0.145f),
-                  {0.073f, 0.022f, 0.027f}, bronzeDark, 0.12f);
-    DrawCylinder(facePoint(0.0f, 1.62f, 0.0f),
-                 0.17f, 0.18f, 0.075f, 12, bronzeDark);
-    drawYawCube(facePoint(0.0f, 1.635f, 0.11f),
-                {0.23f, 0.035f, 0.13f}, 0.0f, bronzeDark);
-    if (!shadowPass)
-    {
-        for (float side : {-1.0f, 1.0f})
-            DrawSphereEx(facePoint(side * 0.070f, 1.515f, 0.135f),
-                         0.014f, 6, 7, Color{15, 17, 14, 255});
-    }
-}
-
-void drawSovietBaseGeometry(const StageMap &map, bool alive,
-                            bool shadowPass)
-{
-    constexpr float centerX = kGovernmentBaseCenter.x;
-    constexpr float centerZ = kGovernmentBaseCenter.z;
-    constexpr int panelsPerSection = 4;
-    constexpr float ringRadius = 1.63f;
-    const bool steelVisible = alive && map.governmentSteelVisible();
-    const unsigned char wallMaterial = steelVisible ? 2 : 6;
-    const Color wall = shadowPass
-                           ? WHITE
-                           : materialColor(steelVisible
-                                               ? Color{91, 111, 118, 255}
-                                               : alive ? Color{132, 68, 51, 255}
-                                                       : Color{72, 46, 40, 255},
-                                           wallMaterial);
-    const Color wallLight = shadowPass
-                                ? WHITE
-                                : materialColor(steelVisible
-                                                    ? Color{163, 184, 190, 255}
-                                                    : alive ? Color{178, 105, 73, 255}
-                                                            : Color{100, 66, 54, 255},
-                                                wallMaterial);
-    const Color wallDark = shadowPass
-                               ? WHITE
-                               : materialColor(steelVisible
-                                                   ? Color{45, 58, 64, 255}
-                                                   : Color{72, 42, 36, 255},
-                                               wallMaterial);
-    const Color trim = shadowPass
-                           ? WHITE
-                           : materialColor(steelVisible
-                                               ? Color{132, 151, 157, 255}
-                                               : Color{204, 185, 149, 255},
-                                           steelVisible ? 2 : 7);
-    const Color roof = shadowPass
-                           ? WHITE
-                           : materialColor(steelVisible
-                                               ? Color{55, 72, 79, 255}
-                                               : Color{55, 78, 63, 255},
-                                           2);
-    const Color courtyard = shadowPass
-                                ? WHITE
-                                : materialColor(Color{91, 82, 70, 255}, 7);
-
-    DrawCylinder({centerX, 0.0f, centerZ}, 2.32f, 2.32f, 0.10f,
-                 32, shadowPass ? WHITE
-                                : materialColor(Color{92, 61, 51, 255}, 7));
-    DrawCylinder({centerX, 0.105f, centerZ}, 1.01f, 1.01f, 0.045f,
-                 24, courtyard);
-
-    constexpr float sectionAngle = 2.0f * kPi /
-                                   static_cast<float>(kGovernmentWallCount);
-    constexpr float panelAngle = sectionAngle /
-                                 static_cast<float>(panelsPerSection);
-    const float panelLength = 2.0f * ringRadius *
-                                  std::sin(panelAngle * 0.5f) +
-                              0.035f;
-    for (int index = 0; index < kGovernmentWallCount; ++index)
-    {
-        const GovernmentWallSegment segment = governmentWallSegment(index);
-        const int health = map.governmentWallHealth(index);
-        if (health <= 0)
-        {
-            drawNationalBaseRubble(segment, wall, wallDark, roof);
-            continue;
-        }
-
-        for (int panel = 0; panel < panelsPerSection; ++panel)
-        {
-            const float angle = kGovernmentPentagonYaw +
-                                static_cast<float>(index) * sectionAngle +
-                                (static_cast<float>(panel) + 0.5f) * panelAngle;
-            const XZ outward{std::sin(angle), std::cos(angle)};
-            const XZ along{std::cos(angle), -std::sin(angle)};
-            const Vector3 panelCenter{centerX + outward.x * ringRadius,
-                                      0.39f,
-                                      centerZ + outward.z * ringRadius};
-            const float yaw = std::atan2(along.z, along.x);
-            drawYawCube(panelCenter, {panelLength, 0.56f, 1.02f},
-                        yaw, wall);
-            drawYawCube({panelCenter.x, 0.16f, panelCenter.z},
-                        {panelLength + 0.025f, 0.11f, 1.08f},
-                        yaw, wallDark);
-            drawYawCube({panelCenter.x, 0.69f, panelCenter.z},
-                        {panelLength + 0.025f, 0.07f, 1.08f},
-                        yaw, trim);
-
-            for (float side : {-1.0f, 1.0f})
-            {
-                const Vector3 merlon{
-                    panelCenter.x + along.x * side * panelLength * 0.28f,
-                    0.805f,
-                    panelCenter.z + along.z * side * panelLength * 0.28f};
-                drawYawCube(merlon, {panelLength * 0.27f, 0.19f, 0.44f},
-                            yaw, wallLight);
-            }
-
-            if (!shadowPass)
-            {
-                const Vector3 face{
-                    panelCenter.x + outward.x * 0.525f,
-                    0.44f,
-                    panelCenter.z + outward.z * 0.525f};
-                if (steelVisible)
-                {
-                    drawYawCube(face, {panelLength * 0.74f, 0.35f, 0.025f},
-                                yaw, wallLight);
-                    drawYawCube(face, {0.035f, 0.31f, 0.032f},
-                                yaw, wallDark);
-                    for (float side : {-1.0f, 1.0f})
-                    {
-                        DrawSphereEx(
-                            {face.x + along.x * side * panelLength * 0.27f +
-                                 outward.x * 0.018f,
-                             face.y + side * 0.12f,
-                             face.z + along.z * side * panelLength * 0.27f +
-                                 outward.z * 0.018f},
-                            0.017f, 5, 5, trim);
-                    }
-                }
-                else
-                {
-                    drawYawCube(face, {0.055f, 0.22f, 0.035f},
-                                yaw, wallDark);
-                    drawYawCube({face.x, face.y + 0.08f, face.z},
-                                {0.16f, 0.035f, 0.04f},
-                                yaw, trim);
-                }
-            }
-        }
-
-        const Vector3 towerCenter{
-            segment.center.x + segment.outward.x * 0.18f,
-            0.12f,
-            segment.center.z + segment.outward.z * 0.18f};
-        DrawCylinder(towerCenter, 0.31f, 0.34f, 0.62f, 14, wallLight);
-        DrawCylinder({towerCenter.x, 0.74f, towerCenter.z},
-                     0.10f, 0.35f, 0.15f, 14, roof);
-        DrawCylinder({towerCenter.x, 0.71f, towerCenter.z},
-                     0.35f, 0.35f, 0.055f, 14, trim);
-        if (!shadowPass)
-        {
-            const bool entrance = segment.outward.z > 0.80f;
-            const Vector3 towerFace{
-                towerCenter.x + segment.outward.x * 0.345f,
-                entrance ? 0.39f : 0.47f,
-                towerCenter.z + segment.outward.z * 0.345f};
-            drawYawCube(towerFace,
-                        entrance ? Vector3{0.24f, 0.39f, 0.026f}
-                                 : Vector3{0.055f, 0.19f, 0.026f},
-                        segment.yaw, wallDark);
-            if (entrance)
-            {
-                bonus_assets::drawThickStar(
-                    {towerFace.x + segment.outward.x * 0.02f,
-                     0.65f,
-                     towerFace.z + segment.outward.z * 0.02f},
-                    -segment.yaw, 0.105f, 0.045f, 0.015f,
-                    materialColor(Color{230, 185, 59, 255}, 2),
-                    materialColor(Color{111, 64, 31, 255}, 2));
-            }
-        }
-
-        const int missingHealth = kGovernmentWallMaximumHealth - health;
-        if (!shadowPass && missingHealth > 0)
-        {
-            for (int crack = 0; crack < missingHealth; ++crack)
-            {
-                const float offset = (static_cast<float>(crack) -
-                                      (missingHealth - 1) * 0.5f) *
-                                     0.24f;
-                const Vector3 crackCenter{
-                    segment.center.x + segment.along.x * offset +
-                        segment.outward.x *
-                            (segment.halfThickness + 0.065f),
-                    0.35f + (crack % 2) * 0.10f,
-                    segment.center.z + segment.along.z * offset +
-                        segment.outward.z *
-                            (segment.halfThickness + 0.065f)};
-                drawYawCube(crackCenter, {0.035f, 0.24f, 0.025f},
-                            segment.yaw, wallDark);
-            }
-        }
-    }
-
-    drawStalinMonument(alive, shadowPass);
-}
-
-void drawHitlerMonument(bool alive, bool shadowPass)
-{
-    constexpr XZ forward{0.0f, 1.0f};
-    constexpr XZ right{-1.0f, 0.0f};
-    constexpr XZ faceForward{0.0f, 1.0f};
-    constexpr XZ faceRight{-1.0f, 0.0f};
-    const auto bodyPoint = [&](float lateral, float height, float ahead) {
-        return Vector3{kGovernmentBaseCenter.x + right.x * lateral +
-                           forward.x * ahead,
-                       height,
-                       kGovernmentBaseCenter.z + right.z * lateral +
-                           forward.z * ahead};
-    };
-    const auto facePoint = [&](float lateral, float height, float ahead) {
-        return Vector3{kGovernmentBaseCenter.x + faceRight.x * lateral +
-                           faceForward.x * ahead,
-                       height,
-                       kGovernmentBaseCenter.z + faceRight.z * lateral +
-                           faceForward.z * ahead};
-    };
-    const Color granite = shadowPass
-                              ? WHITE
-                              : materialColor(Color{75, 75, 72, 255}, 7);
-    const Color graniteLight = shadowPass
-                                   ? WHITE
-                                   : materialColor(Color{132, 126, 114, 255}, 7);
-    const Color bronze = shadowPass
-                             ? WHITE
-                             : materialColor(Color{72, 66, 55, 255}, 2);
-    const Color bronzeLight = shadowPass
-                                  ? WHITE
-                                  : materialColor(Color{130, 112, 78, 255}, 2);
-    const Color bronzeDark = shadowPass
-                                 ? WHITE
-                                 : materialColor(Color{33, 34, 31, 255}, 2);
-
-    drawYawCube({kGovernmentBaseCenter.x, 0.08f,
-                 kGovernmentBaseCenter.z},
-                {0.70f, 0.16f, 0.62f}, 0.0f, granite);
-    drawYawCube({kGovernmentBaseCenter.x, 0.20f,
-                 kGovernmentBaseCenter.z},
-                {0.58f, 0.12f, 0.52f}, 0.0f, graniteLight);
-    if (!alive)
-    {
-        drawEllipsoid(bodyPoint(0.10f, 0.32f, -0.05f),
-                      {0.43f, 0.13f, 0.18f}, bronzeDark, -0.20f);
-        DrawSphereEx(bodyPoint(-0.32f, 0.24f, 0.10f), 0.14f,
-                     8, 10, bronze);
-        drawYawCube(bodyPoint(0.30f, 0.18f, -0.18f),
-                    {0.24f, 0.07f, 0.18f}, -0.35f, bronzeLight);
-        return;
-    }
-
-    for (float side : {-1.0f, 1.0f})
-    {
-        DrawCylinderEx(bodyPoint(side * 0.105f, 0.28f, 0.0f),
-                       bodyPoint(side * 0.105f, 0.76f, 0.0f),
-                       0.090f, 0.075f, 8, bronzeDark);
-        drawEllipsoid(bodyPoint(side * 0.105f, 0.31f, 0.08f),
-                      {0.12f, 0.09f, 0.18f}, bronzeDark);
-    }
-    // A short double-breasted tunic, straight neutral arms and a document
-    // held at the side distinguish the figure without using a salute pose.
-    drawYawCube(bodyPoint(0.0f, 1.03f, 0.0f),
-                {0.48f, 0.57f, 0.34f}, 0.0f, bronze);
-    drawYawCube(bodyPoint(0.0f, 0.835f, 0.0f),
-                {0.54f, 0.07f, 0.38f}, 0.0f, bronzeDark);
-    drawYawCube(bodyPoint(0.0f, 1.12f, 0.185f),
-                {0.31f, 0.24f, 0.045f}, 0.0f, bronzeLight);
-    for (float side : {-1.0f, 1.0f})
-    {
-        DrawCylinderEx(bodyPoint(side * 0.28f, 1.23f, 0.0f),
-                       bodyPoint(side * 0.29f, 0.82f, 0.05f),
-                       0.085f, 0.060f, 9, bronze);
-        DrawSphereEx(bodyPoint(side * 0.29f, 0.79f, 0.065f),
-                     0.065f, 8, 9, bronzeLight);
-    }
-    drawYawCube(bodyPoint(0.31f, 0.72f, 0.11f),
-                {0.18f, 0.27f, 0.055f}, -0.06f, granite);
-    if (!shadowPass)
-    {
-        for (int row = 0; row < 2; ++row)
-            for (float side : {-1.0f, 1.0f})
-                DrawSphereEx(bodyPoint(side * 0.075f,
-                                       1.02f + row * 0.13f, 0.195f),
-                             0.017f, 5, 6, bronzeLight);
-    }
-
-    drawEllipsoid(facePoint(0.0f, 1.48f, 0.02f),
-                  {0.15f, 0.18f, 0.14f}, bronzeLight);
-    DrawCylinderEx(facePoint(0.0f, 1.49f, 0.11f),
-                   facePoint(0.0f, 1.46f, 0.205f),
-                   0.034f, 0.017f, 7, bronzeLight);
-    drawEllipsoid(facePoint(0.0f, 1.405f, 0.142f),
-                  {0.060f, 0.018f, 0.023f}, bronzeDark);
-    // Low, strongly side-parted hair preserves the figure's silhouette.
-    drawEllipsoid(facePoint(0.025f, 1.615f, -0.005f),
-                  {0.155f, 0.055f, 0.14f}, bronzeDark, 0.08f);
-    drawYawCube(facePoint(-0.075f, 1.59f, 0.075f),
-                {0.13f, 0.045f, 0.09f}, -0.245f, bronzeDark);
-    if (!shadowPass)
-    {
-        for (float side : {-1.0f, 1.0f})
-            DrawSphereEx(facePoint(side * 0.065f, 1.51f, 0.128f),
-                         0.013f, 6, 7, Color{12, 13, 12, 255});
-    }
-}
-
-void drawGermanBaseGeometry(const StageMap &map, bool alive,
-                            bool shadowPass)
-{
-    constexpr float centerX = kGovernmentBaseCenter.x;
-    constexpr float centerZ = kGovernmentBaseCenter.z;
-    const bool steelVisible = alive && map.governmentSteelVisible();
-    const unsigned char wallMaterial = steelVisible ? 2 : 7;
-    const Color sandstone = shadowPass
-                                ? WHITE
-                                : materialColor(steelVisible
-                                                    ? Color{91, 111, 118, 255}
-                                                    : alive ? Color{176, 163, 142, 255}
-                                                            : Color{84, 81, 75, 255},
-                                                wallMaterial);
-    const Color sandstoneLight = shadowPass
-                                     ? WHITE
-                                     : materialColor(
-                                           steelVisible
-                                               ? Color{163, 184, 190, 255}
-                                               : alive ? Color{216, 203, 179, 255}
-                                                       : Color{112, 106, 96, 255},
-                                           wallMaterial);
-    const Color sandstoneDark = shadowPass
-                                    ? WHITE
-                                    : materialColor(
-                                          steelVisible
-                                              ? Color{45, 58, 64, 255}
-                                              : Color{103, 96, 85, 255},
-                                          wallMaterial);
-    const Color roof = shadowPass
-                           ? WHITE
-                           : materialColor(steelVisible
-                                               ? Color{55, 72, 79, 255}
-                                               : Color{63, 77, 69, 255},
-                                           2);
-    const Color glass = shadowPass
-                            ? WHITE
-                            : materialColor(Color{43, 66, 71, 255}, 4);
-
-    drawYawCube({centerX, 0.045f, centerZ},
-                {4.55f, 0.09f, 4.18f}, 0.0f,
-                shadowPass ? WHITE
-                           : materialColor(Color{105, 101, 92, 255}, 7));
-    DrawCylinder({centerX, 0.095f, centerZ}, 1.01f, 1.01f, 0.045f,
-                 24, shadowPass ? WHITE
-                                : materialColor(Color{79, 88, 75, 255}, 7));
-
-    bool northWingStanding = false;
-    for (int index = 0; index < kGovernmentWallCount; ++index)
-    {
-        const GovernmentWallSegment segment = governmentWallSegment(index);
-        const int health = map.governmentWallHealth(index);
-        northWingStanding = northWingStanding ||
-                            (segment.outward.z < -0.35f && health > 0);
-        if (health <= 0)
-        {
-            drawNationalBaseRubble(segment, sandstone,
-                                   sandstoneDark, roof);
-            continue;
-        }
-
-        const float wallLength = segment.halfLength * 2.0f;
-        const bool entranceWing = segment.outward.z > 0.80f;
-        drawYawCube({segment.center.x, 0.37f, segment.center.z},
-                    {wallLength, 0.52f, 1.04f},
-                    segment.yaw, sandstone);
-        drawYawCube({segment.center.x, 0.145f, segment.center.z},
-                    {wallLength + 0.04f, 0.11f, 1.12f},
-                    segment.yaw, sandstoneDark);
-        drawYawCube({segment.center.x, 0.65f, segment.center.z},
-                    {wallLength + 0.05f, 0.075f, 1.11f},
-                    segment.yaw, sandstoneLight);
-        drawYawCube({segment.center.x, 0.735f, segment.center.z},
-                    {wallLength + 0.02f, 0.10f, 1.06f},
-                    segment.yaw, roof);
-
-        for (int bay = -2; bay <= 2; ++bay)
-        {
-            const float offset = static_cast<float>(bay) *
-                                 segment.halfLength * 0.31f;
-            const Vector3 pilaster{
-                segment.center.x + segment.along.x * offset +
-                    segment.outward.x * 0.545f,
-                0.41f,
-                segment.center.z + segment.along.z * offset +
-                    segment.outward.z * 0.545f};
-            drawYawCube(pilaster, {0.055f, 0.43f, 0.045f},
-                        segment.yaw, sandstoneLight);
-            if (!shadowPass && !(entranceWing && bay == 0))
-            {
-                const Vector3 window{
-                    pilaster.x + segment.along.x *
-                                      segment.halfLength * 0.15f +
-                        segment.outward.x * 0.018f,
-                    0.42f,
-                    pilaster.z + segment.along.z *
-                                      segment.halfLength * 0.15f +
-                        segment.outward.z * 0.018f};
-                if (steelVisible)
-                {
-                    drawYawCube(window, {0.22f, 0.29f, 0.028f},
-                                segment.yaw, sandstoneLight);
-                    drawYawCube(window, {0.035f, 0.25f, 0.035f},
-                                segment.yaw, sandstoneDark);
-                }
-                else
-                {
-                    drawYawCube(window, {0.17f, 0.22f, 0.026f},
-                                segment.yaw, glass);
-                    DrawCylinderEx(
-                        {window.x - segment.along.x * 0.085f,
-                         window.y + 0.11f,
-                         window.z - segment.along.z * 0.085f},
-                        {window.x + segment.along.x * 0.085f,
-                         window.y + 0.11f,
-                         window.z + segment.along.z * 0.085f},
-                        0.025f, 0.025f, 7, sandstoneDark);
-                }
-            }
-        }
-
-        if (entranceWing)
-        {
-            const Vector3 portico{
-                segment.center.x + segment.outward.x * 0.69f,
-                0.42f,
-                segment.center.z + segment.outward.z * 0.69f};
-            drawYawCube({portico.x, 0.71f, portico.z},
-                        {1.20f, 0.10f, 0.56f},
-                        segment.yaw, sandstoneLight);
-            drawYawCube({portico.x, 0.77f, portico.z},
-                        {1.28f, 0.055f, 0.62f},
-                        segment.yaw, roof);
-            for (float column : {-0.45f, -0.15f, 0.15f, 0.45f})
-            {
-                const Vector3 foot{
-                    portico.x + segment.along.x * column +
-                        segment.outward.x * 0.12f,
-                    0.15f,
-                    portico.z + segment.along.z * column +
-                        segment.outward.z * 0.12f};
-                DrawCylinderEx(foot, {foot.x, 0.69f, foot.z},
-                               0.050f, 0.044f, 9, sandstoneLight);
-                DrawCylinder({foot.x, 0.13f, foot.z},
-                             0.068f, 0.068f, 0.04f, 9, sandstoneDark);
-            }
-            if (!shadowPass)
-            {
-                const Vector3 door{
-                    segment.center.x + segment.outward.x * 0.555f,
-                    0.35f,
-                    segment.center.z + segment.outward.z * 0.555f};
-                drawYawCube(door, {0.34f, 0.36f, 0.026f},
-                            segment.yaw, glass);
-            }
-        }
-
-        const int missingHealth = kGovernmentWallMaximumHealth - health;
-        if (!shadowPass && missingHealth > 0)
-        {
-            for (int crack = 0; crack < missingHealth; ++crack)
-            {
-                const float offset = (static_cast<float>(crack) -
-                                      (missingHealth - 1) * 0.5f) *
-                                     0.25f;
-                drawYawCube(
-                    {segment.center.x + segment.along.x * offset +
-                         segment.outward.x * 0.59f,
-                     0.35f + (crack % 2) * 0.10f,
-                     segment.center.z + segment.along.z * offset +
-                         segment.outward.z * 0.59f},
-                    {0.035f, 0.24f, 0.025f},
-                    segment.yaw, sandstoneDark);
-            }
-        }
-    }
-
-    if (northWingStanding)
-    {
-        constexpr Vector3 domeCenter{centerX, 0.79f, centerZ - 1.30f};
-        DrawCylinder({domeCenter.x, 0.70f, domeCenter.z},
-                     0.53f, 0.57f, 0.11f, 18, sandstoneDark);
-        drawEllipsoid(domeCenter, {0.50f, 0.25f, 0.42f},
-                      steelVisible ? roof : glass);
-        DrawCylinder({domeCenter.x, 0.97f, domeCenter.z},
-                     0.09f, 0.12f, 0.10f, 12, roof);
-        DrawSphereEx({domeCenter.x, 1.08f, domeCenter.z},
-                     0.075f, 8, 9, roof);
-        if (!shadowPass)
-        {
-            for (int rib = 0; rib < 6; ++rib)
-            {
-                const float angle = static_cast<float>(rib) * kPi / 3.0f;
-                DrawCylinderEx(
-                    {domeCenter.x + std::sin(angle) * 0.37f,
-                     0.81f,
-                     domeCenter.z + std::cos(angle) * 0.31f},
-                    {domeCenter.x + std::sin(angle) * 0.12f,
-                     1.00f,
-                     domeCenter.z + std::cos(angle) * 0.10f},
-                    0.018f, 0.011f, 6, sandstoneLight);
-            }
-        }
-    }
-
-    drawHitlerMonument(alive, shadowPass);
-}
-
 void drawBase(const StageMap &map, bool alive, bool shadowPass = false)
 {
-    switch (map.governmentBaseTheme())
-    {
-    case GovernmentBaseTheme::SovietRingCastle:
-        drawSovietBaseGeometry(map, alive, shadowPass);
-        break;
-    case GovernmentBaseTheme::GermanParliament:
-        drawGermanBaseGeometry(map, alive, shadowPass);
-        break;
-    case GovernmentBaseTheme::UnitedStatesPentagon:
-    default:
-        drawUnitedStatesBaseGeometry(map, alive, shadowPass);
-        break;
-    }
+    tanks3d::base_model::draw(map, alive, shadowPass);
 }
 
 void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity)
 {
     const bool wheeled = enemy && ((identity % 4 + 4) % 4) == 1;
-    const Color outer{6, 8, 5, 58};
-    const Color inner{6, 8, 5, 92};
+    const Color outer{12, 17, 12, 38};
+    const Color inner{12, 17, 12, 64};
     rlPushMatrix();
     rlTranslatef(position.x, 0.0f, position.z);
     rlRotatef(-yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
@@ -5387,7 +4092,7 @@ void drawBoatFloatation(XZ position, float yaw)
 
 // Buildings retain compact shadow casters, while vehicles reuse the exact
 // visible geometry. This keeps model-specific tread, muzzle, attachment, and
-// elastic-crawl silhouettes synchronized with the sun shadow.
+// suspension silhouettes synchronized with the sun shadow.
 void drawShadowCasters(const Game3D &game, TankAssets &tankAssets)
 {
     const StageMap &map = game.map();
@@ -5437,10 +4142,11 @@ void drawShadowCasters(const Game3D &game, TankAssets &tankAssets)
 }
 
 void drawWorld(const Game3D &game, TankAssets &tankAssets,
-               const EnvironmentAssets &environment)
+               const EnvironmentAssets &environment,
+               const TerrainView &view = {})
 {
     environment.drawBackdropCity();
-    drawTerrain(game.map(), environment);
+    drawTerrain(game.map(), environment, view);
     drawBase(game.map(), game.baseAlive());
 
     for (const Player &player : game.players())
@@ -6441,9 +5147,9 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
         const float offset = (static_cast<float>(index) -
                               static_cast<float>(playerCount - 1) * 0.5f) *
                              spacing;
-        // The cardinal preview camera's screen-right basis is world +x, so
-        // co-op tanks share one horizontal visual baseline.
-        return XZ{13.0f + offset, 13.0f};
+        // Align the models with the oblique report camera's screen-right
+        // axis so both players sit on the same visual baseline.
+        return XZ{13.0f + offset * 0.77f, 13.0f - offset * 0.64f};
     };
 
     lighting.updateShadowMap(
@@ -6451,8 +5157,7 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
             for (int index = 0; index < game.playerCount(); ++index)
             {
                 const Player &player = game.players()[static_cast<std::size_t>(index)];
-                drawTankModel(tankAssets, previewPosition(index),
-                              kPi,
+                drawTankModel(tankAssets, previewPosition(index), kPi,
                               playerColor(index), false, player.level, 0.0f,
                               player.id, true, player.nation, true);
             }
@@ -6492,11 +5197,26 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
         0.04f, 8, 2.0f, Color{132, 112, 58, 255});
 
     Camera3D previewCamera{};
-    previewCamera.position = {13.0f, 2.82f, 20.53f};
-    previewCamera.target = {13.0f, -0.45f, 13.0f};
+    previewCamera.position = {17.8f, 3.85f, 18.8f};
+    previewCamera.target = {13.0f, 0.60f, 13.0f};
     previewCamera.up = {0.0f, 1.0f, 0.0f};
-    previewCamera.fovy = playerCount == 1 ? 5.6f : 7.4f;
+    // The projection still covers the full window while this scene is clipped
+    // into the report's shallow panel. Fit a 2.1-unit model envelope there,
+    // then translate the camera along its actual up axis to center that panel.
+    const float previewHeight = static_cast<float>(stageBottom - stageTop);
+    previewCamera.fovy = static_cast<float>(screenHeight) * 2.1f / previewHeight;
     previewCamera.projection = CAMERA_ORTHOGRAPHIC;
+    const Vector3 previewForward = Vector3Normalize(
+        Vector3Subtract(previewCamera.target, previewCamera.position));
+    const Vector3 previewRight = Vector3Normalize(
+        Vector3CrossProduct(previewForward, previewCamera.up));
+    const Vector3 previewUp = Vector3CrossProduct(previewRight, previewForward);
+    const float panelCenter = (stageTop + stageBottom) * 0.5f;
+    const float cameraOffset = (panelCenter - screenHeight * 0.5f) *
+                               previewCamera.fovy / screenHeight;
+    const Vector3 previewShift = Vector3Scale(previewUp, cameraOffset);
+    previewCamera.position = Vector3Add(previewCamera.position, previewShift);
+    previewCamera.target = Vector3Add(previewCamera.target, previewShift);
     BeginScissorMode(static_cast<int>(previewLeft) + 2, stageTop + 2,
                      std::max(1, static_cast<int>(previewWidth) - 4),
                      std::max(1, stageBottom - stageTop - 4));
@@ -6715,11 +5435,12 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
     }
     const int screenWidth = std::max(1, GetScreenWidth());
     const int screenHeight = std::max(1, GetScreenHeight());
-    // Fixed classic framing means local co-op shares one full-screen camera
-    // instead of duplicating the same battlefield into two narrow views.
+    // Local co-op shares one full-screen camera that tracks both players.
     if (!viewTargets.ensure(1, screenWidth, screenHeight))
         return false;
     const Camera3D sharedCamera = game.cameraForPlayer(0);
+    const TerrainView terrainView(sharedCamera, viewTargets.widths[0],
+                                   viewTargets.height);
 
     // The fixed sun and arena share one stable orthographic shadow map across
     // the shared player camera. High refreshes moving silhouettes at 60 Hz;
@@ -6739,7 +5460,7 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                            Color{255, 236, 188, 85}, Color{255, 239, 205, 0});
         BeginMode3D(sharedCamera);
         lighting.begin(sharedCamera.position);
-        drawWorld(game, tankAssets, environment);
+        drawWorld(game, tankAssets, environment, terrainView);
         lighting.end();
         drawEnemyCreationWarnings(game, sharedCamera);
         for (const Pickup &pickup : game.bonuses())
@@ -6747,7 +5468,7 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                              static_cast<float>(GetTime()));
         drawEmissiveBattleFx(game);
         drawForestForeground(game.map(), environment,
-                             game.cameraYawDegrees());
+                             game.cameraYawDegrees(), terrainView);
         EndMode3D();
         EndTextureMode();
     }
