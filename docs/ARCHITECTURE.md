@@ -578,9 +578,17 @@ render/     Renderer, HUD, lighting, models, GPU resources
 tests/      focused rule and session tests
 ```
 
-The raylib-free input adapter converts gamepad snapshots, deadzones, and stable
-P1/P2 assignments into the same player commands as the keyboard adapter. On
-macOS, the Objective-C++ platform edge receives `GameController.framework`
+The raylib-free input adapter converts gamepad snapshots, deadzones, selected
+camera azimuth, and stable P1/P2 assignments into the same world-cardinal
+player commands as the keyboard adapter. During battle, analogue input rotates
+continuously with the selectable -45-to-+45-degree camera; endpoint ties retain
+four distinct main axes. D-pad, keyboard, and menu commands remain unrotated
+world-cardinal controls. Camera elevation is presentation-only, ranges from
+40 to 70 degrees, and orbits at a fixed distance; it does not alter the input
+mapping or deterministic session digest. A gameplay-to-menu transition suppresses the stick
+until release so the yaw reset cannot synthesize menu navigation. On macOS,
+the Objective-C++ platform edge receives
+`GameController.framework`
 callbacks on a serial user-interactive queue and latches edges for frame-loop
 consumption. This avoids both the silent Bluetooth Switch Pro path in GLFW and
 main-thread render stalls while keeping Apple types out of application and

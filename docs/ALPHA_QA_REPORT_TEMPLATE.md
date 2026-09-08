@@ -208,8 +208,16 @@ one- and two-player contexts.
 | Selected HP and enemy tuning take effect after start/restart | — | NOT RUN | NOT RUN | |
 | HP 1 disables Bandage and normal HP restores eligibility | — | NOT RUN | NOT RUN | |
 | Advanced-menu `Esc` preserves every selected value | NOT RUN | — | — | |
+| Camera horizontal rotation covers -45° through +45° in 5° steps | NOT RUN | — | — | |
+| Camera elevation covers 40° through 70° in 5° steps | NOT RUN | — | — | |
+| Camera defaults are 0° horizontal / 50° elevation; reset restores both | NOT RUN | — | — | |
+| Both camera angles survive Advanced-menu Esc, start, and restart | NOT RUN | NOT RUN | NOT RUN | |
+| Camera framing across angle and window samples below | — | NOT RUN | NOT RUN | |
+| Solo camera follows small movements continuously and recenters on reset | — | NOT RUN | — | |
+| Co-op camera follows the midpoint, widens for separation, and handles respawn | — | — | NOT RUN | |
 
-The v2 profile binds these eight checks through
+The current v2 profile (`interactive_controls_revision: camera-controller-v1`)
+binds these fifteen checks through
 `advanced_settings_checks`; a `published_controls` PASS must confirm them in
 addition to every binding below. Do not treat
 `main_menu_and_advanced_settings` as covered by a menu image. The v2 interactive
@@ -233,6 +241,20 @@ The three contexts have fixed responsibilities:
 - Two players: repeat P1 and shared hotkeys, exercise every P2 movement/fire
   binding, and repeat runtime tuning and Bandage eligibility with both players.
 
+The controller and camera checks below also belong to these contexts. An absent
+controller leaves those checks `NOT RUN` or `BLOCKED`; keyboard-only play and
+injected input tests do not satisfy the hardware observations.
+
+| Check | Main menu | One player | Two players | Evidence / notes |
+| --- | --- | --- | --- | --- |
+| Controller navigation, both confirms, Back cancel, and top-face reset | NOT RUN | — | — | |
+| Every controller fire binding, Start pause/resume, Back return, no face-button exit | — | NOT RUN | NOT RUN | |
+| Controller assignment stays with each connected player | — | NOT RUN | NOT RUN | |
+| Disconnect/reconnect clears held input and restores usable controls | NOT RUN | NOT RUN | NOT RUN | |
+| Stick follows the view at every yaw; D-pad/keyboard retain world-cardinal lanes | — | NOT RUN | NOT RUN | |
+| Returning to setup suppresses a held stick until release | — | NOT RUN | NOT RUN | |
+| Stick release is recognized while D-pad is held; switching back works immediately | — | NOT RUN | NOT RUN | |
+
 Every `or` names alternatives that are all publicly promised and therefore all
 must be tested. `F11` means borderless, not exclusive fullscreen. Because `F8`
 has no persistent HUD label, capture its visual change and the `high-quality`
@@ -243,6 +265,45 @@ log artifact.
 | Tester / UTC time | Candidate-bound M/1P/2P recordings and sessions | Result |
 | --- | --- | --- |
 | NOT RECORDED | NOT ATTACHED | NOT RUN |
+
+### Camera and controller procedure
+
+For `camera_framing_all_angles_and_window_sizes`, sweep all 19 horizontal
+values at elevation 50°, then all seven elevations at horizontal 0°. Check the
+four endpoint combinations (horizontal ±45° with elevation 40°/70°) as well.
+Repeat the default and those four endpoint combinations at 960×540, 1280×720,
+900×900, 800×900, and 1680×720 window sizes. These are sample sizes, not a
+minimum-size or exhaustive display-compatibility claim. Confirm that active
+tanks, HUD, and minimap remain visible; inspect forest transparency, terrain
+edges, national bases, and shadows for clipping or ordering defects. Record the
+window sizes and angle samples in the observation notes and context recording.
+
+In solo play, drive toward all four map edges and make small movements to
+check continuous follow, then restart and respawn. In co-op, separate the tanks
+along both map diagonals, drive toward opposite edges, and let one player die
+and respawn. Confirm midpoint tracking, both tanks remaining in view, and
+smooth zoom changes. Keyboard movement must not rotate with the camera.
+
+At every horizontal value, test each connected controller's four main stick
+directions and turns between lanes. Confirm D-pad priority while the stick is
+deflected; repeat keyboard and D-pad movement at the endpoint angles. Test all
+four fire inputs separately: bottom face, left face, right shoulder, and right
+trigger. Test bottom face and Start confirmation, Start pause/resume, Back
+return/cancel, and top-face Advanced reset. On Nintendo layouts these are
+`B`, `Y`, `R`, `ZR`, `+`, `-`, and `X`. No face button may exit the game. In
+two-player mode verify the second controller controls P2 independently;
+disconnect/reconnect each controller in turn while the other keeps playing.
+Also disconnect with movement/fire held, checking for stuck input in both
+gameplay and menus.
+
+For both return-menu checks, keep the stick deflected while leaving battle;
+the held stick must not cause setup navigation until it crosses its release
+threshold; D-pad navigation remains available. First release and re-engage
+normally. Then repeat while holding
+the D-pad: center the stick, deflect it again, and release the D-pad. The new
+stick direction must navigate immediately without a second recenter. A stick
+that never centered must remain suppressed. Record both sequences separately
+in each player-mode recording; a generic “controller works” note is inadequate.
 
 ## National Base Matrix
 

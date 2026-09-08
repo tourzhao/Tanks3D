@@ -142,6 +142,19 @@ PUBLISHED_CONTROL_CHECKS = [
     "n_b_stage_navigation",
     "q_or_escape_exits_from_setup",
 ]
+# The frozen v1 profile predates the source-build camera/controller revision.
+# Keep its checks unchanged; historical v2 records use their tagged toolchain.
+LEGACY_PUBLISHED_CONTROL_CHECKS = list(PUBLISHED_CONTROL_CHECKS)
+INTERACTIVE_CONTROLS_REVISION = "camera-controller-v1"
+PUBLISHED_CONTROL_CHECKS += [
+    "controller_menu_navigation_confirm_cancel_reset",
+    "controller_fire_pause_cancel_no_face_exit",
+    "controller_stable_player_assignments",
+    "controller_disconnect_reconnect_without_stuck_input",
+    "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+    "return_menu_held_stick_release_without_dpad",
+    "return_menu_held_stick_release_with_dpad_overlap",
+]
 ADVANCED_SETTINGS_CHECKS = [
     "default_hp_3_and_reset_restores_defaults",
     "player_hp_range_1_to_6_step_1",
@@ -151,6 +164,13 @@ ADVANCED_SETTINGS_CHECKS = [
     "selected_tuning_applies_after_start_and_restart",
     "hp_1_disables_bandage_and_normal_hp_restores_it",
     "escape_preserves_selected_values",
+    "camera_yaw_range_minus_45_to_plus_45_step_5",
+    "camera_elevation_range_40_to_70_step_5",
+    "camera_defaults_yaw_0_elevation_50_and_reset",
+    "camera_angles_preserved_on_escape_start_restart",
+    "camera_framing_all_angles_and_window_sizes",
+    "solo_camera_continuous_follow_and_reset",
+    "coop_camera_midpoint_separation_and_respawn",
 ]
 PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS = [
     {
@@ -161,12 +181,18 @@ PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS = [
             "menu_arrow_or_wasd_navigation",
             "menu_enter_or_space_confirm",
             "q_or_escape_exits_from_setup",
+            "controller_menu_navigation_confirm_cancel_reset",
+            "controller_disconnect_reconnect_without_stuck_input",
             "default_hp_3_and_reset_restores_defaults",
             "player_hp_range_1_to_6_step_1",
             "enemy_speed_range_minus_30_to_plus_30_step_5",
             "fire_frequency_range_minus_30_to_plus_30_step_5",
             "spawn_pace_range_minus_30_to_plus_30_step_5",
             "escape_preserves_selected_values",
+            "camera_yaw_range_minus_45_to_plus_45_step_5",
+            "camera_elevation_range_40_to_70_step_5",
+            "camera_defaults_yaw_0_elevation_50_and_reset",
+            "camera_angles_preserved_on_escape_start_restart",
         ],
     },
     {
@@ -182,8 +208,17 @@ PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS = [
             "f8_quality_toggle",
             "f11_borderless_toggle",
             "n_b_stage_navigation",
+            "controller_fire_pause_cancel_no_face_exit",
+            "controller_stable_player_assignments",
+            "controller_disconnect_reconnect_without_stuck_input",
+            "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+            "return_menu_held_stick_release_without_dpad",
+            "return_menu_held_stick_release_with_dpad_overlap",
             "selected_tuning_applies_after_start_and_restart",
             "hp_1_disables_bandage_and_normal_hp_restores_it",
+            "camera_angles_preserved_on_escape_start_restart",
+            "camera_framing_all_angles_and_window_sizes",
+            "solo_camera_continuous_follow_and_reset",
         ],
     },
     {
@@ -201,8 +236,17 @@ PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS = [
             "f8_quality_toggle",
             "f11_borderless_toggle",
             "n_b_stage_navigation",
+            "controller_fire_pause_cancel_no_face_exit",
+            "controller_stable_player_assignments",
+            "controller_disconnect_reconnect_without_stuck_input",
+            "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+            "return_menu_held_stick_release_without_dpad",
+            "return_menu_held_stick_release_with_dpad_overlap",
             "selected_tuning_applies_after_start_and_restart",
             "hp_1_disables_bandage_and_normal_hp_restores_it",
+            "camera_angles_preserved_on_escape_start_restart",
+            "camera_framing_all_angles_and_window_sizes",
+            "coop_camera_midpoint_separation_and_respawn",
         ],
     },
 ]
@@ -723,7 +767,7 @@ CANONICAL_REQUIREMENTS_V1: Dict[str, Any] = {
     "pickup_requirements": PICKUP_REQUIREMENTS,
     "settlement_ids": SETTLEMENT_IDS,
     "report_metadata_keys": REPORT_METADATA_KEYS,
-    "published_control_checks": PUBLISHED_CONTROL_CHECKS,
+    "published_control_checks": LEGACY_PUBLISHED_CONTROL_CHECKS,
     "interactive_evidence_keys": INTERACTIVE_EVIDENCE_KEYS,
     "known_issue_conclusions": KNOWN_ISSUE_CONCLUSIONS,
     "known_issue_severities": KNOWN_ISSUE_SEVERITIES,
@@ -758,6 +802,8 @@ CANONICAL_REQUIREMENTS_V2.update(
     {
         "schema": "tanks3d-release-requirements-v2",
         "profile": "macos-alpha-v2",
+        "interactive_controls_revision": INTERACTIVE_CONTROLS_REVISION,
+        "published_control_checks": PUBLISHED_CONTROL_CHECKS,
         "advanced_settings_checks": ADVANCED_SETTINGS_CHECKS,
         "published_control_context_requirements": (
             PUBLISHED_CONTROL_CONTEXT_REQUIREMENTS
@@ -1031,6 +1077,17 @@ def compare_canonical(actual: Any, expected: Any, context: str) -> None:
 
 
 def validate_requirements(requirements: Any, profile: str) -> None:
+    if profile == "macos-alpha-v2" and (
+        not isinstance(requirements, dict)
+        or requirements.get("interactive_controls_revision")
+        != INTERACTIVE_CONTROLS_REVISION
+    ):
+        raise VerificationError(
+            "macos-alpha-v2 requires interactive_controls_revision {}; "
+            "verify historical records with their original tagged toolchain".format(
+                INTERACTIVE_CONTROLS_REVISION
+            )
+        )
     canonical = {
         "macos-alpha-v1": CANONICAL_REQUIREMENTS_V1,
         "macos-alpha-v2": CANONICAL_REQUIREMENTS_V2,
@@ -5649,8 +5706,11 @@ def verify_release_status(root: Path, status_path: Path, allow_blocked: bool) ->
         "status.published_controls",
         "published_controls_match",
         None,
-        PUBLISHED_CONTROL_CHECKS
-        + (ADVANCED_SETTINGS_CHECKS if requirements_profile == "macos-alpha-v2" else []),
+        (
+            PUBLISHED_CONTROL_CHECKS + ADVANCED_SETTINGS_CHECKS
+            if requirements_profile == "macos-alpha-v2"
+            else LEGACY_PUBLISHED_CONTROL_CHECKS
+        ),
         [
             "main_menu_and_advanced_settings",
             "one_player_gameplay",

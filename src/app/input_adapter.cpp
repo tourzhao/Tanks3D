@@ -10,7 +10,8 @@ namespace
 using core::CardinalDirection;
 using game::DirectionButtonFrame;
 
-constexpr float kInverseSquareRootOfTwo = 0.70710678118f;
+constexpr float kDegreesToRadians = 0.01745329251994329577f;
+constexpr float kInverseSquareRootOfTwo = 0.70710678118654752440f;
 
 bool active(const ButtonSnapshot &button)
 {
@@ -61,7 +62,8 @@ CardinalDirection verticalDirection(float y)
     return y < 0.0f ? CardinalDirection::North : CardinalDirection::South;
 }
 
-CardinalDirection newlyEngagedDirection(float x, float y)
+CardinalDirection newlyEngagedDirection(
+    float x, float y, float originalX, float originalY)
 {
     const float absoluteX = std::fabs(x);
     const float absoluteY = std::fabs(y);
@@ -69,18 +71,29 @@ CardinalDirection newlyEngagedDirection(float x, float y)
         kGamepadStickEngageThreshold * kGamepadStickEngageThreshold;
     if (squaredMagnitude(x, y) < engageSquared)
         return CardinalDirection::None;
-    // Vertical wins an exact 45-degree tie. The fixed choice prevents tiny
-    // platform-dependent differences from producing non-deterministic input.
+    // At the +/-45-degree camera endpoints, a screen-cardinal stick direction
+    // lies exactly between two world lanes. Prefer its original dominant axis
+    // so Up/Right/Down/Left remain four distinct, predictable choices. Exact
+    // diagonal input retains the classic deterministic vertical tie-break.
+    const float largerAxis = std::max(absoluteX, absoluteY);
+    const float smallerAxis = std::min(absoluteX, absoluteY);
+    if (largerAxis <= smallerAxis * kGamepadStickTurnAxisRatio)
+    {
+        return std::fabs(originalX) > std::fabs(originalY)
+                   ? horizontalDirection(originalX)
+                   : verticalDirection(originalY);
+    }
     return absoluteX > absoluteY ? horizontalDirection(x)
                                  : verticalDirection(y);
 }
 
 CardinalDirection resolveStickDirection(
-    float x, float y, CardinalDirection previous)
+    float x, float y, float originalX, float originalY,
+    CardinalDirection previous)
 {
     const bool previousHeld = directionStillHeld(previous, x, y);
     if (!previousHeld)
-        return newlyEngagedDirection(x, y);
+        return newlyEngagedDirection(x, y, originalX, originalY);
 
     const float currentMagnitude = horizontal(previous) ? std::fabs(x)
                                                         : std::fabs(y);
@@ -130,6 +143,33 @@ void mergeDirectionButton(DirectionButtonFrame &target,
     target.pressed = target.pressed || source.pressed;
 }
 } // namespace
+
+int normalizedCameraYawDegrees(int requestedDegrees)
+{
+    return std::clamp(requestedDegrees, kCameraYawMinimumDegrees,
+                      kCameraYawMaximumDegrees);
+}
+
+CameraPlanarBasis cameraPlanarBasis(int requestedDegrees)
+{
+    const int degrees = normalizedCameraYawDegrees(requestedDegrees);
+    if (degrees == 0)
+        return {};
+    if (degrees == kCameraYawMaximumDegrees)
+    {
+        return {kInverseSquareRootOfTwo, -kInverseSquareRootOfTwo,
+                kInverseSquareRootOfTwo, kInverseSquareRootOfTwo};
+    }
+    if (degrees == kCameraYawMinimumDegrees)
+    {
+        return {kInverseSquareRootOfTwo, kInverseSquareRootOfTwo,
+                -kInverseSquareRootOfTwo, kInverseSquareRootOfTwo};
+    }
+    const float radians = static_cast<float>(degrees) * kDegreesToRadians;
+    const float sine = std::sin(radians);
+    const float cosine = std::cos(radians);
+    return {cosine, -sine, sine, cosine};
+}
 
 void GamepadAssignments::update(
     const std::array<bool, kPhysicalGamepadSlotCount> &available,
@@ -196,18 +236,33 @@ int GamepadAssignments::playerIndexForPhysicalSlot(
 
 GamepadActionFrame mapGamepadInput(
     const GamepadSnapshot &snapshot, GamepadInputState &state,
-    GamepadStickOrientation orientation)
+    int cameraYawDegrees)
 {
     GamepadActionFrame actions;
-    if (state.stickOrientation != orientation)
+    const int normalizedYaw =
+        normalizedCameraYawDegrees(cameraYawDegrees);
+    if (state.cameraYawDegrees != normalizedYaw)
     {
         state.previousStickDirection = CardinalDirection::None;
-        state.stickOrientation = orientation;
+        state.cameraYawDegrees = normalizedYaw;
     }
     if (!snapshot.available)
     {
         state.previousStickDirection = CardinalDirection::None;
         return actions;
+    }
+
+    const float rawStickX = finiteAxis(snapshot.leftStickX);
+    const float rawStickY = finiteAxis(snapshot.leftStickY);
+    if (state.suppressStickUntilRelease)
+    {
+        // Observe a stick release even while the D-pad owns direction input.
+        // A later deflection can then take over as soon as the D-pad releases.
+        const float releaseSquared =
+            kGamepadStickReleaseThreshold * kGamepadStickReleaseThreshold;
+        if (squaredMagnitude(rawStickX, rawStickY) < releaseSquared)
+            state.suppressStickUntilRelease = false;
+        state.previousStickDirection = CardinalDirection::None;
     }
 
     const bool dpadActive = active(snapshot.dpadUp) ||
@@ -224,23 +279,17 @@ GamepadActionFrame mapGamepadInput(
         mapDigitalButton(actions.player.west, snapshot.dpadLeft);
         mapDigitalButton(actions.player.east, snapshot.dpadRight);
     }
-    else
+    else if (!state.suppressStickUntilRelease)
     {
-        const float rawStickX = finiteAxis(snapshot.leftStickX);
-        const float rawStickY = finiteAxis(snapshot.leftStickY);
-        const float stickX = orientation ==
-                                     GamepadStickOrientation::Isometric45
-                                 ? (rawStickX + rawStickY) *
-                                       kInverseSquareRootOfTwo
-                                 : rawStickX;
-        const float stickY = orientation ==
-                                     GamepadStickOrientation::Isometric45
-                                 ? (rawStickY - rawStickX) *
-                                       kInverseSquareRootOfTwo
-                                 : rawStickY;
+        const CameraPlanarBasis basis = cameraPlanarBasis(normalizedYaw);
+        const float stickX = rawStickX * basis.rightX +
+                             rawStickY * basis.offsetX;
+        const float stickY = rawStickX * basis.rightZ +
+                             rawStickY * basis.offsetZ;
         const CardinalDirection previousStick = state.previousStickDirection;
         const CardinalDirection stickDirection =
-            resolveStickDirection(stickX, stickY, previousStick);
+            resolveStickDirection(stickX, stickY, rawStickX, rawStickY,
+                                  previousStick);
         state.previousStickDirection = stickDirection;
         if (stickDirection != CardinalDirection::None)
         {

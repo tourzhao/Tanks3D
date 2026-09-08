@@ -1732,7 +1732,7 @@ inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
             }
 
             // Five chunky links wrap each end.  This is what makes each side
-            // read as one tall tread pod in the fixed 39-degree camera rather
+            // read as one tall tread pod in the elevated gameplay camera rather
             // than as several unrelated wheel discs.
             constexpr int wrapLinks = 5;
             for (float end : {-1.0f, 1.0f})

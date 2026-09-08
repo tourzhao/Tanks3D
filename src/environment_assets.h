@@ -12,7 +12,7 @@
 
 // Incremental environment art layer.  It owns only the authored ground
 // texture; the modular skyline is assembled from reusable architectural
-// pieces so it remains lightweight in the local isometric combat view.
+// pieces so it remains lightweight in the local tilted top-down combat view.
 class EnvironmentAssets
 {
 public:
@@ -382,6 +382,38 @@ public:
         rlTexCoord2f(0.0f, 13.0f);  rlVertex3f(0.0f, -0.052f, 26.0f);
         rlTexCoord2f(13.0f, 13.0f); rlVertex3f(26.0f, -0.052f, 26.0f);
         rlTexCoord2f(13.0f, 0.0f);  rlVertex3f(26.0f, -0.052f, 0.0f);
+        rlEnd();
+        rlSetTexture(0);
+    }
+
+    void drawArenaApron() const
+    {
+        constexpr float minimum = -51.0f;
+        constexpr float maximum = 77.0f;
+        constexpr float height = -0.105f;
+        if (!IsTextureValid(grass_))
+        {
+            DrawPlane({13.0f, height, 13.0f}, {128.0f, 128.0f},
+                      Color{45, 55, 46, 8});
+            return;
+        }
+
+        // Continue the arena's two-world-unit texture cadence beyond its
+        // collision boundary. The darker tint keeps the 0..26 playfield
+        // readable while a player-centered camera remains visually grounded
+        // near map edges.
+        rlSetTexture(grass_.id);
+        rlBegin(RL_QUADS);
+        rlColor4ub(118, 132, 112, 8);
+        rlNormal3f(0.0f, 1.0f, 0.0f);
+        rlTexCoord2f(minimum * 0.5f, minimum * 0.5f);
+        rlVertex3f(minimum, height, minimum);
+        rlTexCoord2f(minimum * 0.5f, maximum * 0.5f);
+        rlVertex3f(minimum, height, maximum);
+        rlTexCoord2f(maximum * 0.5f, maximum * 0.5f);
+        rlVertex3f(maximum, height, maximum);
+        rlTexCoord2f(maximum * 0.5f, minimum * 0.5f);
+        rlVertex3f(maximum, height, minimum);
         rlEnd();
         rlSetTexture(0);
     }

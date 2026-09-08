@@ -2,6 +2,7 @@
 """Tests for the explicit Alpha-v2 interactive evidence compiler."""
 
 from datetime import datetime, timedelta, timezone
+import copy
 import importlib.util
 import json
 import os
@@ -83,6 +84,7 @@ class CompilerFixture:
         self.profile = {
             "schema": compiler.REQUIREMENTS_SCHEMA,
             "profile": "macos-alpha-v2",
+            "interactive_controls_revision": compiler.INTERACTIVE_CONTROLS_REVISION,
             "interactive_observation_manifest_schema": (
                 compiler.OBSERVATION_MANIFEST_SCHEMA
             ),
@@ -378,6 +380,67 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
         write_json(self.fixture.manifest_path, manifest)
         self.fixture.assert_rejected_without_mutation()
 
+    def test_camera_controller_checks_are_required_in_each_applicable_context(self):
+        expected_contexts = {
+            "controller_menu_navigation_confirm_cancel_reset": {"main_menu"},
+            "controller_fire_pause_cancel_no_face_exit": {"one_player", "two_player"},
+            "controller_stable_player_assignments": {"one_player", "two_player"},
+            "controller_disconnect_reconnect_without_stuck_input": {
+                "main_menu", "one_player", "two_player"
+            },
+            "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad": {
+                "one_player", "two_player"
+            },
+            "return_menu_held_stick_release_without_dpad": {"one_player", "two_player"},
+            "return_menu_held_stick_release_with_dpad_overlap": {"one_player", "two_player"},
+            "camera_yaw_range_minus_45_to_plus_45_step_5": {"main_menu"},
+            "camera_elevation_range_40_to_70_step_5": {"main_menu"},
+            "camera_defaults_yaw_0_elevation_50_and_reset": {"main_menu"},
+            "camera_angles_preserved_on_escape_start_restart": {
+                "main_menu", "one_player", "two_player"
+            },
+            "camera_framing_all_angles_and_window_sizes": {"one_player", "two_player"},
+            "solo_camera_continuous_follow_and_reset": {"one_player"},
+            "coop_camera_midpoint_separation_and_respawn": {"two_player"},
+        }
+        manifest = self.fixture.valid_manifest()
+        control_rows = {
+            row["coverage_token"].split(":")[1]: row
+            for row in manifest["observations"]
+            if row["coverage_token"].startswith("controls:")
+        }
+        for check, contexts in expected_contexts.items():
+            self.assertEqual(
+                {name for name, row in control_rows.items() if check in row["required_checks"]},
+                contexts,
+                check,
+            )
+            for context in contexts:
+                with self.subTest(check=check, context=context):
+                    incomplete = copy.deepcopy(manifest)
+                    row = next(
+                        item for item in incomplete["observations"]
+                        if item["coverage_token"] == "controls:" + context
+                    )
+                    row["checks_confirmed"].remove(check)
+                    with self.assertRaisesRegex(compiler.CompileError, "checks_confirmed are not exact"):
+                        compiler.validate_manifest(incomplete, self.fixture.profile, CANDIDATE_SHA256)
+
+    def test_legacy_camera_free_plan_cannot_approve_current_controls(self):
+        manifest = self.fixture.valid_manifest()
+        # Match the historical 13 published and eight Advanced checks. Updating
+        # every old row to PASS must not attest the new camera/controller work.
+        old_checks = set(compiler.PUBLISHED_CONTROL_CHECKS[:13]) | set(
+            compiler.ADVANCED_SETTINGS_CHECKS[:8]
+        )
+        self.assertEqual(len(old_checks), 21)
+        for row in manifest["observations"]:
+            if row["coverage_token"].startswith("controls:"):
+                row["required_checks"] = [check for check in row["required_checks"] if check in old_checks]
+                row["checks_confirmed"] = list(row["required_checks"])
+        write_json(self.fixture.manifest_path, manifest)
+        self.fixture.assert_rejected_without_mutation()
+
     def test_pass_without_explicit_checks_is_rejected(self):
         manifest = self.fixture.valid_manifest()
         manifest["observations"][0]["checks_confirmed"] = []
@@ -392,6 +455,10 @@ class InteractiveEvidenceCompilerTests(unittest.TestCase):
 
     def test_control_context_contract_drift_is_rejected(self):
         mutations = (
+            lambda profile: profile.pop("interactive_controls_revision"),
+            lambda profile: profile.__setitem__(
+                "interactive_controls_revision", "historical-keyboard-only"
+            ),
             lambda profile: profile["published_control_context_requirements"][0].__setitem__(
                 "coverage_token", "controls:forged"
             ),

@@ -2455,6 +2455,63 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.write_status()
         self.assert_failed(fixture.run(), "checks_confirmed are not exact")
 
+    def test_historical_twenty_one_checks_cannot_approve_current_revision(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        requirements = fixture.requirements()
+        old_checks = (
+            requirements["published_control_checks"][:13]
+            + requirements["advanced_settings_checks"][:8]
+        )
+        self.assertEqual(len(old_checks), 21)
+        fixture.status["published_controls"]["checks_confirmed"] = old_checks
+        fixture.write_status()
+        for allow_blocked in (False, True):
+            with self.subTest(allow_blocked=allow_blocked):
+                self.assert_failed(
+                    fixture.run(allow_blocked=allow_blocked),
+                    "status.published_controls PASS checks_confirmed are not exact",
+                )
+
+    def test_historical_or_weakened_controls_revision_is_rejected(self):
+        for revision in (None, "historical-keyboard-only"):
+            with self.subTest(revision=revision):
+                fixture = self.new_fixture()
+                fixture.status["requirements"] = (
+                    "docs/release-requirements/macos-alpha-v2.json"
+                )
+                fixture.write_status()
+                path = fixture.root / fixture.status["requirements"]
+                requirements = json.loads(path.read_text(encoding="utf-8"))
+                if revision is None:
+                    requirements.pop("interactive_controls_revision")
+                else:
+                    requirements["interactive_controls_revision"] = revision
+                path.write_text(json.dumps(requirements), encoding="utf-8")
+                self.assert_failed(
+                    fixture.run(allow_blocked=True),
+                    "requires interactive_controls_revision camera-controller-v1",
+                )
+
+    def test_current_revision_cannot_remove_camera_check_from_profile(self):
+        fixture = self.new_fixture()
+        fixture.status["requirements"] = (
+            "docs/release-requirements/macos-alpha-v2.json"
+        )
+        fixture.write_status()
+        path = fixture.root / fixture.status["requirements"]
+        requirements = json.loads(path.read_text(encoding="utf-8"))
+        check = "camera_framing_all_angles_and_window_sizes"
+        requirements["advanced_settings_checks"].remove(check)
+        for context in requirements["published_control_context_requirements"]:
+            if check in context["checks"]:
+                context["checks"].remove(check)
+        path.write_text(json.dumps(requirements), encoding="utf-8")
+        self.assert_failed(
+            fixture.run(allow_blocked=True),
+            "requirements.advanced_settings_checks must contain exactly 15 entries",
+        )
+
     def test_ready_documents_cannot_retain_blocked_status(self):
         fixture = self.new_fixture()
         fixture.make_all_pass()
@@ -3084,7 +3141,60 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
             list(CONTROL_EVIDENCE_IDS),
         )
         self.assertEqual(
-            len(next_status["published_controls"]["checks_confirmed"]), 21
+            len(next_status["published_controls"]["checks_confirmed"]), 35
+        )
+        compiled_manifest = json.loads(
+            (output_dir / "observation-manifest.json").read_text(encoding="utf-8")
+        )
+        control_rows = {
+            item["coverage_token"].split(":")[1]: item
+            for item in compiled_manifest["observations"]
+            if item["coverage_token"].startswith("controls:")
+        }
+        battle_checks = {
+            "controller_fire_pause_cancel_no_face_exit",
+            "controller_stable_player_assignments",
+            "controller_disconnect_reconnect_without_stuck_input",
+            "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+            "return_menu_held_stick_release_without_dpad",
+            "return_menu_held_stick_release_with_dpad_overlap",
+            "camera_angles_preserved_on_escape_start_restart",
+            "camera_framing_all_angles_and_window_sizes",
+        }
+        expected_contexts = {
+            "main_menu": (
+                15,
+                {
+                    "controller_menu_navigation_confirm_cancel_reset",
+                    "controller_disconnect_reconnect_without_stuck_input",
+                    "camera_yaw_range_minus_45_to_plus_45_step_5",
+                    "camera_elevation_range_40_to_70_step_5",
+                    "camera_defaults_yaw_0_elevation_50_and_reset",
+                    "camera_angles_preserved_on_escape_start_restart",
+                },
+            ),
+            "one_player": (
+                19, battle_checks | {"solo_camera_continuous_follow_and_reset"}
+            ),
+            "two_player": (
+                21, battle_checks | {"coop_camera_midpoint_separation_and_respawn"}
+            ),
+        }
+        self.assertEqual(set(control_rows), set(expected_contexts))
+        for context, (count, camera_controller_checks) in expected_contexts.items():
+            with self.subTest(context=context):
+                row = control_rows[context]
+                self.assertEqual(len(row["required_checks"]), count)
+                self.assertTrue(
+                    camera_controller_checks.issubset(row["required_checks"])
+                )
+                self.assertEqual(row["checks_confirmed"], row["required_checks"])
+        self.assertEqual(
+            set(next_status["published_controls"]["checks_confirmed"]),
+            {
+                check for row in control_rows.values()
+                for check in row["checks_confirmed"]
+            },
         )
         one_player = next(
             item
