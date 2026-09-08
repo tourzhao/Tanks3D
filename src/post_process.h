@@ -193,7 +193,7 @@ void main()
     glow += glowAt(vec2( 0.00, -3.80))*0.03;
 
     float glowPulse = 1.0 + 0.012*sin(time*0.70);
-    vec3 exposed = (sourceLinear + glow*0.62*glowPulse)*1.12;
+    vec3 exposed = (sourceLinear + glow*0.24*glowPulse)*1.06;
     vec3 mapped = sqrt(max(acesApprox(exposed), vec3(0.0)));
     vec3 color = mapped;
 
@@ -204,7 +204,7 @@ void main()
     color *= mix(cool, warm, smoothstep(0.24, 0.80, luminance));
 
     vec2 centered = fragTexCoord*2.0 - 1.0;
-    float vignette = 1.0 - 0.16*smoothstep(0.30, 1.55, dot(centered, centered));
+    float vignette = 1.0 - 0.10*smoothstep(0.30, 1.55, dot(centered, centered));
     color *= vignette;
 
     finalColor = vec4(clamp(color, 0.0, 1.0), source.a)*colDiffuse*fragColor;

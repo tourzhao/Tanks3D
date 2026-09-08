@@ -3,6 +3,15 @@
 The root `LICENSE` applies only to project-owned portions. The materials below
 retain their original terms, which take precedence for those materials.
 
+## Arcade art direction
+
+The September 2026 procedural model revision takes stylistic inspiration from
+SNK's *Metal Slug*. The new vehicle, architecture and headquarters geometry is
+project-authored; no SNK game assets are distributed. *Metal Slug* and its
+associated marks belong to their respective rights holders. This project has
+no affiliation with or endorsement from SNK. The source-to-model mapping is
+recorded in `ASSET_LICENSES.md`.
+
 ## Upstream Tanks project
 
 Parts of the implementation and runtime audio were adapted from or developed

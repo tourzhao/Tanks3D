@@ -110,7 +110,7 @@ PURE_SOURCES := $(BONUS_SYSTEM_SOURCE) $(COMBAT_SYSTEM_SOURCE) \
 	$(STAGE_GENERATOR_SOURCE) \
 	$(STAGE_MAP_SOURCE)
 PURE_HEADERS := $(CORE_HEADERS) $(GAME_HEADERS)
-PRODUCTION_HEADERS := src/wwii_tank_model.h src/tank_assets.h src/battle_fx.h \
+PRODUCTION_HEADERS := src/wwii_tank_model.h src/tank_assets.h src/base_model.h src/battle_fx.h \
 	src/bonus_assets.h $(AUDIO_HEADERS) $(APP_HEADERS) $(PURE_HEADERS) \
 	$(PLATFORM_HEADERS) src/environment_assets.h src/post_process.h
 TEST_FILES := tests/test_support.h tests/stage_layout_expectations.h \
