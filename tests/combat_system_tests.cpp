@@ -40,7 +40,7 @@ using tanks3d::game::eventForShellCancellation;
 using tanks3d::game::eventsForPhysicalShellImpact;
 using tanks3d::game::governmentWallSegment;
 using tanks3d::game::kGovernmentBaseCenter;
-using tanks3d::game::kGovernmentCoreRadius;
+using tanks3d::game::kGovernmentCoreHalfSize;
 using tanks3d::game::kGovernmentWallCount;
 using tanks3d::game::kGovernmentWallMaximumHealth;
 using tanks3d::game::kDirectEnemyHitPoints;
@@ -912,7 +912,7 @@ int main()
     const bool insideWallsBreached = breachGovernmentWalls(insideCoreMap);
     bool insideBaseAlive = true;
     const XZ insideCorePosition{
-        kGovernmentBaseCenter.x + kGovernmentCoreRadius + kShellHalfSize -
+        kGovernmentBaseCenter.x + kGovernmentCoreHalfSize + kShellHalfSize -
             0.001f,
         kGovernmentBaseCenter.z};
     Shell insideCoreShell = testShell(insideCorePosition, {-8.0f, 0.0f},
@@ -935,7 +935,7 @@ int main()
     const bool outsideWallsBreached = breachGovernmentWalls(outsideCoreMap);
     bool outsideBaseAlive = true;
     const XZ outsideCorePosition{
-        kGovernmentBaseCenter.x + kGovernmentCoreRadius + kShellHalfSize +
+        kGovernmentBaseCenter.x + kGovernmentCoreHalfSize + kShellHalfSize +
             0.001f,
         kGovernmentBaseCenter.z};
     Shell outsideCoreShell = testShell(outsideCorePosition, {-8.0f, 0.0f},
@@ -974,17 +974,15 @@ int main()
     StageMap wallPriorityMap;
     wallPriorityMap.prepareShowcaseArena();
     bool wallPriorityBaseAlive = true;
-    const GovernmentWallSegment priorityWall = governmentWallSegment(0);
+    const GovernmentWallSegment priorityWall = governmentWallSegment(1);
     const XZ dualOverlapPosition =
-        kGovernmentBaseCenter +
-        priorityWall.outward *
-            (kGovernmentCoreRadius + kShellHalfSize - 0.05f);
+        priorityWall.center - priorityWall.outward * 0.45f;
     Shell wallPriorityShell = testShell(dualOverlapPosition,
                                        priorityWall.outward * -8.0f,
                                        ShellOwner::Enemy);
     const Shell wallPriorityBefore = wallPriorityShell;
     const int priorityWallHealthBefore =
-        wallPriorityMap.governmentWallHealth(0);
+        wallPriorityMap.governmentWallHealth(1);
     const CombatOutcome wallPriorityOutcome =
         resolveShellMapImpact(wallPriorityMap, wallPriorityShell);
     const CombatOutcome suppressedCoreOutcome =
@@ -995,7 +993,7 @@ int main()
                wallPriorityOutcome.target == CombatTarget::StageMap &&
                wallPriorityOutcome.impactKind ==
                    ImpactKind::GovernmentWall &&
-               wallPriorityMap.governmentWallHealth(0) ==
+               wallPriorityMap.governmentWallHealth(1) ==
                    priorityWallHealthBefore - 1 &&
                suppressedCoreOutcome.mapStopsShell() &&
                suppressedCoreOutcome.target == CombatTarget::StageMap &&

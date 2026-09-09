@@ -20,11 +20,12 @@ using tanks3d::game::ImpactKind;
 using tanks3d::game::ShellImpactDetails;
 using tanks3d::game::StageGenerator;
 using tanks3d::game::StageMap;
-using tanks3d::game::governmentPentagonCorner;
+using tanks3d::game::governmentWallIndexForCell;
+using tanks3d::game::isGovernmentWallCell;
 using tanks3d::game::governmentWallSegment;
 using tanks3d::game::kEnemySpawnPoints;
 using tanks3d::game::kGovernmentBaseCenter;
-using tanks3d::game::kGovernmentCoreRadius;
+using tanks3d::game::kGovernmentCoreHalfSize;
 using tanks3d::game::kGovernmentPowerShellDamage;
 using tanks3d::game::kGovernmentSteelDuration;
 using tanks3d::game::kGovernmentSteelFlashPeriod;
@@ -92,17 +93,15 @@ Cell findBrickWithOpenLeft(const StageMap &map)
     return {};
 }
 
-bool allRequiredRoutesAreOpen(const StageMap &map)
+bool allSpawnFootprintsAreOpen(const StageMap &map)
 {
-    bool open = map.hasTankRoute(kPlayerSpawnPoints[0],
-                                 kPlayerSpawnPoints[1]);
-    if (map.stage() != 1)
-        open = open &&
-               map.hasTankRoute(kEnemySpawnPoints[1], {13.0f, 20.0f});
-    for (XZ enemySpawn : kEnemySpawnPoints)
-        for (XZ playerSpawn : kPlayerSpawnPoints)
-            open = open && map.hasTankRoute(enemySpawn, playerSpawn);
-    return open;
+    for (XZ spawn : kEnemySpawnPoints)
+        if (map.collidesWithTank(spawn, kTankRadius))
+            return false;
+    for (XZ spawn : kPlayerSpawnPoints)
+        if (map.collidesWithTank(spawn, kTankRadius))
+            return false;
+    return true;
 }
 
 bool sameDamage(const BrickDamage &damage, int row, int column,
@@ -124,9 +123,8 @@ int main()
             passed = false;
     };
     const std::filesystem::path noResourceDependency;
-    constexpr int kTerrainFixtureStage = 2;
 
-    reporter.beginSuite("stage-map-layouts-and-routes");
+    reporter.beginSuite("stage-map-original-layouts-and-spawns");
     for (int stage = 1; stage <= kStageCount; ++stage)
     {
         StageMap map;
@@ -157,9 +155,9 @@ int main()
                    matchesGeneratedInitialState,
                "stage " + std::to_string(stage) +
                    " failed to consume the generated initial tile grid");
-        expect(loaded && allRequiredRoutesAreOpen(map),
+        expect(loaded && allSpawnFootprintsAreOpen(map),
                "stage " + std::to_string(stage) +
-                   " lost a spawn, player, or base-approach route");
+                   " lost an original spawn footprint");
     }
     expect(tanks3d::game::normalizedStage(1) == 1 &&
                tanks3d::game::normalizedStage(35) == 35 &&
@@ -177,8 +175,7 @@ int main()
     reporter.beginSuite("stage-map-terrain-and-boundaries");
     StageMap terrainMap;
     std::string terrainError;
-    const bool terrainLoaded = terrainMap.load(
-        noResourceDependency, kTerrainFixtureStage, terrainError);
+    const bool terrainLoaded = tanks3d_test::loadTerrainFixture(terrainMap, terrainError);
     const Cell openCell = findTile(terrainMap, '.');
     const Cell brickCell = findTile(terrainMap, '#');
     const Cell steelCell = findTile(terrainMap, '@');
@@ -220,8 +217,7 @@ int main()
 
     StageMap normalSteelMap;
     std::string normalSteelError;
-    const bool normalSteelLoaded = normalSteelMap.load(
-        noResourceDependency, kTerrainFixtureStage, normalSteelError);
+    const bool normalSteelLoaded = tanks3d_test::loadTerrainFixture(normalSteelMap, normalSteelError);
     expect(normalSteelLoaded &&
                normalSteelMap.impactShell(steelCell.center(), false,
                                           CardinalDirection::North) ==
@@ -231,8 +227,7 @@ int main()
 
     StageMap powerSteelMap;
     std::string powerSteelError;
-    const bool powerSteelLoaded = powerSteelMap.load(
-        noResourceDependency, kTerrainFixtureStage, powerSteelError);
+    const bool powerSteelLoaded = tanks3d_test::loadTerrainFixture(powerSteelMap, powerSteelError);
     expect(powerSteelLoaded &&
                powerSteelMap.impactShell(steelCell.center(), true,
                                          CardinalDirection::North) ==
@@ -242,8 +237,7 @@ int main()
 
     StageMap forestMap;
     std::string forestError;
-    const bool forestLoaded = forestMap.load(
-        noResourceDependency, kTerrainFixtureStage, forestError);
+    const bool forestLoaded = tanks3d_test::loadTerrainFixture(forestMap, forestError);
     const ImpactKind normalForest = forestMap.impactShell(
         forestCell.center(), false, CardinalDirection::North);
     const bool forestSurvived =
@@ -257,8 +251,7 @@ int main()
 
     StageMap waterShellMap;
     std::string waterShellError;
-    const bool waterShellLoaded = waterShellMap.load(
-        noResourceDependency, kTerrainFixtureStage, waterShellError);
+    const bool waterShellLoaded = tanks3d_test::loadTerrainFixture(waterShellMap, waterShellError);
     expect(waterShellLoaded &&
                waterShellMap.impactShell(waterCell.center(), false,
                                          CardinalDirection::East) ==
@@ -271,8 +264,7 @@ int main()
 
     StageMap iceShellMap;
     std::string iceShellError;
-    const bool iceShellLoaded = iceShellMap.load(
-        noResourceDependency, kTerrainFixtureStage, iceShellError);
+    const bool iceShellLoaded = tanks3d_test::loadTerrainFixture(iceShellMap, iceShellError);
     expect(iceShellLoaded &&
                iceShellMap.impactShell(iceCell.center(), false,
                                        CardinalDirection::South) ==
@@ -343,10 +335,25 @@ int main()
                                     waterCell.center()),
            "navigation accepted a water-blocked endpoint without a Boat");
 
+    StageMap routeMap;
+    tanks3d::game::StageTileGrid routeGrid{};
+    for (auto &row : routeGrid)
+        row.fill('.');
+    routeGrid[12].fill('#');
+    routeGrid[13].fill('#');
+    tanks3d::game::StageMapTestAccess::install(routeMap, routeGrid);
+    expect(!routeMap.hasTankRoute({1.0f, 1.0f}, {1.0f, 25.0f}),
+           "route query ignored a continuous destructible barrier");
+    for (int row = 12; row <= 13; ++row)
+        for (int column = 0; column <= 1; ++column)
+            routeMap.impactShell({column + 0.5f, row + 0.5f}, true,
+                                 CardinalDirection::South);
+    expect(routeMap.hasTankRoute({1.0f, 1.0f}, {1.0f, 25.0f}),
+           "route query did not discover a real two-cell breach");
+
     StageMap showcaseMap;
     std::string showcaseError;
-    const bool showcaseLoaded = showcaseMap.load(
-        noResourceDependency, kTerrainFixtureStage, showcaseError);
+    const bool showcaseLoaded = tanks3d_test::loadTerrainFixture(showcaseMap, showcaseError);
     showcaseMap.impactShell(brickCell.center(), false,
                             CardinalDirection::North);
     showcaseMap.activateGovernmentSteel();
@@ -355,8 +362,10 @@ int main()
     for (int row = 0; row < kMapSize; ++row)
         for (int column = 0; column < kMapSize; ++column)
             showcaseCleared = showcaseCleared &&
-                              showcaseMap.tile(row, column) == '.' &&
-                              showcaseMap.brickMask(row, column) == 0U &&
+                              showcaseMap.tile(row, column) ==
+                                  (isGovernmentWallCell(row, column) ? '#' : '.') &&
+                              showcaseMap.brickMask(row, column) ==
+                                  (isGovernmentWallCell(row, column) ? 0x0fU : 0U) &&
                               showcaseMap.brickHitCount(row, column) == 0U &&
                               showcaseMap.brickFirstDirection(row, column) ==
                                   CardinalDirection::None;
@@ -384,8 +393,7 @@ int main()
     {
         StageMap map;
         std::string error;
-        const bool loaded = map.load(noResourceDependency,
-                                     kTerrainFixtureStage, error);
+        const bool loaded = tanks3d_test::loadTerrainFixture(map, error);
         ShellImpactDetails details;
         const ImpactKind impact = map.impactShell(
             brickCell.center(), false, firstDirections[index], &details);
@@ -408,8 +416,7 @@ int main()
     {
         StageMap map;
         std::string error;
-        const bool loaded = map.load(noResourceDependency,
-                                     kTerrainFixtureStage, error);
+        const bool loaded = tanks3d_test::loadTerrainFixture(map, error);
         map.impactShell(brickCell.center(), false, firstDirections[index]);
         ShellImpactDetails details;
         const ImpactKind impact = map.impactShell(
@@ -431,8 +438,7 @@ int main()
 
     StageMap sameAxisMap;
     std::string sameAxisError;
-    const bool sameAxisLoaded = sameAxisMap.load(
-        noResourceDependency, kTerrainFixtureStage, sameAxisError);
+    const bool sameAxisLoaded = tanks3d_test::loadTerrainFixture(sameAxisMap, sameAxisError);
     sameAxisMap.impactShell(brickCell.center(), false,
                             CardinalDirection::North);
     ShellImpactDetails sameAxisDetails;
@@ -455,8 +461,7 @@ int main()
 
     StageMap thirdHitMap;
     std::string thirdHitError;
-    const bool thirdHitLoaded = thirdHitMap.load(
-        noResourceDependency, kTerrainFixtureStage, thirdHitError);
+    const bool thirdHitLoaded = tanks3d_test::loadTerrainFixture(thirdHitMap, thirdHitError);
     thirdHitMap.impactShell(brickCell.center(), false,
                            CardinalDirection::North);
     thirdHitMap.impactShell(brickCell.center(), false,
@@ -476,8 +481,7 @@ int main()
 
     StageMap seamMap;
     std::string seamError;
-    const bool seamLoaded = seamMap.load(
-        noResourceDependency, kTerrainFixtureStage, seamError);
+    const bool seamLoaded = tanks3d_test::loadTerrainFixture(seamMap, seamError);
     const Cell seamCell = findHorizontalBrickPair(seamMap);
     ShellImpactDetails seamDetails;
     const ImpactKind seamImpact = seamMap.impactShell(
@@ -494,8 +498,7 @@ int main()
 
     StageMap powerSeamMap;
     std::string powerSeamError;
-    const bool powerSeamLoaded = powerSeamMap.load(
-        noResourceDependency, kTerrainFixtureStage, powerSeamError);
+    const bool powerSeamLoaded = tanks3d_test::loadTerrainFixture(powerSeamMap, powerSeamError);
     ShellImpactDetails powerSeamDetails;
     const ImpactKind powerSeamImpact = powerSeamMap.impactShell(
         {seamCell.column + 1.0f, seamCell.row + 0.5f}, true,
@@ -513,8 +516,7 @@ int main()
 
     StageMap partialMap;
     std::string partialError;
-    const bool partialLoaded = partialMap.load(
-        noResourceDependency, kTerrainFixtureStage, partialError);
+    const bool partialLoaded = tanks3d_test::loadTerrainFixture(partialMap, partialError);
     partialMap.impactShell(brickCell.center(), false,
                            CardinalDirection::North);
     const XZ survivingHalf{brickCell.column + 0.5f,
@@ -553,8 +555,7 @@ int main()
 
     StageMap exactTouchMap;
     std::string exactTouchError;
-    const bool exactTouchLoaded = exactTouchMap.load(
-        noResourceDependency, kTerrainFixtureStage, exactTouchError);
+    const bool exactTouchLoaded = tanks3d_test::loadTerrainFixture(exactTouchMap, exactTouchError);
     const Cell exactTouchCell = findBrickWithOpenLeft(exactTouchMap);
     const ImpactKind exactTouchImpact = exactTouchMap.impactShell(
         {exactTouchCell.column - kShellHalfSize,
@@ -568,8 +569,7 @@ int main()
 
     StageMap nearTouchMap;
     std::string nearTouchError;
-    const bool nearTouchLoaded = nearTouchMap.load(
-        noResourceDependency, kTerrainFixtureStage, nearTouchError);
+    const bool nearTouchLoaded = tanks3d_test::loadTerrainFixture(nearTouchMap, nearTouchError);
     const ImpactKind nearTouchImpact = nearTouchMap.impactShell(
         {exactTouchCell.column - kShellHalfSize + 0.001f,
          exactTouchCell.row + 0.5f},
@@ -635,30 +635,40 @@ int main()
     std::string geometryError;
     const bool geometryLoaded = geometryMap.load(
         noResourceDependency, 1, geometryError);
-    bool geometryValid = geometryLoaded &&
-                         samePosition(governmentPentagonCorner(-5),
-                                      governmentPentagonCorner(0)) &&
-                         samePosition(governmentPentagonCorner(5),
-                                      governmentPentagonCorner(0));
+    static constexpr std::array<Cell, 8> expectedWallCells{{
+        {23, 11}, {23, 12}, {23, 13}, {23, 14},
+        {24, 11}, {24, 14}, {25, 11}, {25, 14}}};
+    bool geometryValid = geometryLoaded && kGovernmentWallCount == 8 &&
+                         samePosition(kGovernmentBaseCenter, {13.0f, 25.0f});
     for (int index = 0; index < kGovernmentWallCount; ++index)
     {
+        const Cell cell = expectedWallCells[static_cast<std::size_t>(index)];
         const auto segment = governmentWallSegment(index);
-        geometryValid = geometryValid && segment.length > 0.0f &&
+        geometryValid = geometryValid &&
+                        samePosition(segment.center, cell.center()) &&
+                        nearlyEqual(segment.length, 1.0f) &&
+                        nearlyEqual(segment.halfLength, 0.5f) &&
+                        nearlyEqual(segment.halfThickness, 0.5f) &&
                         nearlyEqual(tanks3d::core::lengthSquared(
-                                        segment.along),
-                                    1.0f, 0.0001f) &&
+                                        segment.along), 1.0f) &&
                         nearlyEqual(tanks3d::core::lengthSquared(
-                                        segment.outward),
-                                    1.0f, 0.0001f) &&
-                        samePosition(segment.start,
-                                     governmentPentagonCorner(index)) &&
-                        samePosition(segment.end,
-                                     governmentPentagonCorner(index + 1)) &&
+                                        segment.outward), 1.0f) &&
+                        governmentWallIndexForCell(cell.row, cell.column) == index &&
                         geometryMap.governmentWallHealth(index) ==
                             kGovernmentWallMaximumHealth &&
                         geometryMap.wallOccupies(segment.center) &&
                         geometryMap.collidesWithTank(segment.center, 0.05f);
     }
+    for (int row = 0; row < kMapSize; ++row)
+        for (int column = 0; column < kMapSize; ++column)
+        {
+            const bool expected = (row == 23 && column >= 11 && column <= 14) ||
+                ((row == 24 || row == 25) && (column == 11 || column == 14));
+            geometryValid = geometryValid &&
+                isGovernmentWallCell(row, column) == expected;
+        }
+    geometryValid = geometryValid && geometryMap.wallOccupies({12.0f, 23.5f}) &&
+        geometryMap.wallOccupies({11.5f, 24.0f});
     expect(geometryValid,
            "government wall geometry, health, or shared collision drifted");
 
@@ -688,11 +698,12 @@ int main()
     std::string breachError;
     const bool breachLoaded = breachMap.load(
         noResourceDependency, 1, breachError);
+    // Cross the outer face; after destruction both points are open and do
+    // not enter a neighboring wall or the core.
     const float breachProbeDistance = testedWall.halfThickness + 0.02f;
     const XZ outsideWall = testedWall.center +
                            testedWall.outward * breachProbeDistance;
-    const XZ insideWall = testedWall.center -
-                          testedWall.outward * breachProbeDistance;
+    const XZ insideWall = testedWall.center;
     const bool separatedBefore = breachMap.solidSeparatesShells(
         outsideWall, insideWall);
     for (int hit = 0; hit < kGovernmentWallMaximumHealth; ++hit)
@@ -704,6 +715,41 @@ int main()
                !breachMap.collidesWithTank(testedWall.center, 0.05f) &&
                !breachMap.solidSeparatesShells(outsideWall, insideWall),
            "destroyed government wall did not open a physical breach");
+
+    StageMap narrowBreachMap;
+    narrowBreachMap.prepareShowcaseArena();
+    const auto firstTopWall = governmentWallSegment(1);
+    const auto secondTopWall = governmentWallSegment(2);
+    narrowBreachMap.impactShell(firstTopWall.center, true,
+                                CardinalDirection::South);
+    const bool partialHealthKeepsFullCell =
+        narrowBreachMap.governmentWallHealth(1) == 2 &&
+        narrowBreachMap.tile(23, 12) == '#' &&
+        narrowBreachMap.brickMask(23, 12) == 0x0fU &&
+        narrowBreachMap.collidesWithTank(firstTopWall.center, 0.1f);
+    narrowBreachMap.impactShell(firstTopWall.center, true,
+                                CardinalDirection::South);
+    // The tank can enter a two-cell opening but must still stop at the core.
+    const XZ tankAtOpening{13.0f, 23.0f};
+    const bool oneCellBlocksTank = narrowBreachMap.collidesWithTank(
+        tankAtOpening, kTankRadius);
+    const bool firstCellGone = narrowBreachMap.tile(23, 12) == '.' &&
+                              narrowBreachMap.brickMask(23, 12) == 0U;
+    narrowBreachMap.impactShell(secondTopWall.center, true,
+                                CardinalDirection::South);
+    narrowBreachMap.impactShell(secondTopWall.center, true,
+                                CardinalDirection::South);
+    expect(partialHealthKeepsFullCell && firstCellGone && oneCellBlocksTank &&
+               !narrowBreachMap.collidesWithTank(tankAtOpening, kTankRadius) &&
+               narrowBreachMap.collidesWithTank({13.0f, 23.2f}, kTankRadius),
+           "base cell damage, real tank-width breach, or core stop drifted");
+    narrowBreachMap.repairGovernmentWalls();
+    expect(narrowBreachMap.tile(23, 12) == '#' &&
+               narrowBreachMap.brickMask(23, 12) == 0x0fU &&
+               narrowBreachMap.tile(23, 13) == '#' &&
+               narrowBreachMap.brickMask(23, 13) == 0x0fU &&
+               narrowBreachMap.collidesWithTank(tankAtOpening, kTankRadius),
+           "repair did not restore both the original cells and collision");
 
     StageMap powerGovernmentMap;
     std::string powerGovernmentError;
@@ -733,7 +779,7 @@ int main()
     const bool cornerLoaded = cornerMap.load(
         noResourceDependency, 1, cornerError);
     const ImpactKind cornerImpact = cornerMap.impactShell(
-        governmentPentagonCorner(0), false, CardinalDirection::North);
+        XZ{12.0f, 23.5f}, false, CardinalDirection::North);
     int totalCornerHealth = 0;
     for (int index = 0; index < kGovernmentWallCount; ++index)
         totalCornerHealth += cornerMap.governmentWallHealth(index);
@@ -832,19 +878,21 @@ int main()
            "loading a stage retained shovel time or wall damage");
 
     const XZ coreInside{kGovernmentBaseCenter.x +
-                            kGovernmentCoreRadius - 0.001f,
+                            kGovernmentCoreHalfSize - 0.001f,
                         kGovernmentBaseCenter.z};
     const XZ coreOutside{kGovernmentBaseCenter.x +
-                             kGovernmentCoreRadius + 0.001f,
+                             kGovernmentCoreHalfSize + 0.001f,
                          kGovernmentBaseCenter.z};
-    const XZ shellInside{kGovernmentBaseCenter.x + kGovernmentCoreRadius +
+    const XZ shellInside{kGovernmentBaseCenter.x + kGovernmentCoreHalfSize +
                              kShellHalfSize - 0.001f,
                          kGovernmentBaseCenter.z};
-    const XZ shellOutside{kGovernmentBaseCenter.x + kGovernmentCoreRadius +
+    const XZ shellOutside{kGovernmentBaseCenter.x + kGovernmentCoreHalfSize +
                               kShellHalfSize + 0.001f,
                           kGovernmentBaseCenter.z};
     expect(geometryMap.isInsideBase(kGovernmentBaseCenter) &&
                geometryMap.isInsideBase(coreInside) &&
+               geometryMap.isInsideBase({13.99f, 25.99f}) &&
+               !geometryMap.isInsideBase({14.0f, 26.0f}) &&
                !geometryMap.isInsideBase(coreOutside) &&
                geometryMap.shellHitsGovernmentCore(kGovernmentBaseCenter) &&
                geometryMap.shellHitsGovernmentCore(shellInside) &&

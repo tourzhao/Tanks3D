@@ -26,6 +26,9 @@ class StageGenerator
 public:
     // StageMap owns requested-stage wrapping. This seam accepts its canonical
     // 1..kStageCount value and returns a fresh, fully initialized tile grid.
+    // All 35 layouts follow the original NES display order and preserve the
+    // verified initial terrain, including half walls and base-guard bricks.
+    // No spawn clearing, road carving, theme variation or gameplay RNG is used.
     static StageTileGrid generate(int canonicalStage);
 };
 } // namespace tanks3d::game

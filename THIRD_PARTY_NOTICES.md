@@ -19,10 +19,14 @@ against [`krystiankaluzny/Tanks`](https://github.com/krystiankaluzny/Tanks),
 copyright 2025 Krystian Kałużny and distributed under the MIT License. The
 complete upstream notice is reproduced in `LICENSES/MIT-upstream.txt`.
 
-The fixed 26x26 stage-one tile layout embedded in
-`src/game/stage_generator.cpp` is transcribed from the upstream
-`resources/stages/1` map and remains under that MIT license. Procedurally
-generated later stages and the 3D presentation are project-owned additions.
+The 35 fixed 26x26 terrain layouts embedded in `src/game/classic_stage_layouts.h`
+reproduce the original NES/Famicom *Battle City* starting maps, checked against
+the upstream stage files and original-game map references. Adapted upstream
+portions retain the MIT notice. The original Namco level designs remain the
+property of their respective rights holders; they are not claimed as
+project-owned or relabeled under PolyForm. The procedural 3D presentation is
+project-authored. See [map sources and verification](docs/BATTLE_CITY_MAPS.md)
+and `ASSET_LICENSES.md` for ordering, corrections and reference credits.
 
 The sound set was authored and refined in the upstream project by Redas
 Jefisovas (`holoflash`), beginning with the commit explicitly described as

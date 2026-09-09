@@ -354,6 +354,12 @@ std::vector<Player> expectedSettlementStageEntry(
 // and bonus paths directly until input commands and rule modules are extracted.
 struct Game3DTestAccess
 {
+    static void installTerrainFixture(Game3D &game)
+    {
+        tanks3d::game::StageMapTestAccess::install(
+            game.map_, tanks3d_test::terrainFixtureGrid());
+    }
+
     static void resetPlayerInputRuntime(Game3D &game)
     {
         game.stageIntroTimer_ = 0.0f;
@@ -401,6 +407,7 @@ struct Game3DTestAccess
 
     static bool preparePlayerIceInputScenario(Game3D &game, XZ &anchor)
     {
+        installTerrainFixture(game);
         resetPlayerInputRuntime(game);
         if (game.players_.empty())
             return false;
@@ -439,6 +446,7 @@ struct Game3DTestAccess
 
     static bool preparePlayerBoatInputScenario(Game3D &game, XZ &anchor)
     {
+        installTerrainFixture(game);
         resetPlayerInputRuntime(game);
         if (game.players_.empty())
             return false;
@@ -2021,32 +2029,25 @@ int runStageAndEnvironmentSelfTests(const fs::path &resourceRoot)
         generatedStageSignatures[static_cast<std::size_t>(stage - 1)] =
             signature;
 
-        bool spawnRoutesOpen =
-            map.hasTankRoute(kPlayerSpawnPoints[0], kPlayerSpawnPoints[1]);
-        if (stage != 1)
-            spawnRoutesOpen = spawnRoutesOpen &&
-                map.hasTankRoute(kEnemySpawnPoints[1], {13.0f, 20.0f});
-        for (XZ enemySpawn : kEnemySpawnPoints)
-            for (XZ playerStart : kPlayerSpawnPoints)
-                spawnRoutesOpen = spawnRoutesOpen &&
-                    map.hasTankRoute(enemySpawn, playerStart);
-        if (!checkTest(deterministicLayout && uniqueLayout && spawnRoutesOpen,
-                       "stage generation is unstable, duplicated, or disconnected"))
+        bool spawnsOpen = true;
+        for (XZ spawn : kEnemySpawnPoints)
+            spawnsOpen = spawnsOpen && !map.collidesWithTank(spawn, kTankRadius);
+        for (XZ spawn : kPlayerSpawnPoints)
+            spawnsOpen = spawnsOpen && !map.collidesWithTank(spawn, kTankRadius);
+        const auto originalTiles = tanks3d::game::StageGenerator::generate(stage);
+        bool unmodifiedLayout = true;
+        for (int row = 0; row < kMapSize; ++row)
+            for (int column = 0; column < kMapSize; ++column)
+                unmodifiedLayout = unmodifiedLayout &&
+                    map.tile(row, column) == originalTiles[row][column];
+        if (!checkTest(deterministicLayout && uniqueLayout && spawnsOpen &&
+                           unmodifiedLayout,
+                       "original stage changed, duplicated, or lost its spawn footprint"))
             return 1;
-        for (int row = 21; row <= 25; ++row)
-        {
-            for (int column = 10; column <= 15; ++column)
-            {
-                if (!checkTest(map.tile(row, column) == '.' &&
-                                   map.brickMask(row, column) == 0U,
-                               "expanded base footprint retained a legacy defensive tile"))
-                    return 1;
-            }
-        }
         for (int index = 0; index < kGovernmentWallCount; ++index)
             if (!checkTest(map.governmentWallHealth(index) ==
                                kGovernmentWallMaximumHealth,
-                           "Pentagon wall did not start at full health"))
+                           "base wall did not start at full health"))
                 return 1;
 
         for (int row = 0; row < kMapSize; ++row)
@@ -2286,46 +2287,24 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
     for (int index = 0; index < kGovernmentWallCount; ++index)
     {
         const GovernmentWallSegment segment = governmentWallSegment(index);
-        const float roofHalfThickness = segment.halfThickness + 0.035f;
-        for (float alongSign : {-1.0f, 1.0f})
-            for (float acrossSign : {-1.0f, 1.0f})
-            {
-                const XZ corner = segment.center +
-                    segment.along * (alongSign * segment.halfLength) +
-                    segment.outward * (acrossSign * roofHalfThickness);
-                governmentGeometryInsideMap = governmentGeometryInsideMap &&
-                    corner.x >= 0.0f && corner.x <= kMapSize &&
-                    corner.z >= 0.0f && corner.z <= kMapSize;
-            }
-        const float angle = kGovernmentPentagonYaw +
-                            static_cast<float>(index) * 2.0f * kPi /
-                                static_cast<float>(kGovernmentWallCount);
-        const XZ foundationCorner{
-            kGovernmentBaseCenter.x + std::sin(angle) *
-                kGovernmentFoundationRadius,
-            kGovernmentBaseCenter.z + std::cos(angle) *
-                kGovernmentFoundationRadius};
         governmentGeometryInsideMap = governmentGeometryInsideMap &&
-            foundationCorner.x >= 0.0f && foundationCorner.x <= kMapSize &&
-            foundationCorner.z >= 0.0f && foundationCorner.z <= kMapSize;
+            segment.center.x - 0.5f >= 0.0f &&
+            segment.center.x + 0.5f <= kMapSize &&
+            segment.center.z - 0.5f >= 0.0f &&
+            segment.center.z + 0.5f <= kMapSize &&
+            std::fabs(segment.length - 1.0f) < 0.0001f &&
+            std::fabs(segment.halfThickness - 0.5f) < 0.0001f;
     }
-    if (!checkTest(std::fabs(kGovernmentBaseCenter.z - 23.60f) < 0.0001f &&
-                       std::fabs(kGovernmentWallRadius - 1.95f) < 0.0001f &&
-                       std::fabs(kGovernmentWallThickness - 1.16f) < 0.0001f &&
-                       std::fabs(kGovernmentFoundationRadius - 2.62f) < 0.0001f &&
-                       std::fabs(kGovernmentCourtyardRadius - 1.02f) < 0.0001f &&
-                       tanks3d::base_model::kCommandCoreFootprint <=
-                           kGovernmentCoreRadius * 2.0f &&
-                       std::fabs(kGovernmentCoreRadius - 0.92f) < 0.0001f &&
-                       std::fabs(testedWall.halfLength -
-                                 (testedWall.length * 0.5f +
-                                  kGovernmentWallEndOverlap)) < 0.0001f &&
+    if (!checkTest(kGovernmentWallCount == 8 &&
+                       std::fabs(kGovernmentBaseCenter.z - 25.0f) < 0.0001f &&
+                       std::fabs(kGovernmentCoreHalfSize - 1.0f) < 0.0001f &&
+                       tanks3d::base_model::kCommandCoreFootprint <= 2.0f &&
                        governmentGeometryInsideMap &&
                        governmentMap.wallOccupies(testedWall.center) &&
                        governmentMap.collidesWithTank(testedWall.center, 0.05f) &&
                        !governmentMap.collidesWithTank(playerSpawn(0), kTankRadius) &&
                        !governmentMap.collidesWithTank(playerSpawn(1), kTankRadius),
-                   "expanded Pentagon proportions or shared collision geometry drifted"))
+                   "original base enclosure or shared collision geometry drifted"))
         return 1;
 
     for (int hit = 0; hit < kGovernmentWallMaximumHealth; ++hit)
@@ -2341,13 +2320,13 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                            details.governmentWallHealthAfter == expectedAfter &&
                            details.destroyedGovernmentWall() ==
                                (expectedAfter == 0),
-                       "normal shells did not reduce one Pentagon wall by one HP"))
+                       "normal shells did not reduce one base wall by one HP"))
             return 1;
     }
     if (!checkTest(governmentMap.governmentWallHealth(0) == 0 &&
                        !governmentMap.wallOccupies(testedWall.center) &&
                        !governmentMap.collidesWithTank(testedWall.center, 0.05f),
-                   "destroyed Pentagon wall did not open a real breach"))
+                   "destroyed base wall did not open a real breach"))
         return 1;
 
     governmentMap.repairGovernmentWalls();
@@ -2358,7 +2337,7 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                              governmentMap.governmentWallHealth(index) ==
                                  kGovernmentWallMaximumHealth;
     if (!checkTest(repairedGovernment,
-                   "shovel-style Pentagon wall repair is not idempotent"))
+                   "shovel-style base wall repair is not idempotent"))
         return 1;
 
     StageMap steelGovernmentMap;
@@ -2368,7 +2347,7 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
         steelGovernmentMap.impactShell(testedWall.center, false,
                                        CardinalDirection::North);
     if (!checkTest(steelGovernmentMap.governmentWallHealth(0) == 0,
-                   "steel protection setup did not create a Pentagon breach"))
+                   "steel protection setup did not create a base breach"))
         return 1;
     steelGovernmentMap.activateGovernmentSteel();
     bool steelRepairedEveryWing = true;
@@ -2397,7 +2376,7 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                        protectedPowerDetails.governmentWallHealthBefore == 4 &&
                        protectedPowerDetails.governmentWallHealthAfter == 4 &&
                        steelGovernmentMap.governmentWallHealth(0) == 4,
-                   "shovel did not repair and protect every Pentagon wing"))
+                   "shovel did not repair and protect every base wall"))
         return 1;
 
     steelGovernmentMap.updateGovernmentProtection(17.10f);
@@ -2460,7 +2439,7 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                        secondPowerDetails.governmentWallHealthBefore == 2 &&
                        secondPowerDetails.governmentWallHealthAfter == 0 &&
                        secondPowerDetails.destroyedGovernmentWall(),
-                   "power shells did not reduce Pentagon walls by two HP"))
+                   "power shells did not reduce base walls by two HP"))
         return 1;
 
     const float shellProjection = kShellHalfSize *
@@ -2491,14 +2470,14 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                                (testedWall.halfThickness + tankProjection +
                                 0.002f),
                            0.10f),
-                   "Pentagon OBB edge contact rules drifted"))
+                   "base-wall AABB edge contact rules drifted"))
         return 1;
 
     StageMap cornerGovernmentMap;
     if (!cornerGovernmentMap.load(resourceRoot, 1, error))
         return 1;
     const ImpactKind cornerImpact = cornerGovernmentMap.impactShell(
-        governmentPentagonCorner(0), false, CardinalDirection::North);
+        XZ{12.0f, 23.5f}, false, CardinalDirection::North);
     int remainingGovernmentHealth = 0;
     for (int index = 0; index < kGovernmentWallCount; ++index)
         remainingGovernmentHealth +=
@@ -2507,19 +2486,17 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                        remainingGovernmentHealth ==
                            kGovernmentWallCount *
                                kGovernmentWallMaximumHealth - 1,
-                   "one corner shell damaged more than one Pentagon wall"))
+                   "one corner shell damaged more than one base wall"))
         return 1;
 
     StageMap breachGovernmentMap;
     if (!breachGovernmentMap.load(resourceRoot, 1, error))
         return 1;
-    // Probe just beyond the wall faces while remaining outside the eagle's
-    // reinforced circular core hit area.
+    // Cross the outer face into the breached cell without entering the core.
     const float breachProbeDistance = testedWall.halfThickness + 0.02f;
     const XZ outsideShell = testedWall.center +
                             testedWall.outward * breachProbeDistance;
-    const XZ insideShell = testedWall.center -
-                           testedWall.outward * breachProbeDistance;
+    const XZ insideShell = testedWall.center;
     if (!checkTest(breachGovernmentMap.solidSeparatesShells(
                            outsideShell, insideShell) &&
                        breachGovernmentMap.isInsideBase(kGovernmentBaseCenter) &&
@@ -2527,7 +2504,7 @@ int runTerrainBaseAndBrickSelfTests(const fs::path &resourceRoot)
                            kGovernmentBaseCenter) &&
                        !breachGovernmentMap.shellHitsGovernmentCore(
                            testedWall.center),
-                   "intact Pentagon wall or eagle collision is porous"))
+                   "intact base wall or eagle collision is porous"))
         return 1;
     for (int hit = 0; hit < kGovernmentWallMaximumHealth; ++hit)
         breachGovernmentMap.impactShell(testedWall.center, false,
@@ -4743,6 +4720,42 @@ int runSettingsProgressionAndSettlementSelfTests(
                    "naturally completed report did not enter the next stage"))
         return 1;
 
+    // A unique generator result is insufficient if live progression keeps the
+    // previous map. Exercise both next-stage entry paths through all layouts,
+    // including the reported stage-2-to-3 transition and the final wrap.
+    Game3D automaticLayoutGame(resourceRoot, 0x57a6e001U);
+    Game3D manualLayoutGame(resourceRoot, 0x57a6e002U);
+    if (!automaticLayoutGame.start(2, 3, 1, settlementNations) ||
+        !manualLayoutGame.start(1, 3, 1, settlementNations))
+        return 1;
+    for (int completedStage = 1; completedStage <= kStageCount;
+         ++completedStage)
+    {
+        const int nextStage = completedStage == kStageCount
+                                  ? 1 : completedStage + 1;
+        Game3DTestAccess::beginSettlement(
+            automaticLayoutGame, false, true, false);
+        automaticLayoutGame.confirmSettlement();
+        automaticLayoutGame.confirmSettlement();
+        const bool manualAdvanced = manualLayoutGame.changeStage(1);
+        const std::uint64_t expected = kExpectedStageLayoutSignatures[
+            static_cast<std::size_t>(nextStage - 1)];
+        if (!checkTest(
+                manualAdvanced &&
+                    automaticLayoutGame.stage() == nextStage &&
+                    automaticLayoutGame.map().stage() == nextStage &&
+                    automaticLayoutGame.stageIntro() &&
+                    !automaticLayoutGame.settling() &&
+                    !automaticLayoutGame.consumeMenuRequest() &&
+                    stageLayoutSignature(automaticLayoutGame.map()) == expected &&
+                    manualLayoutGame.stage() == nextStage &&
+                    manualLayoutGame.map().stage() == nextStage &&
+                    stageLayoutSignature(manualLayoutGame.map()) == expected,
+                "automatic or manual progression did not load the distinct "
+                "layout for stage " + std::to_string(nextStage)))
+            return 1;
+    }
+
     Game3D noRecordGame(resourceRoot, 0x5e771e02U);
     if (!noRecordGame.start(1, 3, 1, settlementNations) ||
         !Game3DTestAccess::prepareGameEventScenario(noRecordGame))
@@ -5009,7 +5022,7 @@ int runMovementAndEnemyEscapeSelfTests(const fs::path &resourceRoot)
         return 1;
 
     StageMap enemyEscapeMap;
-    if (!enemyEscapeMap.load(resourceRoot, 2, error))
+    if (!tanks3d_test::loadTerrainFixture(enemyEscapeMap, error))
         return 1;
     const auto terrainAvailable = [&](XZ candidate) {
         return !enemyEscapeMap.collidesWithTank(candidate, kTankRadius);
@@ -5055,6 +5068,7 @@ int runMovementAndEnemyEscapeSelfTests(const fs::path &resourceRoot)
     Game3D escapeGame(resourceRoot, 0xe2000001U);
     if (!escapeGame.start(1, 3, 2, nations))
         return 1;
+    Game3DTestAccess::installTerrainFixture(escapeGame);
     Game3DTestAccess::setEnemyTargetPlayerState(
         escapeGame, 0, false, {13.0f, 10.0f});
     Enemy escapingEnemy;
@@ -5181,7 +5195,7 @@ int runEnemyProductionPathCharacterizationSelfTests(
     Game3DTestAccess::setEnemyTargetPlayerState(
         targetGame, 0, false, {13.0f, 10.1f});
     Game3DTestAccess::setEnemyTargetPlayerState(
-        targetGame, 1, true, {13.0f, -4.0f});
+        targetGame, 1, true, {13.0f, -6.0f});
     if (!checkTest(
             positionsMatch(
                 Game3DTestAccess::chooseEnemyTarget(targetGame, targetEnemy),
@@ -5773,51 +5787,59 @@ int runEnemyProductionPathCharacterizationSelfTests(
         return true;
     };
 
+    // Decision-only probes use offsets from the current core, without movement.
     std::string heavyFireDiagnostic;
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::North, {13.0f, 24.6f},
+            runHeavyFireCase(CardinalDirection::North,
+                             kGovernmentBaseCenter + XZ{0.0f, 1.0f},
                              false, true, true, heavyFireDiagnostic),
             "north-facing heavy tank failed its aligned fire path: " +
                 heavyFireDiagnostic))
         return 1;
     heavyFireDiagnostic.clear();
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::East, {12.0f, 23.6f},
+            runHeavyFireCase(CardinalDirection::East,
+                             kGovernmentBaseCenter + XZ{-1.0f, 0.0f},
                              false, false, true, heavyFireDiagnostic),
             "east-facing heavy tank failed its aligned fire path: " +
                 heavyFireDiagnostic))
         return 1;
     heavyFireDiagnostic.clear();
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::West, {14.0f, 23.6f},
+            runHeavyFireCase(CardinalDirection::West,
+                             kGovernmentBaseCenter + XZ{1.0f, 0.0f},
                              false, false, true, heavyFireDiagnostic),
             "west-facing heavy tank failed its aligned fire path: " +
                 heavyFireDiagnostic))
         return 1;
     heavyFireDiagnostic.clear();
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::South, {13.0f, 22.6f},
+            runHeavyFireCase(CardinalDirection::South,
+                             kGovernmentBaseCenter + XZ{0.0f, -1.0f},
                              false, false, true, heavyFireDiagnostic),
             "south-facing heavy tank failed its aligned fire path: " +
                 heavyFireDiagnostic))
         return 1;
     heavyFireDiagnostic.clear();
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::None, {13.0f, 24.6f},
+            runHeavyFireCase(CardinalDirection::None,
+                             kGovernmentBaseCenter + XZ{0.0f, 1.0f},
                              false, false, false, heavyFireDiagnostic),
             "directionless heavy tank fired despite having no aim axis: " +
                 heavyFireDiagnostic))
         return 1;
     heavyFireDiagnostic.clear();
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::North, {11.0f, 24.6f},
+            runHeavyFireCase(CardinalDirection::North,
+                             kGovernmentBaseCenter + XZ{-2.0f, 1.0f},
                              false, false, false, heavyFireDiagnostic),
             "heavy tank fired at the excluded exact-2.0 lateral boundary: " +
                 heavyFireDiagnostic))
         return 1;
     heavyFireDiagnostic.clear();
     if (!checkTest(
-            runHeavyFireCase(CardinalDirection::North, {13.0f, 24.6f},
+            runHeavyFireCase(CardinalDirection::North,
+                             kGovernmentBaseCenter + XZ{0.0f, 1.0f},
                              true, false, false, heavyFireDiagnostic),
             "an existing owned shell did not suppress a second heavy round "
             "while still consuming the reload draw: " + heavyFireDiagnostic))
@@ -10676,15 +10698,14 @@ int runObservableGameEventSelfTests(const fs::path &resourceRoot)
     if (!coreWallPriorityGame.start(1, 3, 1, nations) ||
         !Game3DTestAccess::prepareGameEventScenario(coreWallPriorityGame))
         return 1;
+    const GovernmentWallSegment coreAdjacentWall = governmentWallSegment(1);
     const XZ coreWallOverlap =
-        kGovernmentBaseCenter +
-        wall.outward *
-            (kGovernmentCoreRadius + kShellHalfSize - 0.05f);
+        coreAdjacentWall.center - coreAdjacentWall.outward * 0.45f;
     const int coreWallHealthBefore =
-        coreWallPriorityGame.map().governmentWallHealth(0);
+        coreWallPriorityGame.map().governmentWallHealth(1);
     Game3DTestAccess::addEventShell(
         coreWallPriorityGame, ShellOwner::Enemy, 66,
-        coreWallOverlap, wall.outward * -1.0f);
+        coreWallOverlap, coreAdjacentWall.outward * -1.0f);
     coreWallPriorityGame.update(0.0f, {});
     if (!checkTest(
             coreWallPriorityGame.map().shellHitsGovernmentCore(
@@ -10694,14 +10715,14 @@ int runObservableGameEventSelfTests(const fs::path &resourceRoot)
                 coreWallPriorityGame.eventsThisUpdate()[0].basePart ==
                     GovernmentBasePart::Wall &&
                 coreWallPriorityGame.eventsThisUpdate()[0]
-                        .baseSegmentIndex == 0 &&
+                        .baseSegmentIndex == 1 &&
                 coreWallPriorityGame.eventsThisUpdate()[0].sourceEnemyId ==
                     66 &&
                 coreWallPriorityGame.eventsThisUpdate()[0].valueBefore ==
                     coreWallHealthBefore &&
                 coreWallPriorityGame.eventsThisUpdate()[0].valueAfter ==
                     coreWallHealthBefore - 1 &&
-                coreWallPriorityGame.map().governmentWallHealth(0) ==
+                coreWallPriorityGame.map().governmentWallHealth(1) ==
                     coreWallHealthBefore - 1 &&
                 coreWallPriorityGame.baseAlive() &&
                 !coreWallPriorityGame.gameOver() &&
@@ -11741,7 +11762,7 @@ int runSelfTests(const fs::path &resourceRoot,
     gSelfTestReporter.finish();
     if (selection == SelfTestSelection::All)
     {
-        std::cout << "Tanks3D self-test passed: classic stage 1 plus 34 deterministic generated stages with validated spawn routes, three national bases, 12 distinct WWII player vehicles, scripted two-player cardinal/ice/fire input, selectable -45 to +45 degree camera rotation and 40 to 70 degree elevation, deterministic session digests and observable rule events, configurable 1-6 HP with 1-HP Bandage disable, advanced +/-30% enemy movement/fire/spawn tuning, strict classic AABBs, cardinal/ice movement with collision-safe local escape, hit-first shell cancellation, 200/490 ms projectile/tank destruction states, death-reset direct-fire streaks and classified K.O. tallies, 20-second shovel steel, 12.5-second 3D/icon bonuses, fixed ten-frame spawn warnings, and all 22 enabled 2D audio cues.\n";
+        std::cout << "Tanks3D self-test passed: 35 original Battle City stage layouts with validated spawn footprints, three national bases, 12 distinct WWII player vehicles, scripted two-player cardinal/ice/fire input, selectable -45 to +45 degree camera rotation and 40 to 70 degree elevation, deterministic session digests and observable rule events, configurable 1-6 HP with 1-HP Bandage disable, advanced +/-30% enemy movement/fire/spawn tuning, strict classic AABBs, cardinal/ice movement with collision-safe local escape, hit-first shell cancellation, 200/490 ms projectile/tank destruction states, death-reset direct-fire streaks and classified K.O. tallies, 20-second shovel steel, 12.5-second 3D/icon bonuses, fixed ten-frame spawn warnings, and all 22 enabled 2D audio cues.\n";
     }
     else
     {

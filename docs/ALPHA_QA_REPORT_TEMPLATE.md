@@ -307,14 +307,16 @@ in each player-mode recording; a generic “controller works” note is inadequa
 
 ## National Base Matrix
 
-Test each nation in live play, including wall damage, Shovel steel, core loss,
-visibility, collision, and the central emblem/statue orientation.
+Test each nation in live play, including damage to the eight original Π wall
+cells, Shovel steel, core loss, visibility, collision, and the command-core
+emblem. Buildings must fit their original map cells without covering adjacent
+terrain or leaving invisible wall collision after destruction.
 
 | Nation and base | One player | Two players | Evidence / notes |
 | --- | --- | --- | --- |
-| United States — Pentagon and eagle | NOT RUN | NOT RUN | |
-| Soviet Union — ring castle and Stalin statue | NOT RUN | NOT RUN | |
-| Germany — Reichstag and Hitler statue | NOT RUN | NOT RUN | |
+| United States — radio headquarters | NOT RUN | NOT RUN | |
+| Soviet Union — watch-turret headquarters | NOT RUN | NOT RUN | |
+| Germany — cupola headquarters | NOT RUN | NOT RUN | |
 
 ## Pickup Matrix
 
