@@ -163,6 +163,11 @@ RELEASE_PERFORMANCE_QA_RUNNER_TEST := \
 CORE_TEST_SOURCES := tests/core_coordinates_tests.cpp \
 	tests/core_gameplay_rules_tests.cpp tests/core_nation_tests.cpp
 CORE_TEST_TARGETS := $(patsubst tests/%.cpp,build/tests/%,$(CORE_TEST_SOURCES))
+TANK_DRAW_COMPATIBILITY_TEST_SOURCE := tests/tank_draw_compatibility_tests.cpp
+TANK_DRAW_COMPATIBILITY_TEST_TARGET := build/tests/tank_draw_compatibility_tests
+TANK_DRAW_COMPATIBILITY_HEADERS := src/tank_assets.h src/wwii_tank_model.h \
+	src/core/nation.h tests/test_support.h $(RAYLIB_HEADER) \
+	$(RAYLIB_PREFIX)/include/rlgl.h
 BONUS_SYSTEM_TEST_SOURCE := tests/bonus_system_tests.cpp
 BONUS_SYSTEM_TEST_TARGET := build/tests/bonus_system_tests
 COMBAT_SYSTEM_TEST_SOURCE := tests/combat_system_tests.cpp
@@ -321,6 +326,12 @@ DIST_RAYLIB_SHA256 := $(shell shasum -a 256 "$(RAYLIB_STATIC)" 2>/dev/null | \
 	awk '{print $$1}')
 
 COVERAGE_DIR := build/coverage
+TANK_DRAW_COMPATIBILITY_COVERAGE_TARGET := \
+	$(COVERAGE_DIR)/tank_draw_compatibility_tests
+TANK_DRAW_COMPATIBILITY_COVERAGE_RAW_PROFILE := \
+	$(TANK_DRAW_COMPATIBILITY_COVERAGE_TARGET).profraw
+TANK_DRAW_COMPATIBILITY_COVERAGE_PROFILE := \
+	$(TANK_DRAW_COMPATIBILITY_COVERAGE_TARGET).profdata
 COVERAGE_TARGET := $(COVERAGE_DIR)/Tanks3D-coverage
 COVERAGE_OBJECTS := $(patsubst src/%.cpp,$(COVERAGE_DIR)/%.o,$(SOURCES)) \
 	$(patsubst src/%.mm,$(COVERAGE_DIR)/%.o,$(PLATFORM_SOURCES))
@@ -448,7 +459,8 @@ APP_COVERAGE_TARGETS := \
 	$(SHELL_CANCELLATION_PRESENTATION_COVERAGE_TARGET) \
 	$(SHELL_MAP_CORE_PRESENTATION_COVERAGE_TARGET) \
 	$(SHELL_TANK_PRESENTATION_COVERAGE_TARGET)
-COVERAGE_TEST_TARGETS := $(RULE_COVERAGE_TARGETS) $(APP_COVERAGE_TARGETS)
+COVERAGE_TEST_TARGETS := $(RULE_COVERAGE_TARGETS) $(APP_COVERAGE_TARGETS) \
+	$(TANK_DRAW_COMPATIBILITY_COVERAGE_TARGET)
 COVERAGE_TEST_RAW_PROFILES := \
 	$(addsuffix .profraw,$(COVERAGE_TEST_TARGETS))
 COVERAGE_CXX := $(shell xcrun --find clang++)
@@ -501,7 +513,7 @@ COVERAGE_FLAGS := -O0 -g -fprofile-instr-generate -fcoverage-mapping \
 	-isysroot "$(COVERAGE_SDKROOT)" $(MACOS_TARGET_FLAG)
 
 .PHONY: all clean test-clean debug run run-app test test-core test-game test-rules \
-	test-app test-core-boundaries test-pure-boundaries \
+	test-app test-tank-drawing test-core-boundaries test-pure-boundaries \
 	test-app-boundaries test-architecture test-unit test-session \
 	test-assets test-bundle test-release-screenshot test-sanitize coverage \
 	test-release-performance-capabilities test-release-performance-smoke \
@@ -911,11 +923,11 @@ run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER) \
 		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
 		--output-dir "$(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)"
 
-test: all test-bundle test-rules test-app \
+test: all test-bundle test-rules test-app test-tank-drawing \
 		test-release-performance-capabilities
 	./$(TARGET) --self-test
 
-test-unit: $(TARGET) test-rules test-app
+test-unit: $(TARGET) test-rules test-app test-tank-drawing
 	./$(TARGET) --self-test=unit
 
 test-session: $(TARGET)
@@ -1167,10 +1179,45 @@ $(SANITIZER_TARGET): $(SANITIZER_OBJECTS)
 	$(CXX) $(SANITIZER_OBJECTS) $(SANITIZER_FLAGS) \
 		$(LDFLAGS) $(LDLIBS) -o $@
 
-test-sanitize: $(SANITIZER_TARGET) $(RUNTIME_RESOURCES)
+$(TANK_DRAW_COMPATIBILITY_TEST_TARGET): $(TANK_DRAW_COMPATIBILITY_TEST_SOURCE) \
+		$(TANK_DRAW_COMPATIBILITY_HEADERS)
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -Itests -std=c++17 -O0 -g -Wall -Wextra -Wpedantic \
+		-Werror $< -o $@
+
+test-tank-drawing: $(TANK_DRAW_COMPATIBILITY_TEST_TARGET)
+	./$(TANK_DRAW_COMPATIBILITY_TEST_TARGET)
+
+$(SANITIZER_DIR)/core_nation_tests: tests/core_nation_tests.cpp \
+		src/core/nation.h tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic -Werror \
+		$(SANITIZER_FLAGS) $< -o $@
+
+$(SANITIZER_DIR)/tank_draw_compatibility_tests: \
+		$(TANK_DRAW_COMPATIBILITY_TEST_SOURCE) $(TANK_DRAW_COMPATIBILITY_HEADERS)
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -Itests -std=c++17 -Wall -Wextra -Wpedantic -Werror \
+		$(SANITIZER_FLAGS) $< -o $@
+
+test-sanitize: $(SANITIZER_TARGET) $(RUNTIME_RESOURCES) \
+		$(SANITIZER_DIR)/core_nation_tests \
+		$(SANITIZER_DIR)/tank_draw_compatibility_tests
 	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
 		UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
 		./$(SANITIZER_TARGET) --self-test
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
+		UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+		./$(SANITIZER_DIR)/core_nation_tests
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
+		UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+		./$(SANITIZER_DIR)/tank_draw_compatibility_tests
+
+$(TANK_DRAW_COMPATIBILITY_COVERAGE_TARGET): \
+		$(TANK_DRAW_COMPATIBILITY_TEST_SOURCE) $(TANK_DRAW_COMPATIBILITY_HEADERS)
+	mkdir -p $(dir $@)
+	"$(COVERAGE_CXX)" $(CPPFLAGS) -Itests -std=c++17 \
+		-Wall -Wextra -Wpedantic -Werror $(COVERAGE_FLAGS) $< -o $@
 
 $(COVERAGE_DIR)/%.o: src/%.cpp
 	mkdir -p $(dir $@)
@@ -1396,18 +1443,20 @@ $(OBJECT_DIR)/main.o $(DEBUG_DIR)/main.o $(SANITIZER_DIR)/main.o \
 		$(COVERAGE_DIR)/main.o: \
 	$(PRODUCTION_HEADERS) $(TEST_FILES)
 
-# The game contains the canonical coverage maps for every production path;
-# standalone profiles add counts. Passing their binaries again duplicates
-# inline maps and makes llvm-cov report spurious mismatched-data warnings. The
-# exclusive capability handshake needs its own game profile because the normal
-# integrated self-test deliberately cannot enter that pre-resource CLI path.
+# The game supplies the canonical production maps; rule/app test profiles add
+# counts without duplicating inline maps. The draw test separately reports the
+# two rendering headers: its legacy overloads are instantiated only there, while
+# the game contains unused maps with hash zero, incompatible with those counts.
+# The exclusive capability handshake needs its own game profile because the
+# integrated self-test cannot enter that pre-resource CLI path.
 coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT)
 	$(RM) $(COVERAGE_RAW_PROFILE) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_OUTPUT) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR) \
-		$(COVERAGE_TEST_RAW_PROFILES) $(COVERAGE_PROFILE)
+		$(COVERAGE_TEST_RAW_PROFILES) $(COVERAGE_PROFILE) \
+		$(TANK_DRAW_COMPATIBILITY_COVERAGE_PROFILE)
 	LLVM_PROFILE_FILE=$(abspath $(COVERAGE_RAW_PROFILE)) \
 		./$(COVERAGE_TARGET) --self-test
 	LLVM_PROFILE_FILE=$(abspath \
@@ -1425,11 +1474,18 @@ coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES) \
 	done
 	"$(LLVM_PROFDATA)" merge -sparse $(COVERAGE_RAW_PROFILE) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE) \
-		$(COVERAGE_TEST_RAW_PROFILES) \
+		$(filter-out $(TANK_DRAW_COMPATIBILITY_COVERAGE_RAW_PROFILE),\
+			$(COVERAGE_TEST_RAW_PROFILES)) \
 		-o $(COVERAGE_PROFILE)
 	"$(LLVM_COV)" report $(COVERAGE_TARGET) \
 		-instr-profile=$(COVERAGE_PROFILE) \
 		$(SOURCES) $(PLATFORM_SOURCES) $(PRODUCTION_HEADERS)
+	"$(LLVM_PROFDATA)" merge -sparse \
+		$(TANK_DRAW_COMPATIBILITY_COVERAGE_RAW_PROFILE) \
+		-o $(TANK_DRAW_COMPATIBILITY_COVERAGE_PROFILE)
+	"$(LLVM_COV)" report $(TANK_DRAW_COMPATIBILITY_COVERAGE_TARGET) \
+		-instr-profile=$(TANK_DRAW_COMPATIBILITY_COVERAGE_PROFILE) \
+		src/wwii_tank_model.h src/tank_assets.h
 
 # Candidate packages and candidate-bound QA under build/release{,-evidence}
 # are immutable records, not disposable compiler output. Keep the cleanup list

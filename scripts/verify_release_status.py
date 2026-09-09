@@ -287,6 +287,14 @@ AUDIO_BASE_CHECKS = [
     "all_22_candidate_ogg_reviewed",
     "chain_of_title_limitation_understood",
 ]
+# Keep the publication-path exception and mandatory audio evidence in sync.
+# Historical releases use the verifier and notices in their source snapshot.
+REPOSITORY_AUDIO_NOTICES = (
+    "ASSET_LICENSES.md",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSES/MIT-upstream.txt",
+    "LICENSES/MIT-JustoSenka-BattleCity.txt",
+)
 AUDIO_DECISION_CHECKS = [
     {"decision": "ACCEPT", "checks": list(AUDIO_BASE_CHECKS)},
     {
@@ -2169,19 +2177,14 @@ def validate_persistent_pass_evidence(
                         persistent_prefix,
                     )
                 )
-    repository_audio_notices = {
-        "ASSET_LICENSES.md",
-        "THIRD_PARTY_NOTICES.md",
-        "LICENSES/MIT-upstream.txt",
-    }
     for artifact_index, artifact in enumerate(audio["evidence"]):
         path = artifact["path"]
-        if path in repository_audio_notices:
+        if path in REPOSITORY_AUDIO_NOTICES:
             continue
         if not path.startswith(persistent_prefix):
             raise VerificationError(
                 "selected status.audio.evidence[{}] must be stored under {}; "
-                "only the three canonical repository notice files may remain "
+                "only canonical repository audio notice files may remain "
                 "outside the versioned release assets".format(
                     artifact_index, persistent_prefix
                 )
@@ -5441,13 +5444,17 @@ def validate_audio(
             "status.audio.checks_confirmed do not match the selected decision"
         )
     required_paths = {
-        (root / "ASSET_LICENSES.md").resolve(),
-        (root / "THIRD_PARTY_NOTICES.md").resolve(),
-        (root / "LICENSES" / "MIT-upstream.txt").resolve(),
+        (root / relative).resolve() for relative in REPOSITORY_AUDIO_NOTICES
     }
     if not required_paths.issubset(audio_paths):
+        missing_notices = [
+            relative
+            for relative in REPOSITORY_AUDIO_NOTICES
+            if (root / relative).resolve() not in audio_paths
+        ]
         raise VerificationError(
-            "selected audio decision must hash the asset, third-party, and MIT notices"
+            "selected audio decision must hash all canonical repository audio "
+            "notices; missing: {}".format(", ".join(missing_notices))
         )
     decision_reports = [
         item

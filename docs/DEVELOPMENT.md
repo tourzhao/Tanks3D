@@ -73,6 +73,14 @@ and sanitizers before submitting refactors. Focused targets include
 changes also require checking menus, one/two-player controls, pause, pickups,
 stage completion and the battle report.
 
+`make test-tank-drawing` checks legacy and explicit-national drawing calls by
+recording their complete geometry commands without opening a GPU window.
+It runs with `make test` and coverage; `make test-sanitize` also runs it and
+the standalone nation-selection boundary cases under ASan/UBSan. Coverage keeps
+the drawing test's profile separate and prints a second report for the two
+rendering headers, including legacy overloads unused by the main executable.
+These supplementary counts are not merged into the main production report.
+
 Keep generated screenshots, binaries and reports under `build/`. `make clean`
 preserves `build/release/` and `build/release-evidence/`; other build outputs
 are disposable.

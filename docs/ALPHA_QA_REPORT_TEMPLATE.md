@@ -461,7 +461,8 @@ The final published status must not point only to ignored local files.
 ## Inherited 22-Sound Decision
 
 Review `ASSET_LICENSES.md`, `THIRD_PARTY_NOTICES.md`, the archive's `licenses/`
-directory, and all 22 inherited OGG files. Non-commercial intent does not replace
+directory, both upstream MIT notices, and all 22 candidate OGG files.
+Non-commercial intent does not replace
 this decision. Select **exactly one** option; no selection, multiple selections,
 missing authority, or missing evidence blocks release.
 

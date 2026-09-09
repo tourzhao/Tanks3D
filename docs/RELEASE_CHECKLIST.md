@@ -466,8 +466,11 @@ artifact and for the audio decision report. Each promoted file must be a
 regular blob in current Git `HEAD`; the verifier recomputes its Git object ID
 from stable, no-follow worktree bytes. It rejects ignored, filtered/smudged,
 `assume-unchanged`, or `skip-worktree` divergence. The canonical
-`ASSET_LICENSES.md`, `THIRD_PARTY_NOTICES.md`, and
-`LICENSES/MIT-upstream.txt` references remain at their repository paths. A fully
+`ASSET_LICENSES.md`, `THIRD_PARTY_NOTICES.md`,
+`LICENSES/MIT-upstream.txt` and `LICENSES/MIT-JustoSenka-BattleCity.txt`
+references remain at their repository paths. All four repository audio notices
+must be hashed in the audio decision; neither MIT notice can substitute for
+the separate decision report. A fully
 ready status must itself be the committed
 `docs/releases/<tag>-status.json`; `--allow-blocked` cannot approve an ignored
 `status.next.json`.
@@ -531,7 +534,7 @@ opens a window and intentionally remains outside CI and candidate gates.
 - Run a longer session and record frame-rate, thermal, rendering, and audio
   problems as known issues.
 - Review the archive's `licenses/` directory and decide whether to accept,
-  confirm, or replace the inherited sound set described in
+  confirm, or replace the two-source sound set described in
   `ASSET_LICENSES.md`. The current v2 profile approves only explicit owner
   `ACCEPT`;
   `CONFIRM` requires a new profile with an externally trusted cryptographic

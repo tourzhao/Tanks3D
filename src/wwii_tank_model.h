@@ -2617,7 +2617,7 @@ inline float muzzleHeight(bool enemy, int identity)
 
 inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
                      int armor, float shield, int identity, bool moving,
-                     Nation nation = Nation::UnitedStates)
+                     Nation nation)
 {
     nation = tanks3d::core::normalizedNation(nation);
     const Vehicle vehicle = enemy ? enemyVehicle(nation, identity)
@@ -2654,6 +2654,14 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
     rlPopMatrix();
     detail::drawShield(shield, identity);
     rlPopMatrix();
+}
+
+// Calls made before national enemy selection keep their original roster.
+inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
+                     int armor, float shield, int identity, bool moving)
+{
+    DrawTank(x, z, yaw, bodyColor, enemy, armor, shield, identity, moving,
+             enemy ? Nation::Germany : Nation::UnitedStates);
 }
 
 } // namespace wwii_tank_model
