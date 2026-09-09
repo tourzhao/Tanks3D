@@ -106,6 +106,14 @@ right does not reverse their overlap.
 Tree trunks, roots and branches emit their own surface normals so their
 lighting stays stable when preceding offscreen geometry is omitted.
 
+Static forest plans and canopy geometry are cached by map cell, stage and
+exposed-edge mask. Steel caches its original world-space triangles and normals
+in a bounded set of 256 entries, shared by the visible and shadow passes.
+Warm frames replay these shapes instead of reconstructing them. This reduces
+CPU work in dense views while retaining the original colors, silhouettes,
+transparent ordering and shadow geometry. Forest caches clear on asset unload
+or stage changes; the steel cache releases its retained data at application exit.
+
 ## Implementation boundaries
 
 - Tank geometry lives in `src/wwii_tank_model.h`: twelve player models across

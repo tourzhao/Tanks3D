@@ -11437,8 +11437,132 @@ struct FakeViewTargetAllocator
     }
 };
 
+struct SteelTileGeometryCacheTestAccess
+{
+    static std::size_t size(const SteelTileGeometryCache &cache)
+    {
+        return static_cast<std::size_t>(std::count_if(
+            cache.entries_.begin(), cache.entries_.end(),
+            [](const auto &entry) { return entry.key >= 0; }));
+    }
+
+    static bool hasConsistentIndex(const SteelTileGeometryCache &cache)
+    {
+        for (std::size_t slot = 0; slot < cache.entries_.size(); ++slot)
+        {
+            const auto &entry = cache.entries_[slot];
+            if (entry.key >= 0 && cache.slots_[entry.key] != static_cast<int>(slot) + 1)
+                return false;
+            if (entry.key < 0 && !entry.geometry.triangles.empty())
+                return false;
+        }
+        for (std::size_t key = 0; key < cache.slots_.size(); ++key)
+        {
+            const int slot = cache.slots_[key] - 1;
+            if (slot >= 0 && (slot >= static_cast<int>(cache.entries_.size()) ||
+                             cache.entries_[slot].key != static_cast<int>(key)))
+                return false;
+        }
+        return true;
+    }
+
+    static bool containsOrdinaryOrigin(const SteelTileGeometryCache &cache)
+    {
+        return cache.slots_[0] != 0;
+    }
+};
+
 int runViewTargetAllocationSelfTests()
 {
+    {
+        SteelTileGeometryCache cache;
+        const auto sameGeometry = [](const SteelTileGeometry &a,
+                                     const SteelTileGeometry &b) {
+            if (a.shadowTriangleCount != b.shadowTriangleCount ||
+                a.triangles.size() != b.triangles.size())
+                return false;
+            const auto samePoint = [](Vector3 x, Vector3 y) {
+                return x.x == y.x && x.y == y.y && x.z == y.z;
+            };
+            for (std::size_t index = 0; index < a.triangles.size(); ++index)
+            {
+                const auto &x = a.triangles[index];
+                const auto &y = b.triangles[index];
+                if (!samePoint(x.normal, y.normal) || x.color.r != y.color.r ||
+                    x.color.g != y.color.g || x.color.b != y.color.b || x.color.a != y.color.a)
+                    return false;
+                for (std::size_t vertex = 0; vertex < x.points.size(); ++vertex)
+                    if (!samePoint(x.points[vertex], y.points[vertex]))
+                        return false;
+            }
+            return true;
+        };
+        // The most steel-heavy original map has 176 cells. Shadow and visible
+        // passes must reuse the allocations, rather than thrash a smaller LRU.
+        std::array<const SteelTileTriangle *, 176> warmAllocations{};
+        for (std::size_t cell = 0; cell < warmAllocations.size(); ++cell)
+        {
+            const int row = static_cast<int>(cell)/kMapSize;
+            const int column = static_cast<int>(cell)%kMapSize;
+            warmAllocations[cell] = cache.get(row, column, false).triangles.data();
+        }
+        bool reused = true;
+        for (int pass = 0; pass < 2; ++pass)
+            for (std::size_t cell = 0; cell < warmAllocations.size(); ++cell)
+                reused &= cache.get(static_cast<int>(cell)/kMapSize,
+                                    static_cast<int>(cell)%kMapSize, false).triangles.data() ==
+                          warmAllocations[cell];
+        if (!checkTest(reused && SteelTileGeometryCacheTestAccess::size(cache) == 176 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache),
+                       "whole-map steel shadow and visible passes reuse warm geometry"))
+            return 1;
+
+        const SteelTileGeometry ordinary = cache.get(0, 0, false);
+        const SteelTileGeometry &permanent = cache.get(0, 0, true);
+        bool steelTags = true;
+        for (const auto &triangle : permanent.triangles)
+            steelTags &= triangle.color.a == 10;
+        bool sameShadow = ordinary.shadowTriangleCount == permanent.shadowTriangleCount;
+        for (std::size_t index = 0; sameShadow && index < ordinary.shadowTriangleCount; ++index)
+        {
+            const auto &a = ordinary.triangles[index];
+            const auto &b = permanent.triangles[index];
+            for (std::size_t vertex = 0; vertex < a.points.size(); ++vertex)
+                sameShadow &= a.points[vertex].x == b.points[vertex].x &&
+                              a.points[vertex].y == b.points[vertex].y &&
+                              a.points[vertex].z == b.points[vertex].z;
+        }
+        if (!checkTest(permanent.triangles.size() > ordinary.triangles.size() && steelTags &&
+                       sameShadow && sameGeometry(ordinary, cache.get(0, 0, false)),
+                       "permanent steel keeps its trim and material without replacing ordinary steel"))
+            return 1;
+
+        // Evict the oldest cell and check its rebuilt geometry against the
+        // original cold result, including full normals and material tags.
+        for (int cell = 1; cell <= 256; ++cell)
+            cache.get(cell/kMapSize, cell%kMapSize, false);
+        if (!checkTest(SteelTileGeometryCacheTestAccess::size(cache) == 256 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache) &&
+                       !SteelTileGeometryCacheTestAccess::containsOrdinaryOrigin(cache) &&
+                       sameGeometry(ordinary, cache.get(0, 0, false)),
+                       "bounded steel cache preserves cold geometry after eviction and revisit"))
+            return 1;
+        cache.clear();
+        if (!checkTest(SteelTileGeometryCacheTestAccess::size(cache) == 0 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache) &&
+                       sameGeometry(ordinary, cache.get(0, 0, false)) &&
+                       SteelTileGeometryCacheTestAccess::size(cache) == 1 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache),
+                       "clearing the steel cache releases geometry and resets lookup slots"))
+            return 1;
+        const std::size_t cachedCells = SteelTileGeometryCacheTestAccess::size(cache);
+        const SteelTileGeometry outside = cache.get(-1, kMapSize, true);
+        if (!checkTest(SteelTileGeometryCacheTestAccess::size(cache) == cachedCells &&
+                       sameGeometry(outside, buildSteelTileGeometry(-1, kMapSize, true)) &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache),
+                       "out-of-map steel diagnostics use a bounded fallback without corrupting slots"))
+            return 1;
+    }
     {
         // Compare the terrain rejection against raylib's actual screen
         // projection across the selectable camera orbit, including tall

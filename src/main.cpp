@@ -3758,17 +3758,163 @@ void drawGroundDetail(int row, int column)
     }
 }
 
-void drawSteelTile(int row, int column, bool permanent,
-                   bool shadowPass = false)
+struct SteelTileTriangle
+{
+    std::array<Vector3, 3> points;
+    Vector3 normal;
+    Color color;
+};
+
+struct SteelTileGeometry
+{
+    std::vector<SteelTileTriangle> triangles;
+    std::size_t shadowTriangleCount = 0;
+};
+
+// Record the existing immediate-mode shapes once, including their world-space
+// rounding and flat normals. Replaying does not switch shaders or textures.
+class SteelTileGeometryBuilder
+{
+public:
+    explicit SteelTileGeometryBuilder(SteelTileGeometry &geometry)
+        : geometry_(geometry)
+    {
+    }
+
+    void pushMatrix()
+    {
+        assert(matrixDepth_ < matrixStack_.size());
+        matrixStack_[matrixDepth_++] = transform_;
+    }
+
+    void popMatrix()
+    {
+        assert(matrixDepth_ > 0);
+        transform_ = matrixStack_[--matrixDepth_];
+    }
+
+    void translate(float x, float y, float z)
+    {
+        transform_ = MatrixMultiply(MatrixTranslate(x, y, z), transform_);
+    }
+
+    void rotate(float degrees, float x, float y, float z)
+    {
+        transform_ = MatrixMultiply(MatrixRotate({x, y, z}, DEG2RAD*degrees),
+                                    transform_);
+    }
+
+    void armoredBlock(Vector3 center, Vector3 size, Color color)
+    {
+        // Keep the contour and triangle order of base_model::armoredBlock.
+        const float x = size.x*0.5f, z = size.z*0.5f;
+        const float bevel = std::min(x, z)*0.26f;
+        const float shoulder = std::min(size.y*0.22f, 0.13f);
+        const std::array<Vector2, 8> contour{{
+            {-x + bevel, -z}, {x - bevel, -z},
+            {x, -z + bevel}, {x, z - bevel},
+            {x - bevel, z}, {-x + bevel, z},
+            {-x, z - bevel}, {-x, -z + bevel}}};
+        const float bottom = center.y - size.y*0.5f;
+        const float top = center.y + size.y*0.5f;
+        for (std::size_t index = 0; index < contour.size(); ++index)
+        {
+            const Vector2 a = contour[index];
+            const Vector2 b = contour[(index + 1) % contour.size()];
+            const Vector3 lowA{center.x + a.x, bottom, center.z + a.y};
+            const Vector3 lowB{center.x + b.x, bottom, center.z + b.y};
+            const Vector3 midA{lowA.x, top - shoulder, lowA.z};
+            const Vector3 midB{lowB.x, top - shoulder, lowB.z};
+            const Vector3 topA{center.x + a.x*0.90f, top, center.z + a.y*0.90f};
+            const Vector3 topB{center.x + b.x*0.90f, top, center.z + b.y*0.90f};
+            triangle(lowB, lowA, midA, color);
+            triangle(lowB, midA, midB, color);
+            triangle(midB, midA, topA, color);
+            triangle(midB, topA, topB, color);
+            triangle({center.x, top, center.z}, topB, topA, color);
+            triangle({center.x, bottom, center.z}, lowA, lowB, color);
+        }
+    }
+
+    void cube(Vector3 center, float width, float height, float length, Color color)
+    {
+        // Six complete faces, in DrawCube's front/back/top/bottom/right/left
+        // order. Like DrawCube, the current texture coordinate is untouched.
+        const float x = width/2, y = height/2, z = length/2;
+        const std::array<Vector3, 8> corners{{
+            {-x, -y, -z}, {x, -y, -z}, {-x, y, -z}, {x, y, -z},
+            {-x, -y, z}, {x, -y, z}, {-x, y, z}, {x, y, z}}};
+        static constexpr std::array<std::array<int, 6>, 6> faces{{
+            {{4, 5, 6, 7, 6, 5}}, {{0, 2, 1, 3, 1, 2}},
+            {{2, 6, 7, 3, 2, 7}}, {{0, 5, 4, 1, 5, 0}},
+            {{1, 3, 7, 5, 1, 7}}, {{0, 6, 2, 4, 6, 0}}}};
+        static constexpr std::array<Vector3, 6> normals{{
+            {0, 0, 1}, {0, 0, -1}, {0, 1, 0},
+            {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}}};
+        pushMatrix();
+        translate(center.x, center.y, center.z);
+        for (std::size_t face = 0; face < faces.size(); ++face)
+            for (int triangle = 0; triangle < 2; ++triangle)
+            {
+                const auto &indices = faces[face];
+                append(corners[indices[triangle*3]],
+                       corners[indices[triangle*3 + 1]],
+                       corners[indices[triangle*3 + 2]], normals[face], color);
+            }
+        popMatrix();
+    }
+
+private:
+    void triangle(Vector3 a, Vector3 b, Vector3 c, Color color)
+    {
+        const Vector3 u{b.x - a.x, b.y - a.y, b.z - a.z};
+        const Vector3 v{c.x - a.x, c.y - a.y, c.z - a.z};
+        Vector3 normal{u.y*v.z - u.z*v.y, u.z*v.x - u.x*v.z,
+                       u.x*v.y - u.y*v.x};
+        const float length = std::sqrt(normal.x*normal.x + normal.y*normal.y +
+                                       normal.z*normal.z);
+        if (length > 0.00001f)
+        {
+            normal.x /= length;
+            normal.y /= length;
+            normal.z /= length;
+        }
+        append(a, b, c, normal, color);
+    }
+
+    void append(Vector3 a, Vector3 b, Vector3 c, Vector3 normal, Color color)
+    {
+        if (matrixDepth_ > 0)
+        {
+            a = Vector3Transform(a, transform_);
+            b = Vector3Transform(b, transform_);
+            c = Vector3Transform(c, transform_);
+            // rlNormal3f rotates without renormalizing. Preserve that behavior.
+            normal = {transform_.m0*normal.x + transform_.m4*normal.y + transform_.m8*normal.z,
+                      transform_.m1*normal.x + transform_.m5*normal.y + transform_.m9*normal.z,
+                      transform_.m2*normal.x + transform_.m6*normal.y + transform_.m10*normal.z};
+        }
+        geometry_.triangles.push_back({{{a, b, c}}, normal, color});
+    }
+
+    SteelTileGeometry &geometry_;
+    Matrix transform_ = MatrixIdentity();
+    std::array<Matrix, 4> matrixStack_{};
+    std::size_t matrixDepth_ = 0;
+};
+
+SteelTileGeometry buildSteelTileGeometry(int row, int column, bool permanent)
 {
     // Cold plated barriers share a clear armor mark. No windows, tiled roof,
     // or warm masonry color competes with the destructible brick buildings.
-    using tanks3d::base_model::detail::armoredBlock;
+    SteelTileGeometry geometry;
+    geometry.triangles.reserve(permanent ? 1080 : 936);
+    SteelTileGeometryBuilder builder(geometry);
     const float x = column + 0.5f;
     const float z = row + 0.5f;
-    const auto paint = [shadowPass](Color color) {
+    const auto paint = [](Color color) {
         // The graphic steel response remains readable at the gameplay scale.
-        return shadowPass ? WHITE : materialColor(color, 10);
+        return materialColor(color, 10);
     };
     const Color dark = paint({46, 65, 80, 255});
     const Color body = paint(permanent ? Color{112, 145, 166, 255}
@@ -3776,59 +3922,158 @@ void drawSteelTile(int row, int column, bool permanent,
     const Color light = paint({173, 203, 213, 255});
     const Color edge = paint({76, 110, 134, 255});
     const Color permanentMark = paint({220, 199, 111, 255});
-    armoredBlock({x, 0.075f, z}, {0.96f, 0.15f, 0.96f}, dark);
-    armoredBlock({x, 0.405f, z}, {0.90f, 0.60f, 0.90f}, body);
-    armoredBlock({x, 0.730f, z}, {0.96f, 0.12f, 0.96f}, light);
+    builder.armoredBlock({x, 0.075f, z}, {0.96f, 0.15f, 0.96f}, dark);
+    builder.armoredBlock({x, 0.405f, z}, {0.90f, 0.60f, 0.90f}, body);
+    builder.armoredBlock({x, 0.730f, z}, {0.96f, 0.12f, 0.96f}, light);
     for (float sideX : {-1.0f, 1.0f})
         for (float sideZ : {-1.0f, 1.0f})
-            armoredBlock({x + sideX*0.401f, 0.40f, z + sideZ*0.401f},
+            builder.armoredBlock({x + sideX*0.401f, 0.40f, z + sideZ*0.401f},
                          {0.10f, 0.60f, 0.10f}, edge);
-    armoredBlock({x, 0.801f, z}, {0.72f, 0.045f, 0.72f}, body);
+    builder.armoredBlock({x, 0.801f, z}, {0.72f, 0.045f, 0.72f}, body);
     for (float angle : {-45.0f, 45.0f})
     {
-        rlPushMatrix();
-        rlTranslatef(x, 0.827f, z);
-        rlRotatef(angle, 0, 1, 0);
-        DrawCube({0, 0, 0}, 0.055f, 0.022f, 0.53f, light);
-        rlPopMatrix();
+        builder.pushMatrix();
+        builder.translate(x, 0.827f, z);
+        builder.rotate(angle, 0, 1, 0);
+        builder.cube({0, 0, 0}, 0.055f, 0.022f, 0.53f, light);
+        builder.popMatrix();
     }
-    if (shadowPass)
-        return;
+    geometry.shadowTriangleCount = geometry.triangles.size();
     // Crossed structural ribs identify reinforced metal without a letter or
     // pickup-like emblem. Every plate and bolt remains inside its own tile.
     if (permanent)
         for (float side : {-1.0f, 1.0f})
         {
-            DrawCube({x + side*0.32f, 0.827f, z}, 0.028f, 0.008f, 0.67f, permanentMark);
-            DrawCube({x, 0.827f, z + side*0.32f}, 0.67f, 0.008f, 0.028f, permanentMark);
+            builder.cube({x + side*0.32f, 0.827f, z}, 0.028f, 0.008f, 0.67f, permanentMark);
+            builder.cube({x, 0.827f, z + side*0.32f}, 0.67f, 0.008f, 0.028f, permanentMark);
         }
     for (int face = 0; face < 4; ++face)
     {
-        rlPushMatrix();
-        rlTranslatef(x, 0, z);
-        rlRotatef(face*90.0f, 0, 1, 0);
-        DrawCube({0, 0.42f, 0.454f}, 0.70f, 0.43f, 0.016f, dark);
-        armoredBlock({0, 0.435f, 0.465f}, {0.63f, 0.365f, 0.024f}, body);
+        builder.pushMatrix();
+        builder.translate(x, 0, z);
+        builder.rotate(face*90.0f, 0, 1, 0);
+        builder.cube({0, 0.42f, 0.454f}, 0.70f, 0.43f, 0.016f, dark);
+        builder.armoredBlock({0, 0.435f, 0.465f}, {0.63f, 0.365f, 0.024f}, body);
         for (float side : {-1.0f, 1.0f})
         {
             for (float y : {0.29f, 0.575f})
-                DrawCube({side*0.265f, y, 0.482f},
+                builder.cube({side*0.265f, y, 0.482f},
                          0.036f, 0.036f, 0.018f, light);
         }
         for (float angle : {-52.0f, 52.0f})
         {
-            rlPushMatrix();
-            rlTranslatef(0, 0.435f, 0.484f);
-            rlRotatef(angle, 0, 0, 1);
-            DrawCube({0, 0, 0}, 0.043f, 0.345f, 0.018f, light);
-            rlPopMatrix();
+            builder.pushMatrix();
+            builder.translate(0, 0.435f, 0.484f);
+            builder.rotate(angle, 0, 0, 1);
+            builder.cube({0, 0, 0}, 0.043f, 0.345f, 0.018f, light);
+            builder.popMatrix();
         }
         if (permanent)
             for (float side : {-1.0f, 1.0f})
-                DrawCube({side*0.327f, 0.435f, 0.483f},
+                builder.cube({side*0.327f, 0.435f, 0.483f},
                          0.025f, 0.30f, 0.006f, permanentMark);
-        rlPopMatrix();
+        builder.popMatrix();
     }
+    return geometry;
+}
+
+class SteelTileGeometryCache
+{
+    friend struct SteelTileGeometryCacheTestAccess;
+
+public:
+    const SteelTileGeometry &get(int row, int column, bool permanent)
+    {
+        if (row < 0 || row >= kMapSize || column < 0 || column >= kMapSize)
+        {
+            // Keep diagnostic/gallery coordinates valid without unbounded keys.
+            fallback_ = buildSteelTileGeometry(row, column, permanent);
+            return fallback_;
+        }
+        const int key = (permanent ? kMapSize*kMapSize : 0) + row*kMapSize + column;
+        const int slot = slots_[key] - 1;
+        if (slot >= 0)
+        {
+            entries_[slot].lastUse = ++clock_;
+            return entries_[slot].geometry;
+        }
+        auto oldest = std::min_element(entries_.begin(), entries_.end(),
+            [](const Entry &a, const Entry &b) { return a.lastUse < b.lastUse; });
+        if (oldest->key >= 0)
+            slots_[oldest->key] = 0;
+        oldest->geometry = buildSteelTileGeometry(row, column, permanent);
+        oldest->key = key;
+        oldest->lastUse = ++clock_;
+        slots_[key] = static_cast<int>(oldest - entries_.begin()) + 1;
+        return oldest->geometry;
+    }
+
+    void clear()
+    {
+        for (auto &entry : entries_)
+            entry = Entry{};
+        slots_.fill(0);
+        fallback_ = SteelTileGeometry{};
+        clock_ = 0;
+    }
+
+private:
+    struct Entry
+    {
+        SteelTileGeometry geometry;
+        std::uint64_t lastUse = 0;
+        int key = -1;
+    };
+    // The 35 original maps contain at most 176 steel cells. 256 entries keep
+    // both whole-map shadow and visible passes warm, with a 14 MiB upper bound.
+    // Cells are stage-independent; only cold misses scan this fixed array.
+    std::array<Entry, 256> entries_{};
+    std::array<int, 2*kMapSize*kMapSize> slots_{};
+    SteelTileGeometry fallback_;
+    std::uint64_t clock_ = 0;
+};
+
+SteelTileGeometryCache &steelTileGeometryCache()
+{
+    static SteelTileGeometryCache cache;
+    return cache;
+}
+
+void clearSteelTileGeometryCache()
+{
+    steelTileGeometryCache().clear();
+}
+
+void drawSteelTile(int row, int column, bool permanent,
+                   bool shadowPass = false)
+{
+    const SteelTileGeometry &geometry = steelTileGeometryCache().get(row, column, permanent);
+    const std::size_t count = shadowPass ? geometry.shadowTriangleCount :
+                                          geometry.triangles.size();
+    Color previousColor{};
+    Vector3 previousNormal{};
+    rlBegin(RL_TRIANGLES);
+    for (std::size_t index = 0; index < count; ++index)
+    {
+        const SteelTileTriangle &triangle = geometry.triangles[index];
+        const Color color = shadowPass ? WHITE : triangle.color;
+        if (index == 0 || color.r != previousColor.r || color.g != previousColor.g ||
+            color.b != previousColor.b || color.a != previousColor.a)
+        {
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            previousColor = color;
+        }
+        const Vector3 normal = triangle.normal;
+        if (index == 0 || normal.x != previousNormal.x || normal.y != previousNormal.y ||
+            normal.z != previousNormal.z)
+        {
+            rlNormal3f(normal.x, normal.y, normal.z);
+            previousNormal = normal;
+        }
+        for (const Vector3 &point : triangle.points)
+            rlVertex3f(point.x, point.y, point.z);
+    }
+    rlEnd();
 }
 
 void drawWaterTile(const StageMap &map, int row, int column)
@@ -7062,6 +7307,7 @@ int main(int argc, char **argv)
     tankAssets.unload();
     bonusAssets.unload();
     environment.unload();
+    clearSteelTileGeometryCache();
     postProcess.unload();
     lighting.unload();
     if (IsAudioDeviceReady())
