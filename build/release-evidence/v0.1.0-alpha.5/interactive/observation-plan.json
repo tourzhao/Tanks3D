@@ -1,0 +1,1024 @@
+{
+  "candidate_sha256": "d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8",
+  "completed_at_utc": null,
+  "event_log_producer": "Tanks3D Alpha QA Evidence Compiler",
+  "event_log_schema": "tanks3d-gameplay-event-log-v2",
+  "machine": "",
+  "observations": [
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:start_and_control:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "start_and_control"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:start_and_control:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "start_and_control"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:movement_and_collision:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "movement_and_collision"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:movement_and_collision:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "movement_and_collision"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:fire_hits_and_shell_cancellation:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "fire_hits_and_shell_cancellation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:fire_hits_and_shell_cancellation:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "fire_hits_and_shell_cancellation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:pause_and_resume:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "pause_and_resume"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:pause_and_resume:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "pause_and_resume"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:escape_returns_to_setup:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "escape_returns_to_setup"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:escape_returns_to_setup:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "escape_returns_to_setup"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:hp_death_and_respawn:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "hp_death_and_respawn"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:hp_death_and_respawn:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "hp_death_and_respawn"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:streak_increment_and_reset:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "streak_increment_and_reset"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:streak_increment_and_reset:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "streak_increment_and_reset"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:base_breach_and_core_loss:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "base_breach_and_core_loss"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:base_breach_and_core_loss:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "base_breach_and_core_loss"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:classified_ko_rows_and_totals:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "classified_ko_rows_and_totals"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:classified_ko_rows_and_totals:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "classified_ko_rows_and_totals"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:grenade_excluded_from_direct_ko:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "grenade_excluded_from_direct_ko"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:grenade_excluded_from_direct_ko:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "grenade_excluded_from_direct_ko"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:settlement_transition:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "settlement_transition"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:settlement_transition:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "settlement_transition"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:fullscreen_toggle:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "fullscreen_toggle"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:fullscreen_toggle:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "fullscreen_toggle"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:resize_hud_camera_and_minimap:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "resize_hud_camera_and_minimap"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:resize_hud_camera_and_minimap:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "resize_hud_camera_and_minimap"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:audio_cues_and_volume:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "audio_cues_and_volume"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:audio_cues_and_volume:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "audio_cues_and_volume"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:complete_stage_stability:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "complete_stage_stability"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "gameplay:complete_stage_stability:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "complete_stage_stability"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "base:usa:one_player",
+      "evidence_id": "national_bases",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "wall_damage",
+        "wall_breach",
+        "shovel_steel_material",
+        "shovel_steel_protection",
+        "tank_collision",
+        "core_loss",
+        "visibility",
+        "emblem_orientation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "base:usa:two_player",
+      "evidence_id": "national_bases",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "wall_damage",
+        "wall_breach",
+        "shovel_steel_material",
+        "shovel_steel_protection",
+        "tank_collision",
+        "core_loss",
+        "visibility",
+        "emblem_orientation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "base:ussr:one_player",
+      "evidence_id": "national_bases",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "wall_damage",
+        "wall_breach",
+        "shovel_steel_material",
+        "shovel_steel_protection",
+        "tank_collision",
+        "core_loss",
+        "visibility",
+        "emblem_orientation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "base:ussr:two_player",
+      "evidence_id": "national_bases",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "wall_damage",
+        "wall_breach",
+        "shovel_steel_material",
+        "shovel_steel_protection",
+        "tank_collision",
+        "core_loss",
+        "visibility",
+        "emblem_orientation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "base:germany:one_player",
+      "evidence_id": "national_bases",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "wall_damage",
+        "wall_breach",
+        "shovel_steel_material",
+        "shovel_steel_protection",
+        "tank_collision",
+        "core_loss",
+        "visibility",
+        "emblem_orientation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "base:germany:two_player",
+      "evidence_id": "national_bases",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "wall_damage",
+        "wall_breach",
+        "shovel_steel_material",
+        "shovel_steel_protection",
+        "tank_collision",
+        "core_loss",
+        "visibility",
+        "emblem_orientation"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:grenade:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:grenade:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:helmet:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:helmet:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:clock:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:clock:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:shovel:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:shovel:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:tank:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:tank:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:star:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:star:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:gun:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:gun:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:boat:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:boat:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:bandage_heal:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:bandage_heal:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "collection_audio_plays",
+        "score_delta_300",
+        "gameplay_effect_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:bandage_absent_at_full_hp:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "pickup_absent",
+        "no_pickup_visual_or_marker",
+        "no_collection_audio",
+        "no_score_delta",
+        "spawn_restriction_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:bandage_absent_at_full_hp:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "pickup_absent",
+        "no_pickup_visual_or_marker",
+        "no_collection_audio",
+        "no_score_delta",
+        "spawn_restriction_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:bandage_disabled_at_max_hp_1:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "pickup_absent",
+        "no_pickup_visual_or_marker",
+        "no_collection_audio",
+        "no_score_delta",
+        "spawn_restriction_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:bandage_disabled_at_max_hp_1:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "pickup_absent",
+        "no_pickup_visual_or_marker",
+        "no_collection_audio",
+        "no_score_delta",
+        "spawn_restriction_matches"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:pickup_lifetime_12_5_seconds:one_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "no_collection_audio_before_collection",
+        "no_score_delta_before_collection",
+        "lifetime_12_5_seconds"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "pickup:pickup_lifetime_12_5_seconds:two_player",
+      "evidence_id": "pickup_and_minimap",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "model_3d_visible",
+        "classic_icon_blinks",
+        "minimap_star_blinks",
+        "no_collection_audio_before_collection",
+        "no_score_delta_before_collection",
+        "lifetime_12_5_seconds"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:basic_tank_ko",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "basic_tank_ko"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:fast_tank_ko",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "fast_tank_ko"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:power_tank_ko",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "power_tank_ko"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:armor_tank_ko",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "armor_tank_ko"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:ko_total",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "ko_total"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:score_points",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "score_points"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "settlement:grenade_exclusion",
+      "evidence_id": "settlement_report",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "grenade_exclusion"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "controls:main_menu",
+      "evidence_id": "main_menu_and_advanced_settings",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "menu_arrow_or_wasd_navigation",
+        "menu_enter_or_space_confirm",
+        "q_or_escape_exits_from_setup",
+        "controller_menu_navigation_confirm_cancel_reset",
+        "controller_disconnect_reconnect_without_stuck_input",
+        "default_hp_3_and_reset_restores_defaults",
+        "player_hp_range_1_to_6_step_1",
+        "enemy_speed_range_minus_30_to_plus_30_step_5",
+        "fire_frequency_range_minus_30_to_plus_30_step_5",
+        "spawn_pace_range_minus_30_to_plus_30_step_5",
+        "escape_preserves_selected_values",
+        "camera_yaw_range_minus_45_to_plus_45_step_5",
+        "camera_elevation_range_40_to_70_step_5",
+        "camera_defaults_yaw_0_elevation_50_and_reset",
+        "camera_angles_preserved_on_escape_start_restart"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "controls:one_player",
+      "evidence_id": "one_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "player_1_arrow_movement",
+        "player_1_fire_bindings",
+        "enter_pause_resume",
+        "escape_returns_to_setup",
+        "r_restarts_stage",
+        "f8_quality_toggle",
+        "f11_borderless_toggle",
+        "n_b_stage_navigation",
+        "controller_fire_pause_cancel_no_face_exit",
+        "controller_stable_player_assignments",
+        "controller_disconnect_reconnect_without_stuck_input",
+        "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+        "return_menu_held_stick_release_without_dpad",
+        "return_menu_held_stick_release_with_dpad_overlap",
+        "selected_tuning_applies_after_start_and_restart",
+        "hp_1_disables_bandage_and_normal_hp_restores_it",
+        "camera_angles_preserved_on_escape_start_restart",
+        "camera_framing_all_angles_and_window_sizes",
+        "solo_camera_continuous_follow_and_reset"
+      ],
+      "result": "NOT_RUN"
+    },
+    {
+      "checks_confirmed": [],
+      "coverage_token": "controls:two_player",
+      "evidence_id": "two_player_gameplay",
+      "notes": "",
+      "observed_at_utc": null,
+      "required_checks": [
+        "player_1_arrow_movement",
+        "player_1_fire_bindings",
+        "player_2_wasd_movement",
+        "player_2_fire_bindings",
+        "enter_pause_resume",
+        "escape_returns_to_setup",
+        "r_restarts_stage",
+        "f8_quality_toggle",
+        "f11_borderless_toggle",
+        "n_b_stage_navigation",
+        "controller_fire_pause_cancel_no_face_exit",
+        "controller_stable_player_assignments",
+        "controller_disconnect_reconnect_without_stuck_input",
+        "camera_relative_stick_all_yaw_steps_and_cardinal_keyboard_dpad",
+        "return_menu_held_stick_release_without_dpad",
+        "return_menu_held_stick_release_with_dpad_overlap",
+        "selected_tuning_applies_after_start_and_restart",
+        "hp_1_disables_bandage_and_normal_hp_restores_it",
+        "camera_angles_preserved_on_escape_start_restart",
+        "camera_framing_all_angles_and_window_sizes",
+        "coop_camera_midpoint_separation_and_respawn"
+      ],
+      "result": "NOT_RUN"
+    }
+  ],
+  "requirements_profile": "macos-alpha-v2",
+  "review_notes": "",
+  "reviewed_at_utc": null,
+  "reviewer": "",
+  "reviewer_signature": "",
+  "schema": "tanks3d-alpha-v2-interactive-observation-manifest-v1",
+  "started_at_utc": null,
+  "supporting_artifacts": [
+    {
+      "artifacts": [],
+      "evidence_id": "main_menu_and_advanced_settings"
+    },
+    {
+      "artifacts": [],
+      "evidence_id": "one_player_gameplay"
+    },
+    {
+      "artifacts": [],
+      "evidence_id": "two_player_gameplay"
+    },
+    {
+      "artifacts": [],
+      "evidence_id": "national_bases"
+    },
+    {
+      "artifacts": [],
+      "evidence_id": "pickup_and_minimap"
+    },
+    {
+      "artifacts": [],
+      "evidence_id": "settlement_report"
+    }
+  ],
+  "tester": "",
+  "tester_signature": ""
+}

@@ -1,0 +1,141 @@
+INFO: Initializing raylib 6.0
+INFO: Platform backend: DESKTOP (GLFW)
+INFO: Supported raylib modules:
+INFO:     > rcore:..... loaded (mandatory)
+INFO:     > rlgl:...... loaded (mandatory)
+INFO:     > rshapes:... loaded (optional)
+INFO:     > rtextures:. loaded (optional)
+INFO:     > rtext:..... loaded (optional)
+INFO:     > rmodels:... loaded (optional)
+INFO:     > raudio:.... loaded (optional)
+INFO: DISPLAY: Device initialized successfully (HighDPI)
+INFO:     > Display size: 1470 x 956
+INFO:     > Screen size:  1280 x 720
+INFO:     > Render size:  2560 x 1440
+INFO:     > Viewport offsets: 0, 0
+INFO: GLAD: OpenGL extensions loaded successfully
+INFO: GL: Supported extensions count: 43
+INFO: GL: OpenGL device information:
+INFO:     > Vendor:   Apple
+INFO:     > Renderer: Apple M2
+INFO:     > Version:  4.1 Metal - 90.5
+INFO:     > GLSL:     4.10
+INFO: GL: VAO extension detected, VAO functions loaded successfully
+INFO: GL: NPOT textures extension detected, full NPOT textures supported
+INFO: GL: DXT compressed textures supported
+INFO: PLATFORM: DESKTOP (GLFW - Cocoa): Initialized successfully
+INFO: TEXTURE: [ID 1] Texture loaded successfully (1x1 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 1] Default texture loaded successfully
+INFO: SHADER: [ID 1] Vertex shader compiled successfully
+INFO: SHADER: [ID 2] Fragment shader compiled successfully
+INFO: SHADER: [ID 3] Program shader loaded successfully
+INFO: SHADER: [ID 3] Default shader loaded successfully
+INFO: RLGL: Render batch vertex buffers loaded successfully in RAM (CPU)
+INFO: RLGL: Render batch vertex buffers loaded successfully in VRAM (GPU)
+INFO: RLGL: Default OpenGL state initialized successfully
+INFO: TEXTURE: [ID 2] Texture loaded successfully (128x128 | GRAY_ALPHA | 1 mipmaps)
+INFO: FONT: Default font loaded successfully (224 glyphs)
+INFO: SYSTEM: Working Directory: /Users/tzhao80/Desktop/VCP/3D_Tank_Game
+INFO: AUDIO: Device initialized successfully
+INFO:     > Backend:       miniaudio | Core Audio
+INFO:     > Format:        32-bit IEEE Floating Point -> 32-bit IEEE Floating Point
+INFO:     > Channels:      2 -> 2
+INFO:     > Sample rate:   48000 -> 48000
+INFO:     > Periods size:  1440
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/stage_start_up.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (48000 Hz, 16 bit, 1 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/pause.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/game_over.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (48000 Hz, 16 bit, 1 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/highscore_beaten.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/menu_item_selected.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/bonus_appeared.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/bonus_obtained.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/bullet_hit_brick.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/bullet_hit_map_boundaries.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/bullet_hit_stone.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/bullet_hit_bullet.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/eagle_destroyed.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/enemy_destroyed.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/enemy_hit.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_destroyed.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_fired.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_hit.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_idle.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_life_up.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_moving.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/player_respawn.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/sounds/score_point_counted.ogg] File loaded successfully
+INFO: WAVE: Data loaded successfully (44100 Hz, 16 bit, 2 channels)
+INFO: SHADER: [ID 4] Vertex shader compiled successfully
+INFO: SHADER: [ID 5] Fragment shader compiled successfully
+INFO: SHADER: [ID 6] Program shader loaded successfully
+INFO: SHADER: [ID 4] Vertex shader compiled successfully
+INFO: SHADER: [ID 5] Fragment shader compiled successfully
+INFO: SHADER: [ID 7] Program shader loaded successfully
+INFO: TEXTURE: Depth texture loaded successfully
+INFO: TANKS3D: high-quality shadow map ready (2048x2048)
+INFO: SHADER: [ID 4] Fragment shader compiled successfully
+INFO: SHADER: [ID 5] Program shader loaded successfully
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/textures/battlefield_grass.png] File loaded successfully
+INFO: IMAGE: Data loaded successfully (1024x1024 | R8G8B8 | 1 mipmaps)
+INFO: TEXTURE: [ID 4] Texture loaded successfully (1024x1024 | R8G8B8 | 1 mipmaps)
+INFO: TEXTURE: [ID 4] Mipmaps generated automatically, total: 11
+INFO: FILEIO: [/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/Resources/textures/urban_masonry.png] File loaded successfully
+INFO: IMAGE: Data loaded successfully (1024x1024 | R8G8B8 | 1 mipmaps)
+INFO: TEXTURE: [ID 5] Texture loaded successfully (1024x1024 | R8G8B8 | 1 mipmaps)
+INFO: TEXTURE: [ID 5] Mipmaps generated automatically, total: 11
+INFO: TEXTURE: [ID 6] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 7] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 8] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 9] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 10] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 11] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 12] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 13] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 14] Texture loaded successfully (64x64 | R8G8B8A8 | 1 mipmaps)
+INFO: TANKS3D: WWII set ready: USA, USSR and Germany player progressions; four classic enemy types
+INFO: TEXTURE: [ID 15] Texture loaded successfully (1280x720 | R16G16B16A16 | 1 mipmaps)
+INFO: TEXTURE: [ID 1] Depth renderbuffer loaded successfully (32 bits)
+INFO: TANKS3D: RGBA16F HDR view target ready (1280x720)
+INFO: TEXTURE: [ID 16] Texture loaded successfully (1280x720 | R8G8B8A8 | 1 mipmaps)
+INFO: TEXTURE: [ID 2] Depth renderbuffer loaded successfully (32 bits)
+INFO: FBO: [ID 3] Framebuffer object created successfully
+Saved release screenshot: /Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/base-ussr.png
+INFO: FBO: [ID 2] Unloaded framebuffer from VRAM (GPU)
+INFO: TEXTURE: [ID 6] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 7] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 8] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 9] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 10] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 11] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 12] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 13] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 14] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 4] Unloaded texture data from VRAM (GPU)
+INFO: TEXTURE: [ID 5] Unloaded texture data from VRAM (GPU)
+INFO: FBO: [ID 3] Unloaded framebuffer from VRAM (GPU)
+INFO: SHADER: [ID 5] Unloaded shader program data from VRAM (GPU)
+INFO: FBO: [ID 1] Unloaded framebuffer from VRAM (GPU)
+INFO: SHADER: [ID 7] Unloaded shader program data from VRAM (GPU)
+INFO: SHADER: [ID 6] Unloaded shader program data from VRAM (GPU)
+INFO: AUDIO: Device closed successfully

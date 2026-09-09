@@ -1,0 +1,287 @@
+{
+  "schema": "tanks3d-candidate-audio-inventory-v1",
+  "generated_at_utc": "2026-09-09T19:40:50.220224+00:00",
+  "purpose": "Mechanical candidate inventory and repository provenance claims for owner review; not release approval or a rights determination.",
+  "candidate": {
+    "tag": "v0.1.0-alpha.5",
+    "source_commit": "cc5f2a7eec073accf37c2085c10bf155061acef2",
+    "archive_path": "build/release/v0.1.0-alpha.5/Tanks3D-0.1.0-alpha.5-macos-arm64-macos26.0.zip",
+    "archive_sha256": "d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8",
+    "archive_size_bytes": 5506435,
+    "attestation_path": "build/release/v0.1.0-alpha.5/attestation.txt",
+    "attestation_sha256": "42669736efa41566ada742bf137431e1afecebf9b5e2aa055c465f38ed943aa2",
+    "checksum_sha256": "0e551aa40f43337152394cc593d8e51ace82d4b46dfc26d3ca56a45b55b81f7d",
+    "build_config": {
+      "path": "build/release/v0.1.0-alpha.5/build-config.txt",
+      "sha256": "8fdb8ace9df0819898a8e463b23a015b2ebdb7b962ee6f8c0a43c8c6cc53b58c",
+      "size_bytes": 903
+    },
+    "gate_log": {
+      "path": "build/release/v0.1.0-alpha.5/alpha-candidate-gates.log",
+      "sha256": "1c329c8e65d591bd9a9049658cdb386a3bd8a327e42f18d9135528944fdaca60",
+      "size_bytes": 135507
+    }
+  },
+  "provenance_document": "ASSET_LICENSES.md#runtime-audio",
+  "sources": [
+    {
+      "id": "krystiankaluzny-tanks",
+      "repository": "krystiankaluzny/Tanks",
+      "commit": "f59aea31638117e20bc03276026bdbb9f8828b47",
+      "audio_file_count": 20,
+      "url": "https://github.com/krystiankaluzny/Tanks/tree/f59aea31638117e20bc03276026bdbb9f8828b47/resources/sounds",
+      "repository_notice": "LICENSES/MIT-upstream.txt",
+      "repository_provenance_claim": "Twenty unchanged, same-name OGG files; history credits Redas Jefisovas (holoflash) with the effect-sound set and refinements; OGG conversion through upstream pull request 35."
+    },
+    {
+      "id": "justosenka-battlecity",
+      "repository": "JustoSenka/BattleCity",
+      "commit": "3a07004ba8e53baea74ff70d2ecc22b017eb9b20",
+      "audio_file_count": 2,
+      "url": "https://github.com/JustoSenka/BattleCity/tree/3a07004ba8e53baea74ff70d2ecc22b017eb9b20/Assets/Audio",
+      "repository_notice": "LICENSES/MIT-JustoSenka-BattleCity.txt",
+      "repository_provenance_claim": "Two unchanged, renamed musical cues; repository declares MIT, copyright 2019 Justas Glodenis; 48,000 Hz mono; no trimming, resampling or transcoding."
+    }
+  ],
+  "scope_limit": "Records repository provenance and license declarations only. No independent confirmation of rights in original Battle City music or individual recordings; no listening review performed by this helper.",
+  "audio_files": [
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/bonus_appeared.ogg",
+      "repository_path": "resources/sounds/bonus_appeared.ogg",
+      "sha256": "6ed9f85177637b282d17ff1219bcb0e2bbdd2a07334ce9870388cafa8794df0b",
+      "size_bytes": 15224,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/bonus_appeared.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/bonus_obtained.ogg",
+      "repository_path": "resources/sounds/bonus_obtained.ogg",
+      "sha256": "778c41b9994d2162b17eafbc0b11fc62dfae3911b46faf6309cb7d60ec5bc505",
+      "size_bytes": 24277,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/bonus_obtained.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/bullet_hit_brick.ogg",
+      "repository_path": "resources/sounds/bullet_hit_brick.ogg",
+      "sha256": "cb6bc437a9a0fed4cc244659bc7f07e336a09546fdb413416156221c5e330c46",
+      "size_bytes": 5258,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/bullet_hit_brick.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/bullet_hit_bullet.ogg",
+      "repository_path": "resources/sounds/bullet_hit_bullet.ogg",
+      "sha256": "e5f169d64f429b839e32a23fb879f8b9b2271cb7a3dec93cd2518627cd79b1a3",
+      "size_bytes": 9774,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/bullet_hit_bullet.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/bullet_hit_map_boundaries.ogg",
+      "repository_path": "resources/sounds/bullet_hit_map_boundaries.ogg",
+      "sha256": "a524a9e1f6bf24ef37542cec50cc4e965b5c9f00feb766dc661dc0ce0b7c9955",
+      "size_bytes": 7741,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/bullet_hit_map_boundaries.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/bullet_hit_stone.ogg",
+      "repository_path": "resources/sounds/bullet_hit_stone.ogg",
+      "sha256": "972f7a108deddd13e11c1d7105a2b108fdf3cc3ec435c665aa4a00d6ba99dbe6",
+      "size_bytes": 7251,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/bullet_hit_stone.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/eagle_destroyed.ogg",
+      "repository_path": "resources/sounds/eagle_destroyed.ogg",
+      "sha256": "191aadb7ee759b553e62ab9722ce9ab88f9fd9372b1aed58b2b5fa201cc38225",
+      "size_bytes": 23653,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/eagle_destroyed.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/enemy_destroyed.ogg",
+      "repository_path": "resources/sounds/enemy_destroyed.ogg",
+      "sha256": "39e77d58da103bed56d33cfc4e4383d5f401ea0d835507e48a4ae208a4ce9b40",
+      "size_bytes": 12787,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/enemy_destroyed.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/enemy_hit.ogg",
+      "repository_path": "resources/sounds/enemy_hit.ogg",
+      "sha256": "124f2b02330fa84039fe3e85c1145c4a23aae4ffcecbb93ca52474e4649a056a",
+      "size_bytes": 5552,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/enemy_hit.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/game_over.ogg",
+      "repository_path": "resources/sounds/game_over.ogg",
+      "sha256": "46146b0d7c1ddf470acfde780154ecd808bab2d0fd1437fb7b6c76fa88255b8f",
+      "size_bytes": 25722,
+      "source_id": "justosenka-battlecity",
+      "upstream_path": "Assets/Audio/gameover.ogg",
+      "matches_pinned_source_and_checkout": true,
+      "documented_duration_seconds": 1.735667
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/highscore_beaten.ogg",
+      "repository_path": "resources/sounds/highscore_beaten.ogg",
+      "sha256": "eeddcd92844893e5fc7c5fbccf970b16cb8e14bec437bc2c06d8b91520aa1e08",
+      "size_bytes": 117863,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/highscore_beaten.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/menu_item_selected.ogg",
+      "repository_path": "resources/sounds/menu_item_selected.ogg",
+      "sha256": "79b5537367f5745b7d5cf3ca4e468907b26c48d2a79f3d1b163305f5b58a0906",
+      "size_bytes": 5646,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/menu_item_selected.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/pause.ogg",
+      "repository_path": "resources/sounds/pause.ogg",
+      "sha256": "fabb799ce8ee3edc98d5857e932071bc825cfa7be8236f3091c2329387d12a63",
+      "size_bytes": 16201,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/pause.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_destroyed.ogg",
+      "repository_path": "resources/sounds/player_destroyed.ogg",
+      "sha256": "27d2dde17d12c4ce9ad79f6b3979de9423972973cbd9fa5e7382d638eeb184f5",
+      "size_bytes": 18588,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_destroyed.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_fired.ogg",
+      "repository_path": "resources/sounds/player_fired.ogg",
+      "sha256": "cf2a7d37c9d929fb28211490e5e0596914bf1cf894f8c52a529497079912d762",
+      "size_bytes": 7390,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_fired.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_hit.ogg",
+      "repository_path": "resources/sounds/player_hit.ogg",
+      "sha256": "bb83e10758ff4945840e113ea6be2b1fd3e27de47c993dc58da1c4c690d6b5b1",
+      "size_bytes": 6111,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_hit.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_idle.ogg",
+      "repository_path": "resources/sounds/player_idle.ogg",
+      "sha256": "e334e7f33cb321d8ff6e6f02027c46b6f5b9fd9e172bd22bb883bc483c23340b",
+      "size_bytes": 16110,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_idle.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_life_up.ogg",
+      "repository_path": "resources/sounds/player_life_up.ogg",
+      "sha256": "5c432e25e182a42ee2c6b6a7eb8ade89e6ce6676dec7c14d5acecc86797fd928",
+      "size_bytes": 26053,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_life_up.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_moving.ogg",
+      "repository_path": "resources/sounds/player_moving.ogg",
+      "sha256": "c958b6ec92141cce91892ef0881b4716c684f9c2c9b4d4f9579fc736e9cb350b",
+      "size_bytes": 11097,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_moving.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/player_respawn.ogg",
+      "repository_path": "resources/sounds/player_respawn.ogg",
+      "sha256": "2fb03dd5993bea7417b1d24cc1fe9834297dc8c120ba8bed417c13bad2c67ad7",
+      "size_bytes": 28637,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/player_respawn.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/score_point_counted.ogg",
+      "repository_path": "resources/sounds/score_point_counted.ogg",
+      "sha256": "e06dfce6fd713bcbe80fc772c2db6da8be718a3f57397c09a7705b0d07f44b9f",
+      "size_bytes": 5516,
+      "source_id": "krystiankaluzny-tanks",
+      "upstream_path": "resources/sounds/score_point_counted.ogg",
+      "matches_pinned_source_and_checkout": true
+    },
+    {
+      "archive_path": "Tanks3D.app/Contents/Resources/sounds/stage_start_up.ogg",
+      "repository_path": "resources/sounds/stage_start_up.ogg",
+      "sha256": "3a2955e04920d4fa1298ee516d651580a2d76306d83730ea3aabad7a34601afa",
+      "size_bytes": 62984,
+      "source_id": "justosenka-battlecity",
+      "upstream_path": "Assets/Audio/levelstarting.ogg",
+      "matches_pinned_source_and_checkout": true,
+      "documented_duration_seconds": 4.333333
+    }
+  ],
+  "canonical_notices": [
+    {
+      "repository_path": "ASSET_LICENSES.md",
+      "archive_path": "Tanks3D.app/Contents/Resources/licenses/ASSET_LICENSES.md",
+      "sha256": "45b5dfa435e1beb63439c6430c9709900f408dd3dfff951eff89b40dcf054eef",
+      "size_bytes": 5670,
+      "byte_identical_to_pinned_source_and_checkout": true
+    },
+    {
+      "repository_path": "THIRD_PARTY_NOTICES.md",
+      "archive_path": "Tanks3D.app/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md",
+      "sha256": "2751298f8639f655b7deb56b6180bfd2ab68db2328618db1c74c1ad50e032b59",
+      "size_bytes": 4695,
+      "byte_identical_to_pinned_source_and_checkout": true
+    },
+    {
+      "repository_path": "LICENSES/MIT-upstream.txt",
+      "archive_path": "Tanks3D.app/Contents/Resources/licenses/LICENSES/MIT-upstream.txt",
+      "sha256": "72a47e88518e12ca034a3512a841193033b0ad17dbdabafb7324eb22829b122d",
+      "size_bytes": 1075,
+      "byte_identical_to_pinned_source_and_checkout": true
+    },
+    {
+      "repository_path": "LICENSES/MIT-JustoSenka-BattleCity.txt",
+      "archive_path": "Tanks3D.app/Contents/Resources/licenses/LICENSES/MIT-JustoSenka-BattleCity.txt",
+      "sha256": "8d7196a807a871fb505fb43fc64ad782ce00f02defe4f572235edef05b7e305d",
+      "size_bytes": 1072,
+      "byte_identical_to_pinned_source_and_checkout": true
+    }
+  ],
+  "owner_decision": {
+    "status": "PENDING",
+    "owner_review_completed": false
+  },
+  "generator": {
+    "path": "build/release-evidence/v0.1.0-alpha.5/prepare-audio-review.py",
+    "sha256": "04ba2b748ec7f6ab7eb6f01969e8f4ee0da5395d7b13eca4afdf2c5f21973db4"
+  }
+}

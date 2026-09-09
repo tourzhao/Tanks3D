@@ -12,6 +12,10 @@ camera and the restored Battle City maps are newer than
 the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-version)
 to play with the visuals shown here.
 
+[Alpha 5 candidate notes and fresh screenshots](docs/releases/v0.1.0-alpha.5.md)
+are now available for review. Its automated build gates passed; controller,
+clean-Mac, long-session, audio-owner and final approval gates remain pending.
+
 ![Current source: two-player battlefield with Pixel Style off](build/release-evidence/pixel-options-20260909/gameplay-coop.png)
 
 *Original stage 26 at 50° elevation and 25° left rotation, with staged tank
