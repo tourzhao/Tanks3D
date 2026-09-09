@@ -36,9 +36,15 @@ active prefix, pass `RAYLIB_PREFIX=/path/to/raylib` to `make`.
 
 In **Advanced Settings**, **View Horizontal** selects -45° to +45° and
 **View Elevation** selects 40° to 70°, both in 5° steps. The default is 0°
-horizontal and 50° elevation. Tank movement remains in four map directions;
-the gamepad left stick follows the selected view. The shared co-op camera
-tracks both players and expands to keep them visible.
+horizontal and 50° elevation. The minimum orthographic view spans 18.5 world
+units vertically, about 19% wider than the previous 15.5-unit view at the same
+angle. Tank movement remains in four map directions; the gamepad left stick
+follows the selected view. The camera follows the solo tank or the co-op
+midpoint even at map edges. Co-op expands beyond the minimum to keep both
+players visible, including uncapped expansion in narrow portrait windows.
+At large spans the camera retreats along the same viewing axis so its near
+plane cannot cut through foreground terrain; the normal 18.5-unit view keeps
+its original camera position.
 
 For a quick two-player stage 10 preview after building:
 

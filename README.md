@@ -4,17 +4,18 @@ Arcade tank combat on destructible 3D battlefields for macOS. Defend your
 headquarters, upgrade through three national tank lines, and play solo or
 local co-op across the 35 original Battle City battlefield layouts.
 
-## Current main preview
+## Current development preview
 
-**These screenshots show the current `main` source build.** The new tank and
-building models, restored Battle City maps, adjustable camera and updated controller input are newer than
-the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-main)
+**These screenshots show the current source build.** Rebuilt tanks and
+terrain, layered battle effects, a subtle pixel finish, a wider adjustable
+camera and the restored Battle City maps are newer than
+the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-version)
 to play with the visuals shown here.
 
-![Current main: two-player battlefield with rebuilt tanks, buildings and headquarters](build/release-evidence/main-showcase-20260909/gameplay-coop.png)
+![Current source: two-player battlefield with rebuilt tanks, buildings and headquarters](build/release-evidence/battlefield-art-20260909/gameplay-coop.png)
 
-*Local two-player play on original stage 1, with the camera rotated left 45° and set to
-45° elevation. Captured directly from the game.*
+*Original stage 26 at 50° elevation and 25° left rotation, with staged tank
+positions for the visual review. Rendered by the game with the wider camera.*
 
 ## Highlights
 
@@ -24,27 +25,31 @@ to play with the visuals shown here.
 - 12 player tanks across United States, Soviet and German light-to-super-heavy
   lines, plus four enemy roles.
 - Destructible buildings with tiled roofs, shop awnings and exposed ruins;
-  three national field headquarters, forest cover and steel fortifications.
+  three national headquarters, rounded forest canopies, shaded riverbanks and
+  clearly marked steel barriers.
 - All 35 original Battle City maps in their original order, with full-map
   radar, nine pickups, upgrades, HP, streaks and shell cancellation.
-- Adjustable camera rotation (-45° to +45°) and elevation (40° to 70°) in
-  5-degree steps. Local co-op shares a camera that follows both players.
+- Subtle pixel edges on the 3D scene, with crisp HUD text; short shell tracers,
+  layered orange fire and rolling smoke distinguish combat effects.
+- A 19% wider default view, with adjustable rotation (-45° to +45°) and
+  elevation (40° to 70°). Local co-op shares a camera that follows both players.
 
-![Current main: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/main-showcase-20260909/battle-report.png)
+![Current source: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/battlefield-art-20260909/battle-report.png)
 
 *Battle-report preview using the game's built-in showcase. Tank geometry is
 original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-![Tank proportion comparison: previous above, rebuilt below, at the same scale](build/release-evidence/main-showcase-20260909/tank-proportions.png)
+![Forest, steel and river models in the current renderer](build/release-evidence/battlefield-art-20260909/terrain-detail.png)
 
-*The M24 before and after rebuilding its proportions, shown at the same world
-scale from the side, front and three-quarter view. The chassis is longer and
-narrower, with a lower cabin, sloping nose and exposed steel track shoes.*
+*Forest cover, ordinary and permanent steel, and river shores at detail scale.
+Permanent steel has an additional pale gold frame; gameplay damage rules are
+unchanged.*
 
-[View a current single-player screenshot](build/release-evidence/main-showcase-20260909/gameplay-solo.png)
-· [Screenshot sources and capture commands](build/release-evidence/main-showcase-20260909/README.md)
+[View a current single-player screenshot](build/release-evidence/battlefield-art-20260909/gameplay-solo.png)
+· [Visual review and screenshot sources](build/release-evidence/battlefield-art-20260909/README.md)
+· [Tank proportion comparison](build/release-evidence/main-showcase-20260909/tank-proportions.png)
 
-## Build and play current main
+## Build and play current version
 
 On macOS, with Homebrew and the Xcode Command Line Tools installed:
 
@@ -72,7 +77,7 @@ and choose **Open**. If macOS blocks it, use
 
 Alpha 4 is an early pre-release and is not Apple notarized.
 
-## Controls in current main
+## Controls in the current version
 
 - **P1:** Arrow keys; `Space`/Right Option/Right Control fires.
 - **P2:** `WASD`; `F`/Left Option/Left Control fires.

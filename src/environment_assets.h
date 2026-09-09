@@ -671,12 +671,12 @@ private:
     static std::array<Color, 4> forestPalette(unsigned char requestedPalette)
     {
         static constexpr std::array<std::array<Color, 4>, 3> palettes{{
-            {{Color{31, 61, 47, 132}, Color{52, 88, 48, 126},
-              Color{86, 113, 55, 116}, Color{137, 149, 72, 104}}},
-            {{Color{25, 61, 53, 132}, Color{42, 89, 63, 126},
-              Color{71, 117, 68, 116}, Color{113, 143, 81, 104}}},
-            {{Color{46, 63, 39, 132}, Color{73, 94, 44, 126},
-              Color{106, 120, 53, 116}, Color{152, 153, 76, 104}}}}};
+            {{Color{24, 61, 47, 132}, Color{43, 99, 57, 126},
+              Color{88, 142, 70, 116}, Color{153, 179, 92, 104}}},
+            {{Color{22, 65, 57, 132}, Color{38, 104, 72, 126},
+              Color{77, 151, 92, 116}, Color{135, 184, 113, 104}}},
+            {{Color{39, 65, 36, 132}, Color{74, 108, 43, 126},
+              Color{118, 148, 61, 116}, Color{177, 186, 95, 104}}}}};
         return palettes[requestedPalette % palettes.size()];
     }
 
@@ -811,56 +811,58 @@ private:
         const ForestTree &tree, const std::array<Color, 4> &colors,
         float radiusScale)
     {
-        static constexpr int segmentCount = 10;
-        static constexpr int ringCount = 4;
+        static constexpr int segmentCount = 16;
+        static constexpr int ringCount = 7;
         static constexpr std::array<float, ringCount> ringHeight{{
-            0.0f, 0.23f, 0.61f, 0.88f}};
+            0.0f, 0.13f, 0.35f, 0.57f, 0.77f, 0.92f, 0.98f}};
         static constexpr std::array<float, ringCount> ringRadius{{
-            0.48f, 0.99f, 0.94f, 0.60f}};
+            0.30f, 0.69f, 0.93f, 1.00f, 0.89f, 0.59f, 0.27f}};
         std::array<std::array<Vector3, segmentCount>, ringCount> rings{};
         const float crownHeight = tree.crownTopHeight - tree.crownBaseHeight;
+        const float lobePhase = forestUnit(tree.seed ^ 0x632be5abU) *
+                                (2.0f * kForestPi);
 
         for (int ring = 0; ring < ringCount; ++ring)
         {
             const float heightFraction = ringHeight[static_cast<std::size_t>(ring)];
             const float y = tree.crownBaseHeight + crownHeight * heightFraction;
             const float centerX = tree.trunkTop.x +
-                forestSigned(tree.seed ^
-                             (0x7f4a7c15U + static_cast<std::uint32_t>(ring))) *
-                    0.008f;
+                forestSigned(tree.seed ^ 0x7f4a7c15U) * heightFraction * 0.008f;
             const float centerZ = tree.trunkTop.z +
-                forestSigned(tree.seed ^
-                             (0x94d049bbU + static_cast<std::uint32_t>(ring))) *
-                    0.008f;
+                forestSigned(tree.seed ^ 0x94d049bbU) * heightFraction * 0.008f;
             for (int segment = 0; segment < segmentCount; ++segment)
             {
-                const std::uint32_t detailSeed =
-                    tree.seed ^
-                    (0x165667b1U * static_cast<std::uint32_t>(ring + 1)) ^
-                    (0xd3a2646cU * static_cast<std::uint32_t>(segment + 1));
-                const float irregularity = 0.87f + forestUnit(detailSeed) * 0.16f;
+                // Broad, low-frequency bulges form rounded leaf groups in
+                // one transparent skin. Closely spaced shoulder rings close
+                // the dome smoothly; the top ring varies by only 1.6% of H.
                 const float angle = tree.crownTwist +
                                     static_cast<float>(segment) *
                                         (2.0f * kForestPi /
-                                         static_cast<float>(segmentCount)) +
-                                    static_cast<float>(ring) * 0.065f;
+                                         static_cast<float>(segmentCount));
+                const float irregularity =
+                    0.91f + 0.06f * std::cos(3.0f * angle + lobePhase +
+                                             heightFraction * 0.16f) +
+                    0.024f * std::cos(2.0f * angle - lobePhase);
                 const float radius = tree.crownRadius *
                                      ringRadius[static_cast<std::size_t>(ring)] *
                                      radiusScale * irregularity;
+                const float heightVariation = ring == ringCount - 1
+                    ? crownHeight * 0.008f * std::cos(2.0f * angle + lobePhase)
+                    : ring > 0
+                        ? crownHeight * 0.017f * std::cos(2.0f * angle + lobePhase)
+                        : 0.0f;
                 rings[static_cast<std::size_t>(ring)]
                      [static_cast<std::size_t>(segment)] = {
                     centerX + std::cos(angle) * radius * tree.crownScaleX,
-                    y + (ring > 0 && ring < ringCount - 1
-                             ? forestSigned(detailSeed ^ 0xb7e15162U) * crownHeight * 0.05f
-                             : 0.0f),
+                    y + heightVariation,
                     centerZ + std::sin(angle) * radius * tree.crownScaleZ};
             }
         }
 
         const Vector3 apex{
-            tree.trunkTop.x + forestSigned(tree.seed ^ 0xfd7046c5U) * 0.008f,
+            tree.trunkTop.x + forestSigned(tree.seed ^ 0x7f4a7c15U) * 0.008f,
             tree.crownTopHeight,
-            tree.trunkTop.z + forestSigned(tree.seed ^ 0xb55a4f09U) * 0.008f};
+            tree.trunkTop.z + forestSigned(tree.seed ^ 0x94d049bbU) * 0.008f};
         rlBegin(RL_TRIANGLES);
         for (int ring = 0; ring < ringCount - 1; ++ring)
         {
@@ -879,8 +881,13 @@ private:
                 const Vector3 upperNext =
                     rings[static_cast<std::size_t>(ring + 1)]
                          [static_cast<std::size_t>(next)];
-                const Color color = colors[static_cast<std::size_t>(ring)];
-                const float facetLight = (segment % 3) == 0 ? 1.09f : 0.97f;
+                static constexpr std::array<std::size_t, ringCount - 1> tones{{
+                    0U, 1U, 1U, 2U, 2U, 3U}};
+                const Color color = colors[tones[static_cast<std::size_t>(ring)]];
+                const float facetAngle = static_cast<float>(segment) *
+                    (2.0f * kForestPi / static_cast<float>(segmentCount));
+                const float facetLight = 1.0f +
+                    0.05f * std::cos(3.0f * facetAngle + lobePhase);
                 emitSurfaceTriangle(lower, upperNext, lowerNext, color);
                 emitSurfaceTriangle(lower, upper, upperNext, shade(color, facetLight));
             }

@@ -2423,14 +2423,35 @@ inline void drawShield(float shield, int identity)
         return;
     const float phase = static_cast<float>(GetTime()) * 4.8f + identity * 0.73f;
     const float pulse = std::sin(phase) * 0.035f;
-    const Color outer{88, 224, 255,
-                      static_cast<unsigned char>(74 + 30 * (0.5f + 0.5f * std::sin(phase)))};
-    const Vector3 center{0.0f, 0.55f, 0.0f};
-    DrawSphereWires(center, 1.02f + pulse, 10, 16, outer);
-    for (int ring = 0; ring < 3; ++ring)
-        DrawCircle3D(center, 0.90f + ring * 0.075f + pulse,
-                     {1.0f, 0.0f, 0.0f}, 90.0f,
-                     Fade(Color{125, 236, 255, 255}, 0.28f));
+    const float fade = std::min(shield, 0.35f) / 0.35f;
+    const Color glow{96, 215, 234,
+                     static_cast<unsigned char>(155.0f * fade)};
+    // A segmented protection ring leaves the vehicle readable. The scene
+    // submits it unlit, with depth testing but without transparent depth writes.
+    constexpr int segments = 32;
+    rlBegin(RL_TRIANGLES);
+    for (int segment = 0; segment < segments; ++segment)
+    {
+        if (segment % 8 >= 6)
+            continue;
+        const float a = segment * 2.0f * PI / segments;
+        const float b = (segment + 1) * 2.0f * PI / segments;
+        const auto point = [pulse](float angle, float radius) {
+            return Vector3{std::sin(angle) * (radius + pulse), 0.065f,
+                           std::cos(angle) * (radius + pulse)};
+        };
+        emitQuad(point(a, 0.965f), point(a, 1.015f),
+                 point(b, 1.015f), point(b, 0.965f), glow);
+    }
+    rlEnd();
+    for (int corner = 0; corner < 4; ++corner)
+    {
+        const float angle = (corner + 0.5f) * PI * 0.5f;
+        const Vector3 mote{std::sin(angle) * 0.92f,
+                           0.26f + 0.07f * std::sin(phase + corner),
+                           std::cos(angle) * 0.92f};
+        DrawCube(mote, 0.040f, 0.085f, 0.040f, glow);
+    }
 }
 
 } // namespace detail

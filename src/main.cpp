@@ -350,9 +350,9 @@ constexpr float kFastEnemySpeed =
 // Normal enemy steering remains on its original 100-899 ms clock.  This local
 // fallback only engages after a tank has repeatedly failed to advance.
 constexpr float kPlayerReloadTime = 0.120f;
-// Keep the fixed tilted camera local, but show enough surrounding lanes to
-// plan interceptions without relying on the minimap for every nearby threat.
-constexpr float kSoloCameraSpan = 15.5f;
+// Show surrounding lanes at the same viewing angle. Co-op uses this minimum
+// span too, then expands for player separation and the current aspect ratio.
+constexpr float kSoloCameraSpan = 18.5f;
 // Camera elevation is measured above the ground plane. The supported range
 // keeps tank silhouettes readable at the low endpoint while allowing a much
 // flatter, near-top-down composition at the high endpoint.
@@ -378,16 +378,24 @@ struct GameplayCameraElevationGeometry
 };
 
 GameplayCameraElevationGeometry gameplayCameraElevationGeometry(
-    int requestedDegrees)
+    int requestedDegrees, float orthographicSpan = kSoloCameraSpan)
 {
     const float radians =
         static_cast<float>(normalizedCameraElevationDegrees(
             requestedDegrees)) *
         (kPi / 180.0f);
     const float groundDepthProjection = std::sin(radians);
+    // A large orthographic image can extend behind a fixed camera's near
+    // plane. Retreat along the same axis without changing its image scale.
+    // Four units leave clearance for foreground terrain and tank height;
+    // the normal 18.5-unit view keeps its original orbit at every elevation.
+    const float orbitDistance = std::max(
+        kGameplayCameraOrbitDistance,
+        orthographicSpan * 0.5f * std::cos(radians) /
+            groundDepthProjection + 4.0f);
     return {
-        std::cos(radians) * kGameplayCameraOrbitDistance,
-        groundDepthProjection * kGameplayCameraOrbitDistance,
+        std::cos(radians) * orbitDistance,
+        groundDepthProjection * orbitDistance,
         groundDepthProjection};
 }
 
@@ -3459,8 +3467,6 @@ private:
         focus = focus * (1.0f / static_cast<float>(trackedPlayers));
         const CameraPlanarBasis cameraBasis =
             cameraPlanarBasis(cameraYawDegrees_);
-        const GameplayCameraElevationGeometry elevationGeometry =
-            gameplayCameraElevationGeometry(cameraElevationDegrees_);
         // Follow every movement instead of waiting for the player group to
         // reach a large screen-space dead zone. Solo play tracks the tank;
         // co-op tracks the midpoint and expands the view for separation.
@@ -3474,37 +3480,36 @@ private:
                  tracked[1].z - tracked[0].z},
                 cameraYawDegrees_, cameraElevationDegrees_, aspect);
         }
+        const float zoomRate = desiredFovy > cameraFovy_ ? 14.0f : 3.5f;
+        const float zoomBlend = 1.0f - std::exp(-zoomRate * dt);
+        cameraFovy_ += (desiredFovy - cameraFovy_) * zoomBlend;
+        const GameplayCameraElevationGeometry elevationGeometry =
+            gameplayCameraElevationGeometry(cameraElevationDegrees_,
+                                             cameraFovy_);
 
         for (int index = 0; index < playerCount_; ++index)
         {
-            // Orbit at a fixed distance using the selected azimuth and
-            // elevation. Co-op tracks the midpoint and zooms as necessary.
+            // Smooth the focus while keeping the orbit synchronized with
+            // this frame's span, including rapid portrait-window expansion.
             const Vector3 desiredTarget{
                 focus.x, kGameplayCameraTargetHeight, focus.z};
-            const Vector3 desiredPosition{
-                focus.x + cameraBasis.offsetX *
-                              elevationGeometry.depthOffset,
-                kGameplayCameraTargetHeight +
-                    elevationGeometry.verticalOffset,
-                focus.z + cameraBasis.offsetZ *
-                              elevationGeometry.depthOffset};
             CameraRig &rig = cameraRigs_[index];
             const float blend = rig.initialized
                                     ? 1.0f - std::exp(
                                                  -kGameplayCameraFollowResponsiveness *
                                                  dt)
                                     : 1.0f;
-            rig.position.x += (desiredPosition.x - rig.position.x) * blend;
-            rig.position.y += (desiredPosition.y - rig.position.y) * blend;
-            rig.position.z += (desiredPosition.z - rig.position.z) * blend;
             rig.target.x += (desiredTarget.x - rig.target.x) * blend;
             rig.target.y += (desiredTarget.y - rig.target.y) * blend;
             rig.target.z += (desiredTarget.z - rig.target.z) * blend;
+            rig.position = {
+                rig.target.x + cameraBasis.offsetX *
+                                   elevationGeometry.depthOffset,
+                rig.target.y + elevationGeometry.verticalOffset,
+                rig.target.z + cameraBasis.offsetZ *
+                                   elevationGeometry.depthOffset};
             rig.initialized = true;
         }
-        const float zoomRate = desiredFovy > cameraFovy_ ? 14.0f : 3.5f;
-        const float zoomBlend = 1.0f - std::exp(-zoomRate * dt);
-        cameraFovy_ += (desiredFovy - cameraFovy_) * zoomBlend;
     }
 
     void play(AudioCue cue)
@@ -3756,48 +3761,140 @@ void drawGroundDetail(int row, int column)
 void drawSteelTile(int row, int column, bool permanent,
                    bool shadowPass = false)
 {
-    // Cast armored redoubts: broad chamfers, a heavy lid and unmistakable
-    // dark embrasures. The one-cell collision footprint remains unchanged.
+    // Cold plated barriers share a clear armor mark. No windows, tiled roof,
+    // or warm masonry color competes with the destructible brick buildings.
     using tanks3d::base_model::detail::armoredBlock;
     const float x = column + 0.5f;
     const float z = row + 0.5f;
     const auto paint = [shadowPass](Color color) {
-        return shadowPass ? WHITE : materialColor(color, 7);
+        // The graphic steel response remains readable at the gameplay scale.
+        return shadowPass ? WHITE : materialColor(color, 10);
     };
-    const Color dark = paint({39, 53, 51, 255});
-    const Color body = paint(permanent ? Color{131, 128, 98, 255}
-                                      : Color{104, 139, 130, 255});
-    const Color light = paint(permanent ? Color{186, 174, 132, 255}
-                                       : Color{162, 182, 151, 255});
-    const Color edge = paint({75, 102, 92, 255});
-    const Color ochre = paint({224, 167, 66, 255});
-    armoredBlock({x, 0.09f, z}, {0.98f, 0.18f, 0.98f}, dark);
-    armoredBlock({x, 0.40f, z}, {0.90f, 0.56f, 0.90f}, body);
-    armoredBlock({x, 0.70f, z}, {0.98f, 0.15f, 0.98f}, light);
-    DrawCylinder({x - 0.06f, 0.774f, z - 0.045f}, 0.23f, 0.25f,
-                 0.055f, 12, edge);
-    DrawCylinder({x - 0.06f, 0.83f, z - 0.045f}, 0.19f, 0.20f,
-                 0.025f, 12, body);
+    const Color dark = paint({46, 65, 80, 255});
+    const Color body = paint(permanent ? Color{112, 145, 166, 255}
+                                      : Color{107, 151, 174, 255});
+    const Color light = paint({173, 203, 213, 255});
+    const Color edge = paint({76, 110, 134, 255});
+    const Color permanentMark = paint({220, 199, 111, 255});
+    armoredBlock({x, 0.075f, z}, {0.96f, 0.15f, 0.96f}, dark);
+    armoredBlock({x, 0.405f, z}, {0.90f, 0.60f, 0.90f}, body);
+    armoredBlock({x, 0.730f, z}, {0.96f, 0.12f, 0.96f}, light);
+    for (float sideX : {-1.0f, 1.0f})
+        for (float sideZ : {-1.0f, 1.0f})
+            armoredBlock({x + sideX*0.401f, 0.40f, z + sideZ*0.401f},
+                         {0.10f, 0.60f, 0.10f}, edge);
+    armoredBlock({x, 0.801f, z}, {0.72f, 0.045f, 0.72f}, body);
+    for (float angle : {-45.0f, 45.0f})
+    {
+        rlPushMatrix();
+        rlTranslatef(x, 0.827f, z);
+        rlRotatef(angle, 0, 1, 0);
+        DrawCube({0, 0, 0}, 0.055f, 0.022f, 0.53f, light);
+        rlPopMatrix();
+    }
     if (shadowPass)
         return;
-    DrawCube({x - 0.06f, 0.873f, z - 0.045f}, 0.13f, 0.04f, 0.035f, dark);
+    // Crossed structural ribs identify reinforced metal without a letter or
+    // pickup-like emblem. Every plate and bolt remains inside its own tile.
+    if (permanent)
+        for (float side : {-1.0f, 1.0f})
+        {
+            DrawCube({x + side*0.32f, 0.827f, z}, 0.028f, 0.008f, 0.67f, permanentMark);
+            DrawCube({x, 0.827f, z + side*0.32f}, 0.67f, 0.008f, 0.028f, permanentMark);
+        }
     for (int face = 0; face < 4; ++face)
     {
         rlPushMatrix();
         rlTranslatef(x, 0, z);
         rlRotatef(face*90.0f, 0, 1, 0);
-        DrawCube({0, 0.46f, 0.451f}, 0.59f, 0.20f, 0.038f, dark);
-        DrawCube({0, 0.55f, 0.472f}, 0.67f, 0.065f, 0.08f, light);
-        DrawCube({0, 0.365f, 0.472f}, 0.64f, 0.055f, 0.075f, edge);
-        DrawCube({0, 0.45f, 0.478f}, 0.040f, 0.12f, 0.025f, body);
+        DrawCube({0, 0.42f, 0.454f}, 0.70f, 0.43f, 0.016f, dark);
+        armoredBlock({0, 0.435f, 0.465f}, {0.63f, 0.365f, 0.024f}, body);
         for (float side : {-1.0f, 1.0f})
         {
-            DrawCube({side*0.33f, 0.32f, 0.465f}, 0.09f, 0.24f, 0.07f, edge);
-            DrawSphereEx({side*0.33f, 0.36f, 0.51f}, 0.029f, 4, 6, light);
-            DrawCube({side*0.21f, 0.20f, 0.458f}, 0.13f, 0.08f, 0.019f, ochre);
+            for (float y : {0.29f, 0.575f})
+                DrawCube({side*0.265f, y, 0.482f},
+                         0.036f, 0.036f, 0.018f, light);
         }
+        for (float angle : {-52.0f, 52.0f})
+        {
+            rlPushMatrix();
+            rlTranslatef(0, 0.435f, 0.484f);
+            rlRotatef(angle, 0, 0, 1);
+            DrawCube({0, 0, 0}, 0.043f, 0.345f, 0.018f, light);
+            rlPopMatrix();
+        }
+        if (permanent)
+            for (float side : {-1.0f, 1.0f})
+                DrawCube({side*0.327f, 0.435f, 0.483f},
+                         0.025f, 0.30f, 0.006f, permanentMark);
         rlPopMatrix();
     }
+}
+
+void drawWaterTile(const StageMap &map, int row, int column)
+{
+    const std::uint32_t seed = static_cast<std::uint32_t>(row + 1) * 92821U ^
+                               static_cast<std::uint32_t>(column + 1) * 68917U;
+    // Use the matte painted-world response for water: broad blue-green value
+    // regions and stepped reflections remain legible after pixel sampling.
+    const Color deep = materialColor({31, 87, 128, 255}, 7);
+    const Color shallow = materialColor({48, 141, 156, 255}, 7);
+    const Color bank = materialColor({118, 143, 118, 255}, 8);
+    const Color ripple = materialColor({93, 172, 185, 255}, 7);
+    const Color glint = materialColor({163, 211, 204, 255}, 7);
+    DrawCube({column + 0.5f, -0.015f, row + 0.5f}, 1.0f, 0.05f, 1.0f, deep);
+    const auto patch = [row, column](float x, float z, float width,
+                                    float depth, float y, Color color) {
+        const float left = column + x, top = row + z;
+        rlBegin(RL_QUADS);
+        rlColor4ub(color.r, color.g, color.b, color.a);
+        rlNormal3f(0, 1, 0);
+        rlVertex3f(left, y, top);
+        rlVertex3f(left, y, top + depth);
+        rlVertex3f(left + width, y, top + depth);
+        rlVertex3f(left + width, y, top);
+        rlEnd();
+    };
+    for (int edge = 0; edge < 4; ++edge)
+    {
+        static constexpr std::array<std::array<int, 2>, 4> neighbor{{
+            {{-1, 0}}, {{0, 1}}, {{1, 0}}, {{0, -1}}}};
+        if (map.tile(row + neighbor[edge][0], column + neighbor[edge][1]) == '~')
+            continue;
+        for (int step = 0; step < 3; ++step)
+        {
+            const float along = step / 3.0f;
+            const float depth = 0.09f + 0.025f *
+                static_cast<float>((seed >> (edge * 3 + step)) & 3U);
+            if (edge == 0 || edge == 2)
+                patch(along, edge == 0 ? 0.0f : 1.0f - depth,
+                      1.0f/3.0f, depth, 0.014f, shallow);
+            else
+                patch(edge == 3 ? 0.0f : 1.0f - depth, along,
+                      depth, 1.0f/3.0f, 0.014f, shallow);
+        }
+        if (edge == 0 || edge == 2)
+            patch(0, edge == 0 ? 0.0f : 0.974f, 1, 0.026f, 0.018f, bank);
+        else
+            patch(edge == 3 ? 0.0f : 0.974f, 0, 0.026f, 1, 0.018f, bank);
+    }
+    const float drift = std::round(std::sin(static_cast<float>(GetTime()) * 0.9f +
+                                           (seed & 15U)) * 2.0f) * 0.016f;
+    const auto unit = [seed](int shift) {
+        return static_cast<float>((seed >> shift) & 7U) / 7.0f;
+    };
+    const float firstX = 0.21f + unit(2)*0.13f + drift;
+    const float firstZ = 0.22f + unit(6)*0.21f;
+    const float firstLength = 0.17f + unit(10)*0.13f;
+    const float stair = (seed & 32U) != 0U ? 0.027f : -0.026f;
+    patch(firstX, firstZ, firstLength, 0.027f, 0.020f, ripple);
+    patch(firstX + firstLength*0.68f, firstZ + stair,
+          0.07f + unit(13)*0.05f, 0.026f, 0.020f, glint);
+    const float secondX = 0.40f + unit(16)*0.13f - drift;
+    const float secondZ = 0.57f + unit(19)*0.15f;
+    patch(secondX, secondZ, 0.11f + unit(22)*0.11f, 0.024f, 0.020f, ripple);
+    patch(secondX - 0.045f, secondZ + 0.024f,
+          0.075f + unit(25)*0.03f, 0.024f, 0.020f, glint);
 }
 
 unsigned char forestEdgeMask(const StageMap &map, int row, int column)
@@ -3897,27 +3994,7 @@ void drawTerrain(const StageMap &map, const EnvironmentAssets &environment,
             }
             else if (value == '~')
             {
-                const float wave = std::sin(static_cast<float>(GetTime()) * 1.6f + row * 0.7f + column * 0.5f);
-                const Color water = materialColor(Color{49, 125, 123, 255}, 7);
-                const Color foam = materialColor(Color{155, 195, 159, 255}, 7);
-                // Joined water cells form a single pool, edged with a narrow
-                // worn bank only where the simulation's water really ends.
-                DrawCube({column + 0.5f, -0.015f, row + 0.5f},
-                         1.0f, 0.05f, 1.0f, water);
-                DrawCube({column + 0.45f + wave*0.05f, 0.018f, row + 0.32f},
-                         0.42f, 0.008f, 0.024f, foam);
-                DrawCube({column + 0.65f - wave*0.03f, 0.017f, row + 0.68f},
-                         0.19f, 0.006f, 0.018f, foam);
-                const Color bank = materialColor(Color{123, 116, 78, 255}, 8);
-                for (int side = -1; side <= 1; side += 2)
-                {
-                    if (map.tile(row + side, column) != '~')
-                        DrawCube({column + 0.5f, 0.01f, row + 0.5f + side*0.48f},
-                                 1.0f, 0.07f, 0.04f, bank);
-                    if (map.tile(row, column + side) != '~')
-                        DrawCube({column + 0.5f + side*0.48f, 0.01f, row + 0.5f},
-                                 0.04f, 0.07f, 1.0f, bank);
-                }
+                drawWaterTile(map, row, column);
             }
             else if (value == '-')
             {
@@ -4176,7 +4253,7 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
                 drawGltfProbeFootprint(player.position,
                                        Color{255, 220, 72, 255});
             drawTankModel(tankAssets, player.position, player.yaw, playerColor(player.id),
-                          false, player.level, player.shieldTimer, player.id,
+                          false, player.level, 0.0f, player.id,
                           player.moving, player.nation);
             if (player.hasBoat)
                 drawBoatFloatation(player.position, player.yaw);
@@ -4221,6 +4298,26 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
         }
     }
     tankAssets.flushQueued(false);
+}
+
+void drawTankProtection(const Game3D &game)
+{
+    // Protection is an unlit overlay, not a lit part of the tank's armor.
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
+    BeginBlendMode(BLEND_ADDITIVE);
+    for (const Player &player : game.players())
+    {
+        if (!player.active || player.shieldTimer <= 0.0f)
+            continue;
+        rlPushMatrix();
+        rlTranslatef(player.position.x, 0.0f, player.position.z);
+        wwii_tank_model::detail::drawShield(player.shieldTimer, player.id);
+        rlPopMatrix();
+    }
+    EndBlendMode();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
 }
 
 Vector3 creationStarPoint(Vector3 center, Vector3 right, Vector3 up,
@@ -4338,7 +4435,7 @@ void drawEnemyCreationWarnings(const Game3D &game, Camera3D camera)
     EndBlendMode();
 }
 
-void drawEmissiveBattleFx(const Game3D &game)
+void drawEmissiveBattleFx(const Game3D &game, const Camera3D &camera)
 {
     // The physical penetrator is deliberately readable without bloom. Its
     // gameplay AABB remains the classic half-tile sprite footprint, while this
@@ -4350,16 +4447,21 @@ void drawEmissiveBattleFx(const Game3D &game)
             continue;
         const float velocityLength = std::max(0.001f, std::sqrt(lengthSquared(shell.velocity)));
         const XZ direction = shell.velocity * (1.0f / velocityLength);
-        const float radius = shell.power ? 0.090f : 0.068f;
+        const float radius = shell.power ? 0.095f : 0.074f;
         const float bodyLength = shell.power ? 0.30f : 0.23f;
         const Vector3 nose{shell.position.x, 0.67f, shell.position.z};
         const Vector3 base{shell.position.x - direction.x * bodyLength,
                            0.67f,
                            shell.position.z - direction.z * bodyLength};
-        DrawCylinderEx(base, nose, radius, radius * 0.54f, 9,
-                       shell.owner == ShellOwner::Player
-                           ? Color{167, 137, 73, 255}
-                           : Color{126, 129, 125, 255});
+        const Vector3 shoulder{shell.position.x - direction.x * bodyLength * 0.28f,
+                                0.67f,
+                                shell.position.z - direction.z * bodyLength * 0.28f};
+        const Color metal = shell.owner == ShellOwner::Player
+                                ? Color{183, 147, 77, 255}
+                                : Color{151, 154, 141, 255};
+        DrawCylinderEx(base, shoulder, radius, radius, 7, metal);
+        DrawCylinderEx(shoulder, nose, radius, radius * 0.12f, 7,
+                       Color{235, 212, 149, 255});
         const Vector3 bandRear{
             shell.position.x - direction.x * bodyLength * 0.82f, 0.67f,
             shell.position.z - direction.z * bodyLength * 0.82f};
@@ -4367,11 +4469,12 @@ void drawEmissiveBattleFx(const Game3D &game)
             shell.position.x - direction.x * bodyLength * 0.66f, 0.67f,
             shell.position.z - direction.z * bodyLength * 0.66f};
         DrawCylinderEx(bandRear, bandFront, radius * 1.06f,
-                       radius * 1.06f, 9, Color{82, 73, 53, 245});
-        DrawSphere(nose, radius * 0.72f, Color{236, 211, 137, 255});
+                       radius * 1.06f, 7, Color{76, 70, 51, 255});
     }
     EndBlendMode();
 
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
     BeginBlendMode(BLEND_ADDITIVE);
     for (const Shell &shell : game.shells())
     {
@@ -4386,28 +4489,30 @@ void drawEmissiveBattleFx(const Game3D &game)
         const Vector3 flameBase{shell.position.x - direction.x * bodyLength,
                                 0.67f,
                                 shell.position.z - direction.z * bodyLength};
-        const Vector3 hotTail{flameBase.x - direction.x * (shell.power ? 0.34f : 0.26f),
+        const Vector3 hotTail{flameBase.x - direction.x * (shell.power ? 0.19f : 0.14f),
                               0.67f,
-                              flameBase.z - direction.z * (shell.power ? 0.34f : 0.26f)};
-        const Vector3 tracerTail{hotTail.x - direction.x * (shell.power ? 0.40f : 0.30f),
+                              flameBase.z - direction.z * (shell.power ? 0.19f : 0.14f)};
+        const Vector3 tracerTail{hotTail.x - direction.x * (shell.power ? 0.15f : 0.11f),
                                  0.67f,
-                                 hotTail.z - direction.z * (shell.power ? 0.40f : 0.30f)};
+                                 hotTail.z - direction.z * (shell.power ? 0.15f : 0.11f)};
 
-        DrawSphere({shell.position.x, 0.67f, shell.position.z},
-                   shell.power ? 0.125f : 0.095f, Fade(color, 0.48f));
         DrawCylinderEx(hotTail, flameBase, 0.007f,
-                       shell.power ? 0.078f : 0.060f, 9, Fade(color, 0.92f));
+                       shell.power ? 0.050f : 0.038f, 7, Fade(color, 0.78f));
         const Vector3 coreTail{hotTail.x + direction.x * 0.07f, 0.67f,
                                hotTail.z + direction.z * 0.07f};
         DrawCylinderEx(coreTail, flameBase, 0.004f,
-                       shell.power ? 0.038f : 0.028f, 8,
-                       Color{255, 249, 200, 230});
-        DrawCylinderEx(tracerTail, hotTail, 0.002f, 0.017f, 7,
-                       Fade(color, 0.36f));
+                       shell.power ? 0.023f : 0.017f, 6,
+                       Color{255, 236, 164, 180});
+        DrawCylinderEx(tracerTail, hotTail, 0.002f, 0.011f, 5,
+                       Fade(color, 0.26f));
     }
     EndBlendMode();
-    game.effects().draw();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
+    game.effects().draw(camera);
 
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
     BeginBlendMode(BLEND_ADDITIVE);
     const float time = static_cast<float>(GetTime());
     for (const Enemy &enemy : game.enemies())
@@ -4425,6 +4530,8 @@ void drawEmissiveBattleFx(const Game3D &game)
                      Color{255, 112, 36, 125});
     }
     EndBlendMode();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
 }
 
 Color miniMapTileColor(char value, bool permanent)
@@ -5482,11 +5589,12 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
         lighting.begin(sharedCamera.position);
         drawWorld(game, tankAssets, environment, terrainView);
         lighting.end();
+        drawTankProtection(game);
         drawEnemyCreationWarnings(game, sharedCamera);
         for (const Pickup &pickup : game.bonuses())
             bonusAssets.draw(pickup, sharedCamera,
                              static_cast<float>(GetTime()));
-        drawEmissiveBattleFx(game);
+        drawEmissiveBattleFx(game, sharedCamera);
         drawForestForeground(game.map(), environment,
                              game.cameraYawDegrees(), terrainView);
         EndMode3D();

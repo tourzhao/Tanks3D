@@ -3,7 +3,7 @@
 
 #include <raylib.h>
 
-// Lightweight filmic post-processing for an HDR player view.
+// Gentle pixel treatment and filmic color for an HDR player view.
 // Draw the HUD after draw() so text and minimap lines remain crisp.
 class PostProcess
 {
@@ -71,9 +71,9 @@ public:
 
         // The source view is logical-window resolution while a Retina back
         // buffer has four times as many fragments. Run the 13-tap bloom and
-        // tone map once per source pixel, then perform one inexpensive
-        // bilinear upscale. HUD rendering still follows at native Retina
-        // resolution in the caller.
+        // tone map at logical resolution. A two-pixel scene grid and nearest
+        // presentation keep a slight arcade edge; the caller draws the HUD
+        // afterward at native resolution.
         BeginTextureMode(resolvedTarget_);
         ClearBackground(BLACK);
         BeginShaderMode(shader_);
@@ -113,7 +113,7 @@ private:
             resolvedTarget_ = {};
             return false;
         }
-        SetTextureFilter(resolvedTarget_.texture, TEXTURE_FILTER_BILINEAR);
+        SetTextureFilter(resolvedTarget_.texture, TEXTURE_FILTER_POINT);
         return true;
     }
 
@@ -155,9 +155,20 @@ vec3 softThreshold(vec3 color)
     return color*contribution;
 }
 
+vec2 sceneUv()
+{
+    // Two logical pixels are enough to suggest sprites while preserving
+    // small projectiles and terrain openings in the wider gameplay view.
+    vec2 block = texelSize*2.0;
+    vec2 uv = (floor(fragTexCoord/block) + 0.5)*block;
+    return clamp(uv, texelSize*0.5, vec2(1.0) - texelSize*0.5);
+}
+
 vec3 glowAt(vec2 offset)
 {
-    vec3 sampleColor = texture(texture0, fragTexCoord + offset*texelSize).rgb;
+    vec2 tap = clamp(sceneUv() + offset*texelSize,
+                     texelSize*0.5, vec2(1.0) - texelSize*0.5);
+    vec3 sampleColor = texture(texture0, tap).rgb;
     return softThreshold(approximateLinear(sampleColor));
 }
 
@@ -173,7 +184,8 @@ vec3 acesApprox(vec3 color)
 
 void main()
 {
-    vec4 source = texture(texture0, fragTexCoord);
+    vec2 uv = sceneUv();
+    vec4 source = texture(texture0, uv);
     vec3 sourceLinear = approximateLinear(source.rgb);
 
     // Thirteen taps: center, a compact 8-sample ring and a wider 4-sample
@@ -203,11 +215,19 @@ void main()
     vec3 warm = vec3(1.020, 1.004, 0.982);
     color *= mix(cool, warm, smoothstep(0.24, 0.80, luminance));
 
-    vec2 centered = fragTexCoord*2.0 - 1.0;
+    // Very light palette stepping belongs before the lens falloff: quantizing
+    // that smooth falloff would turn a plain ground plane into concentric bands.
+    vec3 stepped = floor(clamp(color, 0.0, 1.0)*47.0 + 0.5)/47.0;
+    color = mix(color, stepped, 0.28);
+
+    vec2 centered = uv*2.0 - 1.0;
     float vignette = 1.0 - 0.10*smoothstep(0.30, 1.55, dot(centered, centered));
     color *= vignette;
 
-    finalColor = vec4(clamp(color, 0.0, 1.0), source.a)*colDiffuse*fragColor;
+    // This target is a complete opaque world. Its foliage, smoke and overlays
+    // have already blended into RGB; reusing their accumulated framebuffer
+    // alpha here would composite them twice and darken the scene.
+    finalColor = vec4(clamp(color, 0.0, 1.0), 1.0)*colDiffuse*fragColor;
 }
 )GLSL";
     }

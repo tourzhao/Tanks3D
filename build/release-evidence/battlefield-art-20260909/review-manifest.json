@@ -1,0 +1,38 @@
+{
+  "baseline_commit": "04a43157106caa2905cca41fdcfa584beba1dca2",
+  "source_sha256": {
+    "src/main.cpp": "43c2c3e92e7e78d46aa86e5cba1b735b6f7402e0aa3bad89bce9eccdad407c87",
+    "src/environment_assets.h": "90d7f995358a06067ddcff8c306187e946542a01946b0579abe18680c3bfa418",
+    "src/battle_fx.h": "6e09618fec5375f8511fc69dadad4beac5946a09fc380cb0c0dea19b6f5df06c",
+    "src/post_process.h": "bc59894f57891ca7f47b158b93fc30402f70e2dbb1a5d0e5fd5d16177af4e5d5",
+    "src/wwii_tank_model.h": "1f6c09fb4f7a603e0d7565b0f7d927e1a68846bd2df52aaed0e98983141b08ca",
+    "tests/self_tests.inl": "ad20dd5fea1c44adad26be939a73d31eee26dd4f4ed66c26479ae5a1b973500a"
+  },
+  "artifact_sha256": {
+    "gameplay-coop.png": "f97e355e1d13d8d69f7f73ee6685004fced955e2485dfa5fe981bc58c12d6a70",
+    "gameplay-solo.png": "4e42257ef5697208dcb48071594dff6e95f61ad3ae22712b711c9d450512f003",
+    "battle-report.png": "426a7e9dfcdca8e63bba23d55e838e19673f5a7505c3894edbe2a5b7f233467c",
+    "terrain-detail.png": "33f22d0ee6a874749b1e3029568afc81e2b357497e0a0ff538225b5e771e7e4e",
+    "battle-effects.png": "609eae25cd3779f1ee818feaa3d78191a754b7bf19cfedbba1a4f746ec79bc6a",
+    "camera-cases.csv": "e2e584732b8244c8a2b5e12ebd808cac1d8744758b1efb744aca2f3acadf7f76"
+  },
+  "validation": {
+    "make_test_suites": 239,
+    "make_test_checks": 15258,
+    "asan_ubsan_integrated_checks": 13724,
+    "camera_comparisons": 72,
+    "all_complete_vs_culled_pixels_equal": true,
+    "minimum_player_aabb_margin_px": 3.42778,
+    "minimum_foreground_near_margin_world_units": 1.42306,
+    "fx_order_reversal_changed_pixels": [
+      0,
+      0,
+      0
+    ]
+  },
+  "notes": [
+    "Visual review only; this is not a release attestation or a frame-rate benchmark.",
+    "Gameplay captures use the final production renderer; stage 26 tank positions are staged on legal open cells.",
+    "The isolated terrain and FX sheets predate the final camera-only fix; the relevant art functions are unchanged."
+  ]
+}

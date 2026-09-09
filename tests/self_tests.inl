@@ -3317,7 +3317,7 @@ int runSettingsProgressionAndSettlementSelfTests(
                            0.0001f &&
                        std::fabs(kEnemyBlockedEscapeDelay - 0.30f) <
                            0.0001f &&
-                       std::fabs(kSoloCameraSpan - 15.5f) < 0.0001f &&
+                       std::fabs(kSoloCameraSpan - 18.5f) < 0.0001f &&
                        std::fabs(kGameplayCameraOrbitDistance -
                                  21.017376f) < 0.0001f &&
                        std::fabs(kGameplayCameraTargetHeight - 0.35f) <
@@ -3566,6 +3566,8 @@ int runSettingsProgressionAndSettlementSelfTests(
                 const CameraRig &camera =
                     centeredCameraGame.cameraRigs()[0];
                 soloCameraCentered = soloCameraCentered &&
+                    std::fabs(centeredCameraGame.cameraForPlayer(0).fovy -
+                              18.5f) < 0.0001f &&
                     std::fabs(camera.target.x - position.x) < 0.0001f &&
                     std::fabs(camera.target.z - position.z) < 0.0001f &&
                     std::fabs(camera.position.x - camera.target.x -
@@ -3580,8 +3582,8 @@ int runSettingsProgressionAndSettlementSelfTests(
         }
     }
     if (!checkTest(soloCameraCentered,
-                   "solo camera did not center its active tank across yaw, "
-                   "elevation, and playable positions"))
+                   "solo camera did not retain its wider span and center its "
+                   "active tank across yaw, elevation, and playable positions"))
         return 1;
 
     bool smoothCameraFollow = true;
@@ -3765,10 +3767,46 @@ int runSettingsProgressionAndSettlementSelfTests(
     const std::array<float, 6> cameraAspects{{
         4.0f / 3.0f, 16.0f / 9.0f, 21.0f / 9.0f,
         1.0f, 8.0f / 9.0f, 9.0f / 16.0f}};
-    const std::array<XZ, 2> diagonalSeparations{{
+    const std::array<XZ, 4> cameraSeparations{{
+        {0.0f, 0.0f}, {4.0f, 0.0f},
         {24.25f, 24.25f}, {24.25f, -24.25f}}};
+    const auto foregroundAheadOfNearPlane = [](const Camera3D &camera,
+                                              float aspect) {
+        const Vector3 forward = Vector3Normalize(
+            Vector3Subtract(camera.target, camera.position));
+        const Vector3 right = Vector3Normalize(
+            Vector3CrossProduct(forward, camera.up));
+        const Vector3 up = Vector3CrossProduct(right, forward);
+        for (const float horizontal : {-1.0f, 1.0f})
+        {
+            for (const float vertical : {-1.0f, 1.0f})
+            {
+                const Vector3 screenPlanePoint = Vector3Add(
+                    camera.target, Vector3Add(
+                        Vector3Scale(right, horizontal * camera.fovy *
+                                               aspect * 0.5f),
+                        Vector3Scale(up, vertical * camera.fovy * 0.5f)));
+                // Intersect the four actual orthographic corner rays with
+                // the apron and a plane above tanks/canopies. Their camera
+                // depth must remain ahead of raylib's 0.01 near plane.
+                for (const float height : {-0.12f, 2.0f})
+                {
+                    const float distance =
+                        (height - screenPlanePoint.y) / forward.y;
+                    const Vector3 point = Vector3Add(
+                        screenPlanePoint, Vector3Scale(forward, distance));
+                    if (Vector3DotProduct(
+                            Vector3Subtract(point, camera.position),
+                            forward) <= 0.01f)
+                        return false;
+                }
+            }
+        }
+        return true;
+    };
     bool resizedCoopFramingSafe = true;
-    bool landscapeFramingUnchanged = true;
+    bool widerLandscapeFramingCorrect = true;
+    bool foregroundDepthSafe = true;
     for (int yawDegrees = kCameraYawMinimumDegrees;
          yawDegrees <= kCameraYawMaximumDegrees;
          yawDegrees += kCameraYawStepDegrees)
@@ -3789,10 +3827,23 @@ int runSettingsProgressionAndSettlementSelfTests(
             const Vector3 up = Vector3CrossProduct(right, forward);
             for (float aspect : cameraAspects)
             {
-                for (const XZ separation : diagonalSeparations)
+                for (const XZ separation : cameraSeparations)
                 {
                     const float span = gameplayCameraSpan(
                         separation, yawDegrees, elevationDegrees, aspect);
+                    const GameplayCameraElevationGeometry geometry =
+                        gameplayCameraElevationGeometry(elevationDegrees,
+                                                         span);
+                    const CameraPlanarBasis basis =
+                        cameraPlanarBasis(yawDegrees);
+                    Camera3D expandedCamera = camera;
+                    expandedCamera.fovy = span;
+                    expandedCamera.position = {
+                        camera.target.x + basis.offsetX * geometry.depthOffset,
+                        camera.target.y + geometry.verticalOffset,
+                        camera.target.z + basis.offsetZ * geometry.depthOffset};
+                    foregroundDepthSafe = foregroundDepthSafe &&
+                        foregroundAheadOfNearPlane(expandedCamera, aspect);
                     const Vector3 playerOffset{
                         separation.x * 0.5f, 0.0f,
                         separation.z * 0.5f};
@@ -3808,32 +3859,60 @@ int runSettingsProgressionAndSettlementSelfTests(
                     if (aspect == 16.0f / 9.0f)
                     {
                         const float previousSpan = std::clamp(
-                            std::max({kSoloCameraSpan,
+                            std::max({15.5f,
                                       projectedUp * 2.0f + 4.5f,
                                       (projectedRight * 2.0f + 6.0f) /
                                           aspect}),
-                            kSoloCameraSpan, 38.0f);
-                        landscapeFramingUnchanged =
-                            landscapeFramingUnchanged &&
-                            std::fabs(span - previousSpan) < 0.0001f;
+                            15.5f, 38.0f);
+                        widerLandscapeFramingCorrect =
+                            widerLandscapeFramingCorrect &&
+                            std::fabs(span - std::max(18.5f, previousSpan)) <
+                                0.0001f;
                     }
                 }
             }
         }
     }
-    if (!checkTest(resizedCoopFramingSafe && landscapeFramingUnchanged,
+    if (!checkTest(resizedCoopFramingSafe && widerLandscapeFramingCorrect,
                    "resized co-op view crops a tank or its framing margin, "
-                   "or changes the existing 16:9 composition"))
+                   "or changes more than the minimum 16:9 camera span"))
+        return 1;
+    constexpr float regressionAspect = 640.0f / 900.0f;
+    const float regressionSpan = gameplayCameraSpan(
+        {24.25f, -24.25f}, 0, 40, regressionAspect);
+    const GameplayCameraElevationGeometry regressionGeometry =
+        gameplayCameraElevationGeometry(40, regressionSpan);
+    Camera3D regressionCamera{};
+    regressionCamera.target = {13.0f, kGameplayCameraTargetHeight, 13.0f};
+    regressionCamera.position = {
+        13.0f, kGameplayCameraTargetHeight + regressionGeometry.verticalOffset,
+        13.0f + regressionGeometry.depthOffset};
+    regressionCamera.up = {0, 1, 0};
+    regressionCamera.fovy = regressionSpan;
+    regressionCamera.projection = CAMERA_ORTHOGRAPHIC;
+    Camera3D fixedOrbitCamera = regressionCamera;
+    fixedOrbitCamera.position = Vector3Add(
+        regressionCamera.target,
+        Vector3Scale(Vector3Normalize(Vector3Subtract(
+                         regressionCamera.position, regressionCamera.target)),
+                     kGameplayCameraOrbitDistance));
+    if (!checkTest(foregroundDepthSafe &&
+                       !foregroundAheadOfNearPlane(fixedOrbitCamera,
+                                                  regressionAspect) &&
+                       foregroundAheadOfNearPlane(regressionCamera,
+                                                  regressionAspect),
+                   "wide portrait near plane clips foreground terrain or "
+                   "no longer reproduces the fixed-orbit regression"))
         return 1;
     const float fallbackCameraSpan = gameplayCameraSpan(
-        diagonalSeparations[0], 45, 70, 16.0f / 9.0f);
+        cameraSeparations[2], 45, 70, 16.0f / 9.0f);
     bool invalidCameraAspectsUseFallback = true;
     for (float aspect : std::array<float, 4>{{
              0.0f, -1.0f, std::numeric_limits<float>::infinity(),
              std::numeric_limits<float>::quiet_NaN()}})
     {
         invalidCameraAspectsUseFallback = invalidCameraAspectsUseFallback &&
-            gameplayCameraSpan(diagonalSeparations[0], 45, 70, aspect) ==
+            gameplayCameraSpan(cameraSeparations[2], 45, 70, aspect) ==
                 fallbackCameraSpan;
     }
     if (!checkTest(invalidCameraAspectsUseFallback &&
@@ -11340,9 +11419,11 @@ int runViewTargetAllocationSelfTests()
             return true;
         };
         for (const Vector3 focus : {
+                 Vector3{0.875f, kGameplayCameraTargetHeight, 0.875f},
                  Vector3{0.875f, kGameplayCameraTargetHeight, 25.125f},
                  Vector3{13.0f, kGameplayCameraTargetHeight, 13.0f},
-                 Vector3{25.125f, kGameplayCameraTargetHeight, 0.875f}})
+                 Vector3{25.125f, kGameplayCameraTargetHeight, 0.875f},
+                 Vector3{25.125f, kGameplayCameraTargetHeight, 25.125f}})
         {
             for (const Vector2 viewport : {Vector2{1280, 720},
                                            Vector2{720, 1280},
@@ -11355,8 +11436,6 @@ int runViewTargetAllocationSelfTests()
                         cameraPlanarBasis(yawDegrees);
                     for (const int elevationDegrees : {40, 50, 70})
                     {
-                        const GameplayCameraElevationGeometry geometry =
-                            gameplayCameraElevationGeometry(elevationDegrees);
                         const float coopSpan = std::max(
                             gameplayCameraSpan({24.25f, 24.25f}, yawDegrees,
                                                elevationDegrees, aspect),
@@ -11366,6 +11445,9 @@ int runViewTargetAllocationSelfTests()
                             viewport.x < viewport.y && coopSpan > 38.0f;
                         for (const float span : {kSoloCameraSpan, coopSpan})
                         {
+                            const GameplayCameraElevationGeometry geometry =
+                                gameplayCameraElevationGeometry(elevationDegrees,
+                                                                 span);
                             for (const float shake : {0.0f, 0.12f})
                             {
                                 Camera3D camera{};
