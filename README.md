@@ -7,15 +7,16 @@ local co-op across the 35 original Battle City battlefield layouts.
 ## Current development preview
 
 **These screenshots show the current source build.** Rebuilt tanks and
-terrain, layered battle effects, a subtle pixel finish, a wider adjustable
+terrain, layered battle effects, an optional crisp pixel finish, a wider adjustable
 camera and the restored Battle City maps are newer than
 the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-version)
 to play with the visuals shown here.
 
-![Current source: two-player battlefield with rebuilt tanks, buildings and headquarters](build/release-evidence/battlefield-art-20260909/gameplay-coop.png)
+![Current source: two-player battlefield with Pixel Style off](build/release-evidence/pixel-options-20260909/gameplay-coop.png)
 
 *Original stage 26 at 50° elevation and 25° left rotation, with staged tank
-positions for the visual review. Rendered by the game with the wider camera.*
+positions for the visual review. Rendered with the wider camera and the default
+Pixel Style OFF. [Compare Pixel Style ON](build/release-evidence/pixel-options-20260909/gameplay-pixel.png).*
 
 ## Highlights
 
@@ -29,7 +30,7 @@ positions for the visual review. Rendered by the game with the wider camera.*
   clearly marked steel barriers.
 - All 35 original Battle City maps in their original order, with full-map
   radar, nine pickups, upgrades, HP, streaks and shell cancellation.
-- Subtle pixel edges on the 3D scene, with crisp HUD text; short shell tracers,
+- Optional crisp pixel edges on the 3D scene, with sharp HUD text; short shell tracers,
   layered orange fire and rolling smoke distinguish combat effects.
 - A 19% wider default view, with adjustable rotation (-45° to +45°) and
   elevation (40° to 70°). Local co-op shares a camera that follows both players.
@@ -39,14 +40,16 @@ positions for the visual review. Rendered by the game with the wider camera.*
 *Battle-report preview using the game's built-in showcase. Tank geometry is
 original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-![Forest, steel and river models in the current renderer](build/release-evidence/battlefield-art-20260909/terrain-detail.png)
+![Forest, steel and river model detail review](build/release-evidence/battlefield-art-20260909/terrain-detail.png)
 
-*Forest cover, ordinary and permanent steel, and river shores at detail scale.
+*Model detail review from the battlefield art pass: forest cover, ordinary and
+permanent steel, and river shores at detail scale.
 Permanent steel has an additional pale gold frame; gameplay damage rules are
 unchanged.*
 
-[View a current single-player screenshot](build/release-evidence/battlefield-art-20260909/gameplay-solo.png)
-· [Visual review and screenshot sources](build/release-evidence/battlefield-art-20260909/README.md)
+[View a current single-player screenshot](build/release-evidence/pixel-options-20260909/gameplay-solo.png)
+· [Pixel option and screenshot sources](build/release-evidence/pixel-options-20260909/README.md)
+· [Battlefield art review](build/release-evidence/battlefield-art-20260909/README.md)
 · [Tank proportion comparison](build/release-evidence/main-showcase-20260909/tank-proportions.png)
 
 ## Build and play current version
@@ -87,7 +90,8 @@ Alpha 4 is an early pre-release and is not Apple notarized.
   `+` starts or pauses; `-` returns. ABXY never exits the game.
 - `Enter` pauses · `Esc` returns to setup · `R` restarts.
 - **Advanced Settings:** `View Horizontal` and `View Elevation` adjust the
-  camera. Default: 0° horizontal, 50° elevation.
+  camera. Default: 0° horizontal, 50° elevation. `Pixel Style` toggles the
+  optional pixel treatment (default OFF); left/right or confirm changes it.
 
 ## More
 

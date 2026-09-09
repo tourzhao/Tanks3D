@@ -1,0 +1,45 @@
+{
+  "captured_at": "2026-09-09T05:06:27.359786+00:00",
+  "source_sha256": {
+    "src/post_process.h": "a5adff353333b5c7c0cfa680c65eb0d38f715e4603f689404c471faadfb55540",
+    "build/pixel-options-20260909/pixel-sampling-qa.cpp": "766bc5515fbb0e20c051ae34df3a96f111812bdecb94bb42007e69df1c74e4fa"
+  },
+  "logical_window": [
+    257,
+    193
+  ],
+  "native_framebuffer": [
+    514,
+    386
+  ],
+  "dpi_scale": [
+    2,
+    2
+  ],
+  "sizes": [
+    [
+      17,
+      13
+    ],
+    [
+      18,
+      14
+    ],
+    [
+      257,
+      193
+    ]
+  ],
+  "production_renders": 39,
+  "failures": 0,
+  "wrong_texels": 0,
+  "mixed_color_pixels": 0,
+  "toggle_stale_pixels": 0,
+  "non_opaque_resolve_pixels": 0,
+  "native_presentation_mismatches": 0,
+  "on_off_changed_pixels": [
+    158,
+    189,
+    37088
+  ]
+}

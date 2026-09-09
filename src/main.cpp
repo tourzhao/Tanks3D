@@ -5654,6 +5654,7 @@ struct MenuSettings
     AdvancedGameSettings advanced{};
     int cameraYawDegrees = 0;
     int cameraElevationDegrees = kDefaultCameraElevationDegrees;
+    bool pixelStyleEnabled = false;
     int selected = 0;
     int advancedSelected = 0;
     bool advancedOpen = false;
@@ -5737,7 +5738,8 @@ bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
     return changed;
 }
 
-constexpr int kAdvancedMenuRowCount = 7;
+constexpr int kAdvancedMenuPixelStyleRow = 6;
+constexpr int kAdvancedMenuRowCount = 8;
 constexpr int kAdvancedMenuBackRow = kAdvancedMenuRowCount - 1;
 
 bool advancedSettingsAreDefault(const MenuSettings &settings)
@@ -5749,7 +5751,8 @@ bool advancedSettingsAreDefault(const MenuSettings &settings)
            settings.advanced.enemySpawnRatePercent == 0 &&
            settings.cameraYawDegrees == 0 &&
            settings.cameraElevationDegrees ==
-               kDefaultCameraElevationDegrees;
+               kDefaultCameraElevationDegrees &&
+           !settings.pixelStyleEnabled;
 }
 
 bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
@@ -5816,6 +5819,13 @@ bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
         }
     }
 
+    if (settings.advancedSelected == kAdvancedMenuPixelStyleRow &&
+        (direction != 0 || input.confirmPressed))
+    {
+        settings.pixelStyleEnabled = !settings.pixelStyleEnabled;
+        changed = true;
+    }
+
     if (input.resetPressed)
     {
         changed = changed || !advancedSettingsAreDefault(settings);
@@ -5823,6 +5833,7 @@ bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
         settings.cameraYawDegrees = 0;
         settings.cameraElevationDegrees =
             kDefaultCameraElevationDegrees;
+        settings.pixelStyleEnabled = false;
     }
     return changed;
 }
@@ -6001,7 +6012,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
     const int panelWidth = std::min(900, width - 40);
     const int panelX = (width - panelWidth) / 2;
     const int panelY = compact ? 126 : 178;
-    const int rowHeight = compact ? 34 : 48;
+    const int rowHeight = compact ? 28 : 40;
     const int noteRowHeight = compact ? 18 : 26;
     const int panelHeight = 28 + kAdvancedMenuRowCount * rowHeight +
                             (compact ? 66 : 96);
@@ -6015,7 +6026,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
 
     const std::array<std::string, kAdvancedMenuRowCount> labels{{
         "PLAYER HP", "ENEMY SPEED", "FIRE FREQUENCY", "SPAWN PACE",
-        "VIEW HORIZONTAL", "VIEW ELEVATION", "BACK TO SETUP"}};
+        "VIEW HORIZONTAL", "VIEW ELEVATION", "PIXEL STYLE", "BACK TO SETUP"}};
     const std::array<std::string, kAdvancedMenuRowCount> values{{
         settings.advanced.playerMaximumHitPoints == 1
             ? "1  BANDAGE OFF"
@@ -6025,6 +6036,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
         percentageLabel(settings.advanced.enemySpawnRatePercent),
         cameraYawLabel(settings.cameraYawDegrees),
         cameraElevationLabel(settings.cameraElevationDegrees),
+        settings.pixelStyleEnabled ? "ON" : "OFF",
         "RETURN"}};
     const int valueCenter = panelX + panelWidth - 190;
     for (int index = 0; index < kAdvancedMenuRowCount; ++index)
@@ -6037,8 +6049,12 @@ void drawAdvancedMenu(const MenuSettings &settings)
                  static_cast<float>(panelWidth - 40),
                  static_cast<float>(rowHeight - 4)},
                 0.16f, 6, Color{42, 72, 76, 235});
-        drawTextShadow((selected ? ">  " : "   ") + labels[index],
-                       panelX + 38, y, compact ? 18 : 21,
+        const std::string label =
+            (selected ? ">  " : "   ") + labels[index];
+        const int labelFont = fittedFontSize(
+            label, valueCenter - 170 - (panelX + 38) - 12,
+            compact ? 18 : 21, 13);
+        drawTextShadow(label, panelX + 38, y, labelFont,
                        selected ? RAYWHITE : Color{170, 185, 188, 255});
         const int valueFont = fittedFontSize(values[index], 270,
                                              compact ? 19 : 22, 13);
@@ -6067,10 +6083,10 @@ void drawAdvancedMenu(const MenuSettings &settings)
     const int helpY = panelY + panelHeight + (compact ? 10 : 14);
     drawCenteredText("D-PAD / STICK OR KEYS: SELECT / CHANGE", width / 2,
                      helpY, compact ? 14 : 17, LIGHTGRAY);
-    drawCenteredText("BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
+    drawCenteredText("BOTTOM FACE / ENTER: TOGGLE / SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
                      width / 2, helpY + (compact ? 24 : 32),
                      fittedFontSize(
-                         "BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
+                         "BOTTOM FACE / ENTER: TOGGLE / SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
                          width - 40, compact ? 14 : 17, 11),
                      Color{255, 224, 94, 255});
     EndDrawing();
@@ -6932,6 +6948,7 @@ int main(int argc, char **argv)
             continue;
         }
         tankAssets.setAnimationClock(GetTime());
+        postProcess.setPixelStyleEnabled(settings.pixelStyleEnabled);
         if (!renderGame(game, viewTargets, lighting, tankAssets, environment,
                         bonusAssets, postProcess,
                         !releaseScreenshot.requested()))

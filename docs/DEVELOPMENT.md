@@ -46,6 +46,12 @@ At large spans the camera retreats along the same viewing axis so its near
 plane cannot cut through foreground terrain; the normal 18.5-unit view keeps
 its original camera position.
 
+**Pixel Style** in Advanced Settings switches the gameplay scene between the
+full-detail view (**OFF**, the default) and a crisp pixel grid (**ON**). Use left,
+right or the confirm button to toggle it. Reset restores OFF. The choice stays
+active while returning to setup, restarting or advancing stages in the current
+app session. HUD text and menus remain sharp in either mode.
+
 For a quick two-player stage 10 preview after building:
 
 ```sh

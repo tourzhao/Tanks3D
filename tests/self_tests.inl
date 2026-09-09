@@ -3149,11 +3149,13 @@ int runSettingsProgressionAndSettlementSelfTests(
         advancedMenuRow(menuDefaults) == 4;
     menuDefaults.playerCount = 2;
     if (!checkTest(onePlayerAdvancedRow &&
-                       kAdvancedMenuRowCount == 7 &&
-                       kAdvancedMenuBackRow == 6 &&
+                       kAdvancedMenuRowCount == 8 &&
+                       kAdvancedMenuPixelStyleRow == 6 &&
+                       kAdvancedMenuBackRow == 7 &&
                        menuRowCount(menuDefaults) == 6 &&
                        advancedMenuRow(menuDefaults) == 5 &&
                        advancedSettingsAreDefault(menuDefaults) &&
+                       !menuDefaults.pixelStyleEnabled &&
                        percentageLabel(-30) == "-30%" &&
                        percentageLabel(0) == "0%  DEFAULT" &&
                        percentageLabel(30) == "+30%" &&
@@ -3213,16 +3215,76 @@ int runSettingsProgressionAndSettlementSelfTests(
                     kCameraElevationMinimumDegrees,
             "camera elevation menu step or endpoint clamping is incorrect"))
         return 1;
+    MenuSettings pixelMenu;
+    pixelMenu.advancedSelected = kAdvancedMenuPixelStyleRow;
+    const bool pixelRightEnabled =
+        updateAdvancedMenu(pixelMenu, adjustCameraRight) &&
+        pixelMenu.pixelStyleEnabled &&
+        !advancedSettingsAreDefault(pixelMenu);
+    const bool pixelLeftDisabled =
+        updateAdvancedMenu(pixelMenu, adjustCameraLeft) &&
+        !pixelMenu.pixelStyleEnabled &&
+        advancedSettingsAreDefault(pixelMenu);
+    UiInputFrame confirmAdvanced;
+    confirmAdvanced.confirmPressed = true;
+    const bool pixelConfirmEnabled =
+        updateAdvancedMenu(pixelMenu, confirmAdvanced) &&
+        pixelMenu.pixelStyleEnabled;
+    UiInputFrame confirmAndAdjust = confirmAdvanced;
+    confirmAndAdjust.leftPressed = true;
+    const bool pixelCombinedInputTogglesOnce =
+        updateAdvancedMenu(pixelMenu, confirmAndAdjust) &&
+        !pixelMenu.pixelStyleEnabled &&
+        advancedSettingsAreDefault(pixelMenu);
+    if (!checkTest(pixelRightEnabled && pixelLeftDisabled &&
+                       pixelConfirmEnabled &&
+                       pixelCombinedInputTogglesOnce,
+                   "pixel style input must toggle once without changing gameplay or camera defaults"))
+        return 1;
+    UiInputFrame advanceRow;
+    advanceRow.downPressed = true;
+    pixelMenu.advancedSelected = 5;
+    const bool pixelRowReachable =
+        updateAdvancedMenu(pixelMenu, advanceRow) &&
+        pixelMenu.advancedSelected == kAdvancedMenuPixelStyleRow;
+    const bool backRowReachable =
+        updateAdvancedMenu(pixelMenu, advanceRow) &&
+        pixelMenu.advancedSelected == kAdvancedMenuBackRow;
+    const bool backConfirmDoesNotToggle =
+        !updateAdvancedMenu(pixelMenu, confirmAdvanced) &&
+        !pixelMenu.pixelStyleEnabled;
+    const bool downWrapsToFirst =
+        updateAdvancedMenu(pixelMenu, advanceRow) &&
+        pixelMenu.advancedSelected == 0;
+    UiInputFrame previousRow;
+    previousRow.upPressed = true;
+    const bool upWrapsToBack =
+        updateAdvancedMenu(pixelMenu, previousRow) &&
+        pixelMenu.advancedSelected == kAdvancedMenuBackRow;
+    if (!checkTest(pixelRowReachable && backRowReachable &&
+                       backConfirmDoesNotToggle && downWrapsToFirst &&
+                       upWrapsToBack,
+                   "advanced menu navigation must include pixel style and keep the return row separate"))
+        return 1;
     menuDefaults.advanced.enemySpeedPercent = 5;
     menuDefaults.cameraYawDegrees = 35;
     menuDefaults.cameraElevationDegrees = 70;
+    menuDefaults.pixelStyleEnabled = true;
     UiInputFrame resetAdvanced;
     resetAdvanced.resetPressed = true;
     const bool advancedResetChanged =
         updateAdvancedMenu(menuDefaults, resetAdvanced);
     if (!checkTest(advancedResetChanged &&
-                       advancedSettingsAreDefault(menuDefaults),
+                       advancedSettingsAreDefault(menuDefaults) &&
+                       !menuDefaults.pixelStyleEnabled,
                    "advanced settings reset is incorrect"))
+        return 1;
+    pixelMenu.pixelStyleEnabled = true;
+    if (!checkTest(updateAdvancedMenu(pixelMenu, resetAdvanced) &&
+                       !pixelMenu.pixelStyleEnabled &&
+                       advancedSettingsAreDefault(pixelMenu) &&
+                       !updateAdvancedMenu(pixelMenu, resetAdvanced),
+                   "reset must report a visual-only change and restore pixel style to off"))
         return 1;
     bool elevationGeometryValid = true;
     for (const int degrees : std::array<int, 3>{{

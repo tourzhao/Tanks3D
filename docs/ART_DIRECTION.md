@@ -70,10 +70,20 @@ planes. Masonry, plaster and earth share a painted response; tank paint, steel,
 rubber, optics and canvas keep separate material responses. Reduced haze and
 bloom preserve color and mechanical details at the actual gameplay camera.
 
-A gentle two-logical-pixel scene grid adds a slight sprite-like edge. Nearest
-presentation preserves those edges on Retina screens, while restrained palette
-steps happen before the smooth vignette. HUD text, menus, radar and prompts
-remain at their original resolution. The post-process resolves an opaque world;
+**Pixel Style** in Advanced Settings is optional and defaults to **OFF**.
+The normal view retains every source texel at the full logical scene resolution.
+When enabled, a two-logical-pixel grid fetches one explicit source texel per
+block. This avoids the previous bilinear average at block boundaries, which
+softened silhouettes and mixed adjacent colors. Nearest presentation preserves
+the edges on Retina screens. The pixel mode adds only restrained palette steps;
+light bloom and the vignette remain independent, smooth effects. Bloom strength
+is reduced, especially in pixel mode. HUD text, menus, radar and prompts remain
+at their original resolution in both modes.
+
+[Octopath Traveler's official HD-2D example](https://www.jp.square-enix.com/octopathtraveler/about/)
+informs the separation of crisp pixel subjects and layered 3D lighting. This
+game retains its procedural 3D models and does not reproduce Octopath's sprite
+assets or depth-of-field treatment. The post-process resolves an opaque world;
 foliage and smoke alpha are not multiplied into the scene a second time.
 
 Cannon rounds have a pointed metal body and a short warm tracer. Hits separate

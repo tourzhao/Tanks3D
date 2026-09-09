@@ -3,7 +3,7 @@
 
 #include <raylib.h>
 
-// Gentle pixel treatment and filmic color for an HDR player view.
+// Optional crisp pixel treatment and filmic color for an HDR player view.
 // Draw the HUD after draw() so text and minimap lines remain crisp.
 class PostProcess
 {
@@ -21,7 +21,9 @@ public:
 
         texelSizeLocation_ = GetShaderLocation(shader_, "texelSize");
         timeLocation_ = GetShaderLocation(shader_, "time");
-        valid_ = texelSizeLocation_ >= 0 && timeLocation_ >= 0;
+        pixelStyleLocation_ = GetShaderLocation(shader_, "pixelStyle");
+        valid_ = texelSizeLocation_ >= 0 && timeLocation_ >= 0 &&
+                 pixelStyleLocation_ >= 0;
         if (!valid_)
             unload();
         return valid_;
@@ -35,7 +37,18 @@ public:
         shader_ = {};
         texelSizeLocation_ = -1;
         timeLocation_ = -1;
+        pixelStyleLocation_ = -1;
         valid_ = false;
+    }
+
+    void setPixelStyleEnabled(bool enabled)
+    {
+        pixelStyleEnabled_ = enabled;
+    }
+
+    bool pixelStyleEnabled() const
+    {
+        return pixelStyleEnabled_;
     }
 
     bool valid() const
@@ -71,14 +84,17 @@ public:
 
         // The source view is logical-window resolution while a Retina back
         // buffer has four times as many fragments. Run the 13-tap bloom and
-        // tone map at logical resolution. A two-pixel scene grid and nearest
-        // presentation keep a slight arcade edge; the caller draws the HUD
-        // afterward at native resolution.
+        // tone map at logical resolution. Pixel style optionally groups two
+        // source pixels; nearest presentation keeps both modes sharp. The
+        // caller draws the HUD afterward at native resolution.
         BeginTextureMode(resolvedTarget_);
         ClearBackground(BLACK);
         BeginShaderMode(shader_);
         SetShaderValue(shader_, texelSizeLocation_, &texelSize, SHADER_UNIFORM_VEC2);
         SetShaderValue(shader_, timeLocation_, &time, SHADER_UNIFORM_FLOAT);
+        const int pixelStyle = pixelStyleEnabled_ ? 1 : 0;
+        SetShaderValue(shader_, pixelStyleLocation_, &pixelStyle,
+                       SHADER_UNIFORM_INT);
         const Rectangle resolvedDestination{
             0.0f, 0.0f,
             static_cast<float>(resolvedTarget_.texture.width),
@@ -134,6 +150,7 @@ uniform sampler2D texture0;
 uniform vec4 colDiffuse;
 uniform vec2 texelSize;
 uniform float time;
+uniform int pixelStyle;
 
 out vec4 finalColor;
 
@@ -155,18 +172,23 @@ vec3 softThreshold(vec3 color)
     return color*contribution;
 }
 
-vec2 sceneUv()
+ivec2 sceneTexel()
 {
-    // Two logical pixels are enough to suggest sprites while preserving
-    // small projectiles and terrain openings in the wider gameplay view.
-    vec2 block = texelSize*2.0;
-    vec2 uv = (floor(fragTexCoord/block) + 0.5)*block;
-    return clamp(uv, texelSize*0.5, vec2(1.0) - texelSize*0.5);
+    ivec2 size = textureSize(texture0, 0);
+    ivec2 pixel = ivec2(floor(fragTexCoord*vec2(size)));
+    if (pixelStyle != 0)
+        pixel = (pixel/2)*2 + ivec2(1);
+    // A normalized two-pixel block center lies between four source texels.
+    // Fetch one explicit texel so bilinear source filtering cannot average
+    // their colors. Clamp the last block for odd-sized render targets.
+    return clamp(pixel, ivec2(0), size - ivec2(1));
 }
 
 vec3 glowAt(vec2 offset)
 {
-    vec2 tap = clamp(sceneUv() + offset*texelSize,
+    // Light can spread smoothly around crisp geometry, independently of its
+    // pixel grid. This is the only pass that mixes neighboring source colors.
+    vec2 tap = clamp(fragTexCoord + offset*texelSize,
                      texelSize*0.5, vec2(1.0) - texelSize*0.5);
     vec3 sampleColor = texture(texture0, tap).rgb;
     return softThreshold(approximateLinear(sampleColor));
@@ -184,8 +206,7 @@ vec3 acesApprox(vec3 color)
 
 void main()
 {
-    vec2 uv = sceneUv();
-    vec4 source = texture(texture0, uv);
+    vec4 source = texelFetch(texture0, sceneTexel(), 0);
     vec3 sourceLinear = approximateLinear(source.rgb);
 
     // Thirteen taps: center, a compact 8-sample ring and a wider 4-sample
@@ -205,7 +226,8 @@ void main()
     glow += glowAt(vec2( 0.00, -3.80))*0.03;
 
     float glowPulse = 1.0 + 0.012*sin(time*0.70);
-    vec3 exposed = (sourceLinear + glow*0.24*glowPulse)*1.06;
+    float glowStrength = pixelStyle != 0 ? 0.16 : 0.20;
+    vec3 exposed = (sourceLinear + glow*glowStrength*glowPulse)*1.06;
     vec3 mapped = sqrt(max(acesApprox(exposed), vec3(0.0)));
     vec3 color = mapped;
 
@@ -217,10 +239,13 @@ void main()
 
     // Very light palette stepping belongs before the lens falloff: quantizing
     // that smooth falloff would turn a plain ground plane into concentric bands.
-    vec3 stepped = floor(clamp(color, 0.0, 1.0)*47.0 + 0.5)/47.0;
-    color = mix(color, stepped, 0.28);
+    if (pixelStyle != 0)
+    {
+        vec3 stepped = floor(clamp(color, 0.0, 1.0)*63.0 + 0.5)/63.0;
+        color = mix(color, stepped, 0.18);
+    }
 
-    vec2 centered = uv*2.0 - 1.0;
+    vec2 centered = fragTexCoord*2.0 - 1.0;
     float vignette = 1.0 - 0.10*smoothstep(0.30, 1.55, dot(centered, centered));
     color *= vignette;
 
@@ -236,6 +261,8 @@ void main()
     RenderTexture2D resolvedTarget_{};
     int texelSizeLocation_ = -1;
     int timeLocation_ = -1;
+    int pixelStyleLocation_ = -1;
+    bool pixelStyleEnabled_ = false;
     bool valid_ = false;
 };
 
