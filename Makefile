@@ -486,7 +486,8 @@ PROBE_MODEL := resources/models/tank_basic.glb
 RUNTIME_RESOURCES := $(SOUND_FILES) $(TEXTURE_FILES) $(PROBE_MODEL)
 DIST_LICENSE_FILES := LICENSE NOTICE README.md THIRD_PARTY_NOTICES.md \
 	ASSET_LICENSES.md LICENSES/Apache-2.0.txt LICENSES/CC0-1.0.txt \
-	LICENSES/MIT-upstream.txt LICENSES/Raylib-6.0-dependencies.txt \
+	LICENSES/MIT-upstream.txt LICENSES/MIT-JustoSenka-BattleCity.txt \
+	LICENSES/Raylib-6.0-dependencies.txt \
 	LICENSES/Zlib-raylib.txt
 
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic $(MACOS_TARGET_FLAG)
@@ -656,6 +657,9 @@ $(DIST_APP_STAMP): $(DIST_TARGET) macos/Info.plist $(RUNTIME_RESOURCES) \
 	ditto --norsrc --noextattr --noqtn --noacl \
 		LICENSES/MIT-upstream.txt \
 		$(DIST_APP_RESOURCES)/licenses/LICENSES/MIT-upstream.txt
+	ditto --norsrc --noextattr --noqtn --noacl \
+		LICENSES/MIT-JustoSenka-BattleCity.txt \
+		$(DIST_APP_RESOURCES)/licenses/LICENSES/MIT-JustoSenka-BattleCity.txt
 	ditto --norsrc --noextattr --noqtn --noacl \
 		LICENSES/Raylib-6.0-dependencies.txt \
 		$(DIST_APP_RESOURCES)/licenses/LICENSES/Raylib-6.0-dependencies.txt

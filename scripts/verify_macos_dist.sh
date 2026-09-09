@@ -394,6 +394,8 @@ cmp "$project_root/LICENSES/CC0-1.0.txt" \
     "$resources/licenses/LICENSES/CC0-1.0.txt"
 cmp "$project_root/LICENSES/MIT-upstream.txt" \
     "$resources/licenses/LICENSES/MIT-upstream.txt"
+cmp "$project_root/LICENSES/MIT-JustoSenka-BattleCity.txt" \
+    "$resources/licenses/LICENSES/MIT-JustoSenka-BattleCity.txt"
 cmp -s "$project_root/LICENSES/Raylib-6.0-dependencies.txt" \
     "$resources/licenses/LICENSES/Raylib-6.0-dependencies.txt" || \
     fail "bundled raylib dependency notices do not match the source notice"

@@ -34,6 +34,9 @@ Pixel Style OFF. [Compare Pixel Style ON](build/release-evidence/pixel-options-2
   layered orange fire and rolling smoke distinguish combat effects.
 - A 19% wider default view, with adjustable rotation (-45° to +45°) and
   elevation (40° to 70°). Local co-op shares a camera that follows both players.
+- Battle City stage-start and game-over cues from JustoSenka/BattleCity;
+  battle audio uses engine sounds and effects without looping background music
+  ([audio sources](ASSET_LICENSES.md#runtime-audio)).
 
 ![Current source: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/battlefield-art-20260909/battle-report.png)
 

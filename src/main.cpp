@@ -658,9 +658,9 @@ constexpr std::size_t kAudioCueCount =
     static_cast<std::size_t>(AudioCue::Count);
 constexpr std::size_t kAudioVoiceCount = 12U;
 
-// These are the original 2D edition's SoundConfig values.  There is no
-// separate music track in that edition: its musical cues are the stage-start,
-// game-over, and high-score jingles, while idle/moving form the battle bed.
+// Cue mapping and playback settings follow krystiankaluzny/Tanks. Stage-start
+// and game-over recordings come from JustoSenka/BattleCity; see ASSET_LICENSES.md.
+// Music consists of one-shot jingles, while idle/moving form the battle bed.
 constexpr std::array<const char *, kAudioCueCount> kAudioCueFiles{{
     "stage_start_up.ogg", "pause.ogg", "game_over.ogg",
     "highscore_beaten.ogg", "menu_item_selected.ogg",
