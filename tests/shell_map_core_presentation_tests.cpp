@@ -567,7 +567,8 @@ int main()
            "malformed map details or event batch produced a command");
 
     ShellPhysicalImpactResult invalidWall = wall;
-    invalidWall.outcome.impactDetails.governmentWallIndex = 5;
+    invalidWall.outcome.impactDetails.governmentWallIndex =
+        tanks3d::game::kGovernmentWallCount;
     ShellPhysicalImpactResult healingWall = wall;
     healingWall.outcome.impactDetails.governmentWallHealthAfter = 5;
     ShellPhysicalImpactResult mixedWall = wall;

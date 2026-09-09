@@ -21,17 +21,6 @@ float projectionRadiusOnAxis(const GovernmentWallSegment &segment, XZ axis)
                                               segment.outward.z * axis.z);
 }
 
-bool governmentWallContainsPoint(const GovernmentWallSegment &segment,
-                                 XZ position)
-{
-    const XZ delta = position - segment.center;
-    const float along = delta.x * segment.along.x +
-                        delta.z * segment.along.z;
-    const float across = delta.x * segment.outward.x +
-                         delta.z * segment.outward.z;
-    return std::fabs(along) < segment.halfLength &&
-           std::fabs(across) < segment.halfThickness;
-}
 } // namespace
 
 bool ShellImpactDetails::destroyedBrick() const
@@ -51,40 +40,42 @@ bool ShellImpactDetails::destroyedGovernmentWall() const
 
 bool bonusOverlapsGovernmentBase(XZ position)
 {
-    return position.x + 1.0f > kGovernmentBaseCenter.x - 1.0f &&
-           position.x - 1.0f < kGovernmentBaseCenter.x + 1.0f &&
-           position.z + 1.0f > kGovernmentBaseCenter.z - 1.0f &&
-           position.z - 1.0f < kGovernmentBaseCenter.z + 1.0f;
+    return position.x + 1.0f > kGovernmentBaseCenter.x - kGovernmentCoreHalfSize &&
+           position.x - 1.0f < kGovernmentBaseCenter.x + kGovernmentCoreHalfSize &&
+           position.z + 1.0f > kGovernmentBaseCenter.z - kGovernmentCoreHalfSize &&
+           position.z - 1.0f < kGovernmentBaseCenter.z + kGovernmentCoreHalfSize;
 }
 
-XZ governmentPentagonCorner(int requestedIndex)
+int governmentWallIndexForCell(int row, int column)
 {
-    constexpr float kPi = 3.14159265358979323846f;
+    for (int index = 0; index < kGovernmentWallCount; ++index)
+        if (kGovernmentWallCells[static_cast<std::size_t>(index)][0] == row &&
+            kGovernmentWallCells[static_cast<std::size_t>(index)][1] == column)
+            return index;
+    return -1;
+}
+
+bool isGovernmentWallCell(int row, int column)
+{
+    return governmentWallIndexForCell(row, column) >= 0;
+}
+
+GovernmentWallSegment governmentWallSegment(int requestedIndex)
+{
     const int index = (requestedIndex % kGovernmentWallCount +
                        kGovernmentWallCount) % kGovernmentWallCount;
-    const float angle = kGovernmentPentagonYaw +
-                        static_cast<float>(index) * 2.0f * kPi /
-                            static_cast<float>(kGovernmentWallCount);
-    return {kGovernmentBaseCenter.x +
-                std::sin(angle) * kGovernmentWallRadius,
-            kGovernmentBaseCenter.z +
-                std::cos(angle) * kGovernmentWallRadius};
-}
-
-GovernmentWallSegment governmentWallSegment(int index)
-{
+    const auto &cell = kGovernmentWallCells[static_cast<std::size_t>(index)];
     GovernmentWallSegment segment;
-    segment.start = governmentPentagonCorner(index);
-    segment.end = governmentPentagonCorner(index + 1);
-    const XZ edge = segment.end - segment.start;
-    segment.length = std::sqrt(lengthSquared(edge));
-    segment.halfLength = segment.length * 0.5f + kGovernmentWallEndOverlap;
-    segment.along = edge * (1.0f / std::max(0.0001f, segment.length));
-    segment.center = (segment.start + segment.end) * 0.5f;
-    const XZ radial = segment.center - kGovernmentBaseCenter;
-    const float radialLength = std::sqrt(lengthSquared(radial));
-    segment.outward = radial * (1.0f / std::max(0.0001f, radialLength));
-    segment.yaw = std::atan2(edge.z, edge.x);
+    segment.center = {cell[1] + 0.5f, cell[0] + 0.5f};
+    segment.along = cell[0] == 23 ? XZ{1.0f, 0.0f} : XZ{0.0f, 1.0f};
+    segment.outward = cell[0] == 23 ? XZ{0.0f, -1.0f}
+        : cell[1] == 11 ? XZ{-1.0f, 0.0f} : XZ{1.0f, 0.0f};
+    segment.length = 1.0f;
+    segment.halfLength = 0.5f;
+    segment.halfThickness = 0.5f;
+    segment.start = segment.center - segment.along * segment.halfLength;
+    segment.end = segment.center + segment.along * segment.halfLength;
+    segment.yaw = std::atan2(segment.along.z, segment.along.x);
     return segment;
 }
 
@@ -164,10 +155,10 @@ bool StageMap::load(const std::filesystem::path &, int requestedStage,
     tiles_ = StageGenerator::generate(stage_);
     resetTerrainDamageState();
     prepareGovernmentBase();
-    if (!generatedStageIsPlayable())
+    if (!stageHasValidSpawns())
     {
-        error = "Generated stage " + std::to_string(stage_) +
-                " failed its spawn or route validation";
+        error = "Stage " + std::to_string(stage_) +
+                " failed its spawn validation";
         return false;
     }
     error.clear();
@@ -210,15 +201,13 @@ CardinalDirection StageMap::brickFirstDirection(int row, int column) const
 
 bool StageMap::wallOccupies(XZ position) const
 {
-    for (int index = 0; index < kGovernmentWallCount; ++index)
-        if (governmentWallHealth_[static_cast<std::size_t>(index)] > 0 &&
-            governmentWallContainsPoint(governmentWallSegment(index),
-                                         position))
-            return true;
     const int column = static_cast<int>(std::floor(position.x));
     const int row = static_cast<int>(std::floor(position.z));
     if (row < 0 || row >= kMapSize || column < 0 || column >= kMapSize)
         return true;
+    const int governmentIndex = governmentWallIndexForCell(row, column);
+    if (governmentIndex >= 0)
+        return governmentWallHealth_[static_cast<std::size_t>(governmentIndex)] > 0;
     const char value = tiles_[row][column];
     if (value == '@')
         return true;
@@ -235,7 +224,7 @@ bool StageMap::solidSeparatesShells(XZ firstPosition,
                                     XZ secondPosition) const
 {
     // At the instant two half-tile shell AABBs overlap, their centers may
-    // still lie on opposite sides of a thin angled Pentagon wall. Sample the
+    // still lie on opposite sides of a surviving base wall. Sample the
     // short center-to-center segment instead of checking only its midpoint.
     const XZ separation = secondPosition - firstPosition;
     const float distance = std::sqrt(lengthSquared(separation));
@@ -270,20 +259,6 @@ void StageMap::prepareShowcaseArena()
 
 void StageMap::prepareGovernmentBase()
 {
-    // The expanded Pentagon owns this footprint directly. Clear the old
-    // classic brick/steel ring so collision comes from the same five angled
-    // wall segments that are rendered on screen.
-    for (int row = 21; row <= 25; ++row)
-    {
-        for (int column = 10; column <= 15; ++column)
-        {
-            tiles_[row][column] = '.';
-            brickMask_[row][column] = 0U;
-            brickHitCount_[row][column] = 0U;
-            brickFirstDirection_[row][column] =
-                static_cast<unsigned char>(CardinalDirection::None);
-        }
-    }
     governmentSteelTimer_ = 0.0f;
     repairGovernmentWalls();
 }
@@ -291,6 +266,14 @@ void StageMap::prepareGovernmentBase()
 void StageMap::repairGovernmentWalls()
 {
     governmentWallHealth_.fill(kGovernmentWallMaximumHealth);
+    for (const auto &cell : kGovernmentWallCells)
+    {
+        tiles_[cell[0]][cell[1]] = '#';
+        brickMask_[cell[0]][cell[1]] = 0x0fU;
+        brickHitCount_[cell[0]][cell[1]] = 0U;
+        brickFirstDirection_[cell[0]][cell[1]] =
+            static_cast<unsigned char>(CardinalDirection::None);
+    }
 }
 
 void StageMap::activateGovernmentSteel()
@@ -334,22 +317,20 @@ int StageMap::governmentWallHealth(int index) const
 
 bool StageMap::isInsideBase(XZ position) const
 {
-    return distanceSquared(position, kGovernmentBaseCenter) <
-           kGovernmentCoreRadius * kGovernmentCoreRadius;
+    return std::fabs(position.x - kGovernmentBaseCenter.x) <
+               kGovernmentCoreHalfSize &&
+           std::fabs(position.z - kGovernmentBaseCenter.z) <
+               kGovernmentCoreHalfSize;
 }
 
 bool StageMap::shellHitsGovernmentCore(XZ shellCenter) const
 {
-    const float closestX = std::clamp(
-        kGovernmentBaseCenter.x, shellCenter.x - kShellHalfSize,
-        shellCenter.x + kShellHalfSize);
-    const float closestZ = std::clamp(
-        kGovernmentBaseCenter.z, shellCenter.z - kShellHalfSize,
-        shellCenter.z + kShellHalfSize);
-    const float dx = kGovernmentBaseCenter.x - closestX;
-    const float dz = kGovernmentBaseCenter.z - closestZ;
-    return dx * dx + dz * dz <
-           kGovernmentCoreRadius * kGovernmentCoreRadius;
+    return aabbOverlapsRectangle(
+        shellCenter, kShellHalfSize,
+        kGovernmentBaseCenter.x - kGovernmentCoreHalfSize,
+        kGovernmentBaseCenter.z - kGovernmentCoreHalfSize,
+        kGovernmentBaseCenter.x + kGovernmentCoreHalfSize,
+        kGovernmentBaseCenter.z + kGovernmentCoreHalfSize);
 }
 
 bool StageMap::collidesWithTank(XZ position, float halfExtent,
@@ -366,16 +347,12 @@ bool StageMap::collidesWithTank(XZ position, float halfExtent,
             governmentWallOverlapsAabb(governmentWallSegment(index), position,
                                        halfExtent))
             return true;
-    const float closestCoreX = std::clamp(
-        kGovernmentBaseCenter.x, position.x - halfExtent,
-        position.x + halfExtent);
-    const float closestCoreZ = std::clamp(
-        kGovernmentBaseCenter.z, position.z - halfExtent,
-        position.z + halfExtent);
-    const float coreDx = kGovernmentBaseCenter.x - closestCoreX;
-    const float coreDz = kGovernmentBaseCenter.z - closestCoreZ;
-    if (coreDx * coreDx + coreDz * coreDz <
-        kGovernmentCoreRadius * kGovernmentCoreRadius)
+    if (aabbOverlapsRectangle(
+            position, halfExtent,
+            kGovernmentBaseCenter.x - kGovernmentCoreHalfSize,
+            kGovernmentBaseCenter.z - kGovernmentCoreHalfSize,
+            kGovernmentBaseCenter.x + kGovernmentCoreHalfSize,
+            kGovernmentBaseCenter.z + kGovernmentCoreHalfSize))
         return true;
 
     const int left = std::max(
@@ -393,6 +370,8 @@ bool StageMap::collidesWithTank(XZ position, float halfExtent,
     {
         for (int column = left; column <= right; ++column)
         {
+            if (isGovernmentWallCell(row, column))
+                continue;
             const char value = tiles_[row][column];
             if (value == '#')
             {
@@ -569,6 +548,13 @@ ImpactKind StageMap::impactShell(XZ position, bool powerShell,
         }
         health = std::max(
             0, health - (powerShell ? kGovernmentPowerShellDamage : 1));
+        if (health == 0)
+        {
+            const auto &cell = kGovernmentWallCells[
+                static_cast<std::size_t>(governmentImpact)];
+            tiles_[cell[0]][cell[1]] = '.';
+            brickMask_[cell[0]][cell[1]] = 0U;
+        }
         if (details != nullptr)
         {
             details->governmentWallIndex = governmentImpact;
@@ -625,6 +611,8 @@ ImpactKind StageMap::impactShell(XZ position, bool powerShell,
     {
         for (int column = columnStart; column <= columnEnd; ++column)
         {
+            if (isGovernmentWallCell(row, column))
+                continue;
             char &value = tiles_[row][column];
             if (value == '%' && powerShell)
             {
@@ -716,35 +704,16 @@ void StageMap::resetTerrainDamageState()
     }
 }
 
-bool StageMap::generatedStageIsPlayable() const
+bool StageMap::stageHasValidSpawns() const
 {
-    // The fixed Battle City stage deliberately shields the base approach with
-    // destructible brickwork.  Keep its spawn/player routes validated, but do
-    // not require that protected approach to be open before combat begins.
-    if (stage_ == 1)
-    {
-        for (XZ spawn : kEnemySpawnPoints)
-            if (collidesWithTank(spawn, kTankRadius) ||
-                !hasTankRoute(spawn, kPlayerSpawnPoints[0]) ||
-                !hasTankRoute(spawn, kPlayerSpawnPoints[1]))
-                return false;
-        for (XZ spawn : kPlayerSpawnPoints)
-            if (collidesWithTank(spawn, kTankRadius))
-                return false;
-        return hasTankRoute(kPlayerSpawnPoints[0], kPlayerSpawnPoints[1]) &&
-               !collidesWithTank({13.0f, 20.0f}, kTankRadius);
-    }
-
+    // Original layouts may require players to open brick routes by firing.
+    // Validate spawn footprints without carving new roads through the map.
     for (XZ spawn : kEnemySpawnPoints)
-        if (collidesWithTank(spawn, kTankRadius) ||
-            !hasTankRoute(spawn, kPlayerSpawnPoints[0]) ||
-            !hasTankRoute(spawn, kPlayerSpawnPoints[1]))
+        if (collidesWithTank(spawn, kTankRadius))
             return false;
-    if (!hasTankRoute(kPlayerSpawnPoints[0], kPlayerSpawnPoints[1]))
-        return false;
-
-    const XZ baseApproach{13.0f, 20.0f};
-    return !collidesWithTank(baseApproach, kTankRadius) &&
-           hasTankRoute(kEnemySpawnPoints[1], baseApproach);
+    for (XZ spawn : kPlayerSpawnPoints)
+        if (collidesWithTank(spawn, kTankRadius))
+            return false;
+    return true;
 }
 } // namespace tanks3d::game

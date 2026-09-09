@@ -277,7 +277,7 @@ using tanks3d::game::eventsForPhysicalShellImpact;
 using tanks3d::game::chooseEnemyPursuitDirection;
 using tanks3d::game::chooseEnemyEscape;
 using tanks3d::game::governmentBaseThemeForNation;
-using tanks3d::game::governmentPentagonCorner;
+using tanks3d::game::isGovernmentWallCell;
 using tanks3d::game::governmentWallOverlapsAabb;
 using tanks3d::game::governmentWallOverlapsShell;
 using tanks3d::game::governmentWallSegment;
@@ -294,16 +294,13 @@ using tanks3d::game::kEnemyInitialFireDelay;
 using tanks3d::game::kEnemySpawnInterval;
 using tanks3d::game::kEnemySpawnRetryInterval;
 using tanks3d::game::kGovernmentBaseCenter;
-using tanks3d::game::kGovernmentCoreRadius;
-using tanks3d::game::kGovernmentPentagonYaw;
+using tanks3d::game::kGovernmentCoreHalfSize;
 using tanks3d::game::kGovernmentPowerShellDamage;
 using tanks3d::game::kGovernmentSteelDuration;
 using tanks3d::game::kGovernmentSteelFlashPeriod;
 using tanks3d::game::kGovernmentSteelWarningDuration;
 using tanks3d::game::kGovernmentWallCount;
-using tanks3d::game::kGovernmentWallEndOverlap;
 using tanks3d::game::kGovernmentWallMaximumHealth;
-using tanks3d::game::kGovernmentWallRadius;
 using tanks3d::game::kGovernmentWallThickness;
 using tanks3d::game::kMapSize;
 using tanks3d::game::kPlayerTrackDustCooldown;
@@ -1434,8 +1431,6 @@ XZ forwardFromYaw(float yaw)
 
 // These parameters affect only the visible national-base models. Shared
 // collision geometry and health rules live with StageMap in game/.
-constexpr float kGovernmentFoundationRadius = tanks3d::base_model::kFoundationRadius;
-constexpr float kGovernmentCourtyardRadius = tanks3d::base_model::kCourtyardRadius;
 
 
 struct SessionDigest
@@ -3714,11 +3709,15 @@ void drawBrickTile(const StageMap &map, const EnvironmentAssets &environment,
                    int row, int column)
 {
     const unsigned char brickMask = map.brickMask(row, column);
+    const auto isBuilding = [&map](int neighborRow, int neighborColumn) {
+        return map.tile(neighborRow, neighborColumn) == '#' &&
+               !isGovernmentWallCell(neighborRow, neighborColumn);
+    };
     const std::array<bool, 4> exposedFaces{{
-        map.tile(row - 1, column) != '#',
-        map.tile(row + 1, column) != '#',
-        map.tile(row, column - 1) != '#',
-        map.tile(row, column + 1) != '#'}};
+        !isBuilding(row - 1, column),
+        !isBuilding(row + 1, column),
+        !isBuilding(row, column - 1),
+        !isBuilding(row, column + 1)}};
     environment.drawUrbanBuildingCell(map.stage(), row, column, brickMask,
                                       exposedFaces);
 }
@@ -3882,7 +3881,8 @@ void drawTerrain(const StageMap &map, const EnvironmentAssets &environment,
     {
         for (int column = 0; column < kMapSize; ++column)
         {
-            if (!view.containsCell(row, column))
+            if (!view.containsCell(row, column) ||
+                isGovernmentWallCell(row, column))
                 continue;
             const char value = map.tile(row, column);
             if (value == '.')
@@ -4100,6 +4100,8 @@ void drawShadowCasters(const Game3D &game, TankAssets &tankAssets)
     {
         for (int column = 0; column < kMapSize; ++column)
         {
+            if (isGovernmentWallCell(row, column))
+                continue;
             const char tile = map.tile(row, column);
             if (tile == '#')
             {
@@ -4510,9 +4512,10 @@ void drawMiniMap(const Game3D &game, int originX, int originY, int cellSize)
                    std::max(2.0f, cellSize * kGovernmentWallThickness),
                    wallColor);
     }
-    DrawCircle(originX + static_cast<int>(kGovernmentBaseCenter.x * cellSize),
-               originY + static_cast<int>(kGovernmentBaseCenter.z * cellSize),
-               std::max(2.0f, cellSize * kGovernmentCoreRadius),
+    DrawRectangle(originX + static_cast<int>((kGovernmentBaseCenter.x - kGovernmentCoreHalfSize) * cellSize),
+               originY + static_cast<int>((kGovernmentBaseCenter.z - kGovernmentCoreHalfSize) * cellSize),
+               static_cast<int>(2.0f * kGovernmentCoreHalfSize * cellSize),
+               static_cast<int>(2.0f * kGovernmentCoreHalfSize * cellSize),
                game.baseAlive()
                    ? game.baseNation() == Nation::SovietUnion
                          ? Color{222, 65, 54, 255}
@@ -6348,7 +6351,11 @@ int main(int argc, char **argv)
     // shades that resolved image four more times without improving geometry
     // edges, so keep the presentation buffer single-sampled.
     unsigned int windowFlags = FLAG_WINDOW_HIGHDPI;
-    if (!releaseScreenshot.requested())
+    // Screenshot exports must reach their requested frame even if macOS
+    // minimizes the capture window while other applications are in use.
+    if (releaseScreenshot.requested())
+        windowFlags |= FLAG_WINDOW_ALWAYS_RUN;
+    else
         windowFlags |= FLAG_WINDOW_RESIZABLE;
     SetConfigFlags(windowFlags);
     InitWindow(kReleaseScreenshotWidth, kReleaseScreenshotHeight,

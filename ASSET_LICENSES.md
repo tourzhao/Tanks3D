@@ -38,6 +38,23 @@ To the extent any protectable project-authored rights subsist in these files,
 they are offered under the root project license. No representation is made
 about rights that applicable law does not recognize in generated output.
 
+## Battle City stage layouts
+
+The fixed terrain data in `src/game/classic_stage_layouts.h` reproduces the
+35 starting layouts of Namco's NES/Famicom *Battle City*, in displayed stage
+order. The original level designs belong to their respective rights holders;
+they are not project-authored art and are not relabeled as PolyForm content.
+
+The implementation was checked against the MIT-licensed
+[`krystiankaluzny/Tanks` stage files](https://github.com/krystiankaluzny/Tanks/tree/f59aea31638117e20bc03276026bdbb9f8828b47/resources/stages),
+reverse-engineered map data, and the original-game maps credited to
+Ricardo Sallin in [VGMaps' NES atlas](https://www.vgmaps.com/atlas/NES/index.htm).
+Adapted upstream portions retain `LICENSES/MIT-upstream.txt`; that notice
+does not purport to grant rights in Namco's original level designs.
+See [map sources and verification](docs/BATTLE_CITY_MAPS.md) for the exact
+tile mapping, ordering and corrections. Reference screenshots, ROMs, original
+sprites and extracted textures are not included in the repository or app.
+
 ## Runtime audio inherited from the MIT upstream
 
 All 22 files under `resources/sounds/` were carried byte-for-byte from the

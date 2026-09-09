@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bitset>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -49,9 +50,12 @@ bool rectangleIsOpen(const StageTileGrid &grid, int top, int left,
 {
     for (int row = top; row <= bottom; ++row)
         for (int column = left; column <= right; ++column)
-            if (grid[static_cast<std::size_t>(row)]
-                    [static_cast<std::size_t>(column)] != '.')
+        {
+            const char tile = grid[static_cast<std::size_t>(row)]
+                                  [static_cast<std::size_t>(column)];
+            if (tile != '.' && tile != '%' && tile != '-')
                 return false;
+        }
     return true;
 }
 
@@ -72,30 +76,27 @@ bool spawnAreaIsOpen(const StageTileGrid &grid, XZ center,
     return rectangleIsOpen(grid, top, left, bottom, right);
 }
 
-bool stageMarkerMatches(const StageTileGrid &grid, int stage)
+using TerrainMask = std::bitset<kMapSize * kMapSize>;
+
+TerrainMask terrainMask(const StageTileGrid &grid, bool blockingOnly)
 {
-    for (int bit = 0; bit < 6; ++bit)
+    TerrainMask mask;
+    for (int row = 0; row < kMapSize; ++row)
     {
-        const int column = 2 + bit * 4;
-        const char expected = (stage & (1 << bit)) != 0 ? '%' : '-';
-        if (grid[12][static_cast<std::size_t>(column)] != expected)
-            return false;
+        for (int column = 0; column < kMapSize; ++column)
+        {
+            const char tile = grid[static_cast<std::size_t>(row)]
+                                  [static_cast<std::size_t>(column)];
+            const bool occupied = blockingOnly
+                                      ? tile == '#' || tile == '@' || tile == '~'
+                                      : tile != '.';
+            mask.set(static_cast<std::size_t>(row * kMapSize + column),
+                     occupied);
+        }
     }
-    return true;
+    return mask;
 }
 
-bool stageTwoFixturesMatch(const StageTileGrid &grid)
-{
-    for (int row = 2; row <= 3; ++row)
-        if (grid[static_cast<std::size_t>(row)][19] != '@' ||
-            grid[static_cast<std::size_t>(row)][22] != '@')
-            return false;
-    if (grid[4][20] != '@' || grid[4][21] != '@' ||
-        grid[5][12] != '@' || grid[5][13] != '@' ||
-        grid[3][14] != '@' || grid[4][14] != '@')
-        return false;
-    return rectangleIsOpen(grid, 3, 10, 4, 11);
-}
 } // namespace
 
 int main()
@@ -147,9 +148,7 @@ int main()
 
     bool everyEnemySpawnOpen = true;
     bool everyPlayerSpawnOpen = true;
-    bool everyBaseFootprintOpen = true;
-    bool everyBaseApproachOpen = true;
-    bool everyStageMarkerCorrect = true;
+    bool everyOriginalEnclosureIntact = true;
     for (int stage = 1; stage <= kStageCount; ++stage)
     {
         const StageTileGrid grid = StageGenerator::generate(stage);
@@ -157,32 +156,56 @@ int main()
             everyEnemySpawnOpen = everyEnemySpawnOpen &&
                                   spawnAreaIsOpen(
                                       grid, spawn,
-                                      stage == 1 ? 0.0f : 0.20f);
+                                      0.0f);
         for (XZ spawn : kPlayerSpawnPoints)
             everyPlayerSpawnOpen = everyPlayerSpawnOpen &&
                                    spawnAreaIsOpen(
                                        grid, spawn,
-                                       stage == 1 ? 0.0f : 0.20f);
-        everyBaseFootprintOpen = everyBaseFootprintOpen &&
-                                 rectangleIsOpen(grid, 21, 10, 25, 15);
-        everyBaseApproachOpen = everyBaseApproachOpen &&
-                                rectangleIsOpen(grid, 18, 12, 22, 13);
-        everyStageMarkerCorrect = everyStageMarkerCorrect &&
-                                  (stage == 1 ||
-                                   stageMarkerMatches(grid, stage));
+                                       0.0f);
+        for (int row = 23; row <= 25; ++row)
+            for (int column = 11; column <= 14; ++column)
+                if (row == 23 || column == 11 || column == 14)
+                    everyOriginalEnclosureIntact = everyOriginalEnclosureIntact &&
+                        grid[row][column] == '#';
     }
     expect(everyEnemySpawnOpen,
            "an enemy spawn clearance contains generated terrain");
     expect(everyPlayerSpawnOpen,
            "a player spawn clearance contains generated terrain");
-    expect(everyBaseFootprintOpen,
-           "the government footprint contains a legacy terrain tile");
-    expect(everyBaseApproachOpen,
-           "the northern government approach is no longer open");
-    expect(everyStageMarkerCorrect,
-           "a procedural stage lost its six-bit identity marker");
-    expect(stageTwoFixturesMatch(StageGenerator::generate(2)),
-           "stage 2 steering fixtures changed or sealed their bypass");
+    expect(everyOriginalEnclosureIntact,
+           "an original base-enclosure cell was erased or moved");
+
+    reporter.beginSuite("stage-generator-layout-diversity");
+    // Exact tile hashes alone allowed the old fixed street grid to pass while
+    // only shuffling materials. Compare the geometry after discarding terrain
+    // identities, and separately check actual tank-blocking footprints.
+    std::array<TerrainMask, kStageCount - 1> occupiedMasks{};
+    std::array<TerrainMask, kStageCount - 1> blockingMasks{};
+    for (int stage = 2; stage <= kStageCount; ++stage)
+    {
+        const StageTileGrid grid = StageGenerator::generate(stage);
+        const std::size_t index = static_cast<std::size_t>(stage - 2);
+        occupiedMasks[index] = terrainMask(grid, false);
+        blockingMasks[index] = terrainMask(grid, true);
+    }
+    bool everyFootprintUnique = true;
+    bool everyBlockingFootprintUnique = true;
+    for (std::size_t first = 0; first < occupiedMasks.size(); ++first)
+    {
+        for (std::size_t second = first + 1;
+             second < occupiedMasks.size(); ++second)
+        {
+            everyFootprintUnique = everyFootprintUnique &&
+                occupiedMasks[first] != occupiedMasks[second];
+            everyBlockingFootprintUnique = everyBlockingFootprintUnique &&
+                blockingMasks[first] != blockingMasks[second];
+
+        }
+    }
+    expect(everyFootprintUnique,
+           "two original stages share the same terrain footprint");
+    expect(everyBlockingFootprintUnique,
+           "two original stages share the same tank-blocking footprint");
 
     reporter.finish();
     return passed ? 0 : 1;

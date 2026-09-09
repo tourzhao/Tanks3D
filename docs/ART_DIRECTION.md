@@ -2,26 +2,39 @@
 
 The September 2026 visual revision moves Tanks 3D toward the compact,
 characterful military machinery and layered scenery of 1990s arcade games.
-The user's principal reference is SNK's **Metal Slug**. The implementation is
-original procedural 3D geometry, with no imported reference-game assets.
+SNK's **Metal Slug** informs the project's compact mechanical proportions,
+layered scenery and painted materials. The implementation is original
+procedural 3D geometry, with no imported SNK game assets.
+
+This artwork is available in the current `main` source. The published
+**Alpha 4** package predates this revision and the adjustable gameplay camera.
+See the [current main preview](../README.md#current-main-preview) for rendered
+examples and the [development guide](DEVELOPMENT.md) to build and run it.
 
 ## Shape and material language
 
-Vehicles use continuous capsule-shaped track belts, large exposed road wheels,
-rounded cast hulls, compact turrets, thick gun collars and open muzzle bores.
-Offset hatches, exhausts, stowage, vents and bolted repair plates break up
-symmetry. Light, medium, heavy and super-heavy roles retain distinct national
-silhouettes and equipment. Moving vehicles use restrained suspension motion;
-the old whole-body stretching and oversized head silhouette have been removed.
-The second pass separates offset light turrets, sloping rear-crowned Soviet
-castings, flat-roof German rolled-plate turrets and the low T95 casemate.
-Painted recoil sleeves and dark vented muzzle brakes replace pale plain tubes.
-Casting rings reuse their plan directions to reduce repeated trigonometry.
+Vehicles follow the SV-001 reference's substantial upper body, short thick
+cannon and rounded track ends. A tall, full turret occupies approximately the
+central hull's width and most of its length. The short, low chassis leaves a
+small front deck beneath the gun. Continuous capsule-shaped belts have high
+curved ends, exposed road wheels and short rounded fenders. The turret grows
+forward around the established gun attachment; the muzzle tip stays fixed.
+Painted recoil sleeves, dark vented brakes and open bores make the short cannon
+read clearly at gameplay scale.
+
+Light, medium, heavy and super-heavy roles retain distinct national shapes:
+offset light turrets, rounded American castings, rear-crowned Soviet castings,
+flat-roof German armor and a broad, substantial T95 casemate. Offset hatches,
+exhausts, stowage and vents follow the new roof and fender positions. Moving
+vehicles use restrained suspension motion without stretching the entire model.
+Casting rings reuse their plan directions to reduce repeated trigonometry;
+shorter belts use fewer straight tread shoes without increasing mesh detail.
 
 Architecture uses warm plaster, exposed brick, oxidized green metal, terracotta
 roofs and deep window recesses. Residential shutters, industrial doors,
 striped shop awnings, gutters and roof equipment distinguish the three
-building families. Roof slopes meet across their deterministic two-by-two lots.
+building families. Roof pieces join where the original terrain fills a
+two-by-two lot; partial lots and destroyed cells keep their actual footprints.
 Damaged buildings expose broken masonry and their interiors within surviving
 brick quadrants. The second pass adds folded residential roofs, brick
 chimneys, raised workshop rooflights and seeded broken-wall profiles. Exposed
@@ -29,11 +42,13 @@ sections beside partially destroyed cells show floor bands and room partitions.
 Forest crowns retain the original cover translucency but have
 less regular silhouettes and more deliberate olive and yellow-green planes.
 
-National bases are compact field headquarters. Low pitched wings, a redoubt
-parapet or copper roofs surround the command core, replacing the oversized
-central sculptures. The American core carries radio equipment, the Soviet core
-has a watch turret, and the German core has a small copper cupola. Wall damage,
-breaches, core destruction and temporary steel armor have their own geometry.
+National bases fit the original Battle City enclosure. Eight low wall tiles
+form a Π around the two-by-two command core. The American core carries radio
+equipment, the Soviet core has a watch turret, and the German core has a small
+copper cupola. Surviving walls show brick courses or steel plates; damage adds
+surface cracks without opening a false passage. A destroyed wall leaves only
+low rubble. Core destruction and temporary steel protection have separate
+appearances, all contained within the original base cells.
 Ordinary steel tiles use chamfered armored redoubts with raised hatches,
 embrasures, bolts and ochre identification panels.
 
@@ -53,16 +68,28 @@ lighting stays stable when preceding offscreen geometry is omitted.
 
 ## Implementation boundaries
 
-- Tank geometry lives in `src/wwii_tank_model.h`; all fourteen vehicle
-  definitions remain mapped to the same twelve player and four enemy slots.
+- Tank geometry lives in `src/wwii_tank_model.h`: twelve player models across
+  three nations and four enemy roles use fourteen vehicle definitions.
+  The basic and heavy enemies reuse the Panzer II and Tiger definitions;
+  the fast armored car and long-gun enemy have separate definitions.
 - `ArcadeVehicleSpec`, vehicle selection and muzzle attachments keep their
-  existing gameplay values. Model details do not consume gameplay randomness.
+  existing gameplay values. `ArcadeVisualProfile` controls the larger turrets,
+  short chassis, high tracks and thicker guns independently. Model details do
+  not consume gameplay randomness.
 - Architecture and trees live in `src/environment_assets.h`; building profiles,
   stage seeds, height caps, forest alpha bounds and brick masks retain their
   contracts. Roofs and ruins share major geometry with the shadow pass.
-- Headquarters live in `src/base_model.h`. Both passes read the same five
-  `StageMap` wall segments and health. The foundation radius remains 2.62 and
-  the courtyard radius 1.02; the command core fits within the 0.92 core radius.
+- Headquarters live in `src/base_model.h`. Both passes read the same eight
+  one-by-one `StageMap` wall segments and health. In zero-based grid coordinates,
+  the walls occupy row 23, columns 11–14, and rows 24–25, columns 11 and 14.
+  The core center is `(13, 25)` and its geometry stays inside world coordinates
+  `x=12..14, z=24..26`. Its square foundation is `1.84 × 1.84`
+  (`kFoundationRadius=0.92`); the courtyard is `1.52 × 1.52`. No base decoration
+  extends into surrounding terrain. Health 1–4 keeps a complete wall collider;
+  health 0 removes that wall and leaves rubble no higher than 0.12.
+- Terrain follows the original 35 Battle City stages. Their source-controlled
+  layouts determine roads, obstacles and base space; art must conform to those
+  cells rather than clear room for headquarters or generate replacement routes.
 - No runtime asset paths or bundle manifests changed. All generated review
   images and binaries belong under `build/`.
 
@@ -70,13 +97,15 @@ lighting stays stable when preceding offscreen geometry is omitted.
 
 Review enlarged models as well as the adjustable gameplay view. Check all nations
 and tiers, enemies, two-player identity, intact and damaged lots, forest cover,
-steel protection and the destroyed core. Keep the deterministic stage hashes;
-visual work must not rewrite golden gameplay layouts. Run `make test` after
+steel protection and the destroyed core. Keep the original 35 stage layouts
+and their deterministic hashes; visual work must not rewrite golden gameplay
+layouts. Run `make test` after
 integration and `make test-sanitize` for the renderer extraction.
 Terrain visibility checks compare against raylib's screen projection across
-the mainline yaw/elevation range, solo/co-op zoom, map-edge camera positions,
-and landscape/square/portrait windows. Co-op spans may exceed the former zoom
-cap in narrow windows. Review clipped and complete renders of identical scenes
+the -45° to +45° horizontal and 40° to 70° elevation ranges, solo/co-op zoom,
+map-edge camera positions, and landscape/square/portrait windows. Co-op spans
+may exceed the former zoom cap in narrow windows. Review clipped and complete
+renders of identical scenes
 to catch missing edge geometry. The battle report retains its separate oblique
 camera and matching horizontal model spacing, with the complete models fitted
 inside the preview panel.

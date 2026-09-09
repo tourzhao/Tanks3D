@@ -19,16 +19,18 @@ inline constexpr float kShellHalfSize = 0.25f;
 inline constexpr float kGovernmentSteelDuration = 20.0f;
 inline constexpr float kGovernmentSteelWarningDuration = 3.0f;
 inline constexpr float kGovernmentSteelFlashPeriod = 0.18f;
-inline constexpr int kGovernmentWallCount = 5;
+inline constexpr int kGovernmentWallCount = 8;
 inline constexpr int kGovernmentWallMaximumHealth = 4;
 inline constexpr int kGovernmentPowerShellDamage = 2;
-inline constexpr XZ kGovernmentBaseCenter{13.0f, 23.60f};
-inline constexpr float kGovernmentWallRadius = 1.95f;
-inline constexpr float kGovernmentWallThickness = 1.16f;
-inline constexpr float kGovernmentWallEndOverlap = 0.08f;
-inline constexpr float kGovernmentPentagonYaw =
-    45.0f * (3.14159265358979323846f / 180.0f);
-inline constexpr float kGovernmentCoreRadius = 0.92f;
+inline constexpr XZ kGovernmentBaseCenter{13.0f, 25.0f};
+inline constexpr float kGovernmentWallThickness = 1.0f;
+inline constexpr float kGovernmentCoreHalfSize = 1.0f;
+
+// Small-cell coordinates of the original eight-cell brick enclosure.
+inline constexpr std::array<std::array<int, 2>, kGovernmentWallCount>
+    kGovernmentWallCells{{
+        {{23, 11}}, {{23, 12}}, {{23, 13}}, {{23, 14}},
+        {{24, 11}}, {{24, 14}}, {{25, 11}}, {{25, 14}}}};
 
 enum class GovernmentBaseTheme
 {
@@ -94,7 +96,8 @@ struct GovernmentWallSegment
 };
 
 bool bonusOverlapsGovernmentBase(XZ position);
-XZ governmentPentagonCorner(int requestedIndex);
+int governmentWallIndexForCell(int row, int column);
+bool isGovernmentWallCell(int row, int column);
 GovernmentWallSegment governmentWallSegment(int index);
 bool governmentWallOverlapsShell(const GovernmentWallSegment &segment,
                                  XZ shellCenter);
@@ -140,8 +143,9 @@ public:
                            ShellImpactDetails *details = nullptr);
 
 private:
+    friend struct StageMapTestAccess;
     void resetTerrainDamageState();
-    bool generatedStageIsPlayable() const;
+    bool stageHasValidSpawns() const;
 
     int stage_ = 1;
     Nation governmentNation_ = Nation::UnitedStates;
@@ -154,7 +158,8 @@ private:
     std::array<int, kGovernmentWallCount> governmentWallHealth_{{
         kGovernmentWallMaximumHealth, kGovernmentWallMaximumHealth,
         kGovernmentWallMaximumHealth, kGovernmentWallMaximumHealth,
-        kGovernmentWallMaximumHealth}};
+        kGovernmentWallMaximumHealth, kGovernmentWallMaximumHealth,
+        kGovernmentWallMaximumHealth, kGovernmentWallMaximumHealth}};
 };
 } // namespace tanks3d::game
 

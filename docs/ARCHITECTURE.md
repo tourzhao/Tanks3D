@@ -39,9 +39,11 @@ commits a resize only after every replacement is valid and configured. Invalid
 or partial candidates are released through their FBO ownership roots. Window
 creation and render-target failure both fail closed before an invalid target can
 reach a draw call.
-`StageGenerator` now produces deterministic tile grids independently of the
-mutable `StageMap`, which retains route validation, collision, brick masks,
-base-wall state, and destruction. The first `CombatSystem` increment owns shell
+`StageGenerator` copies the 35 original Battle City layouts independently of
+the mutable `StageMap`, which validates spawn footprints and owns collision,
+brick masks, base-wall state, and destruction. Route queries remain read-only;
+loading a stage never carves new passages through its terrain.
+The first `CombatSystem` increment owns shell
 spawn geometry, impact-state transitions, cancellation eligibility/overlap,
 swept cancellation, and its `StageMap`-backed wall/core separation wrapper. The
 second adds the pure-data `CombatOutcome` and mechanically moves the
@@ -602,8 +604,8 @@ normalization, player-level statistics, and the sole `Nation` definition.
 `tanks3d::game` owns `Player`, `Enemy`, `Shell`, `GameEvent`, classified stage
 tallies, hit/death transitions, bonus type/timing/weighting, raylib-free pickup
 state, collector decisions, and bonus state commits. `StageGenerator` owns
-deterministic tile generation; `StageMap` owns stage normalization, spawn-route
-validation, terrain collision, brick masks, national-base wall state, and
+the fixed original 35 tile layouts; `StageMap` owns stage normalization, spawn
+footprint validation, terrain collision, brick masks, national-base wall state, and
 Shovel steel protection. `CombatSystem` owns the mechanically extracted shell
 helpers, frame scheduling/movement/cleanup, swept and greedy batch
 cancellation, the map-impact mutation/snapshot boundary,

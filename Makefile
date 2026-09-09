@@ -100,6 +100,7 @@ APP_HEADERS := src/app/command_side_effect_dispatch.h \
 CORE_HEADERS := src/core/coordinates.h src/core/gameplay_rules.h \
 	src/core/nation.h
 GAME_HEADERS := src/game/bonus_rules.h src/game/bonus_system.h \
+	src/game/classic_stage_layouts.h \
 	src/game/combat_system.h src/game/enemy_system.h src/game/entities.h \
 	src/game/game_event.h src/game/player_system.h \
 	src/game/settlement_system.h src/game/stage_generator.h \

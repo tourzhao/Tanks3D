@@ -10,12 +10,12 @@
 #include <array>
 #include <cmath>
 
-// Original procedural field headquarters. All five standing/destroyed wings
-// use the simulation's wall segments; decorative pieces never own collision.
+// Original procedural field headquarters. The command core stays inside the
+// classic two-by-two base; eight low wall tiles follow simulation ownership.
 namespace tanks3d::base_model
 {
-inline constexpr float kFoundationRadius = 2.62f;
-inline constexpr float kCourtyardRadius = 1.02f;
+inline constexpr float kFoundationRadius = 0.92f;
+inline constexpr float kCourtyardRadius = 0.76f;
 inline constexpr float kCommandCoreFootprint = 1.36f;
 
 namespace detail
@@ -157,110 +157,88 @@ inline void star(Vector3 p, float radius, Color color)
     rlEnd();
 }
 
-inline void ruin(float length, const Palette &p, int index)
+inline void ruin(float length, float thickness, const Palette &p, int index)
 {
-    // Scatter stays inside the former wall. The center of every destroyed
-    // wing remains visibly open, matching the route that shells can now take.
-    for (float side : {-1.0f, 1.0f})
+    // Destroyed walls leave a low rubble footprint, never another standing
+    // fragment across the simulation's now-open one-cell passage.
+    box({0, 0.019f, 0}, {length*0.82f, 0.025f, thickness*0.82f}, p.shadow);
+    for (int piece = 0; piece < 4; ++piece)
     {
-        armoredBlock({side*length*0.36f, 0.20f, 0.0f},
-                     {length*0.23f, 0.30f, 1.06f}, p.wall);
-        box({side*length*0.37f, 0.37f, -0.12f}, {0.19f, 0.10f, 0.23f}, p.trim);
+        const float x = (piece & 1) == 0 ? -0.26f : 0.24f;
+        const float z = (piece & 2) == 0 ? -0.23f : 0.27f;
+        const float height = ((piece + index) & 1) == 0 ? 0.095f : 0.065f;
+        armoredBlock({x*length, height*0.5f + 0.025f, z*thickness},
+                     {length*0.23f, height, thickness*0.20f},
+                     (piece & 1) == 0 ? p.wall : p.trim);
     }
-    for (int piece = 0; piece < 5; ++piece)
-    {
-        rlPushMatrix();
-        rlTranslatef((piece - 2)*length*0.13f, 0.05f,
-                     ((piece + index) % 3 - 1)*0.24f);
-        rlRotatef(piece*37.0f + index*11.0f, 0, 1, 0);
-        box({0, 0.025f, 0}, {0.22f, 0.10f, 0.16f},
-            (piece & 1) == 0 ? p.trim : p.shadow);
-        rlPopMatrix();
-    }
+    box({-length*0.02f, 0.048f, thickness*0.06f},
+        {length*0.19f, 0.035f, thickness*0.16f}, p.wall);
 }
 
-inline void wing(float length, const Palette &p, game::GovernmentBaseTheme theme,
-                 bool steel, bool shadowPass, int health, int index)
+inline void wallTile(float length, float thickness, const Palette &p,
+                     bool steel, bool shadowPass, int health, int index)
 {
-    const bool redoubt = theme == game::GovernmentBaseTheme::SovietRingCastle;
-    const bool depot = theme == game::GovernmentBaseTheme::UnitedStatesPentagon;
-    const float top = redoubt ? 0.79f : 0.72f;
-    const float face = game::kGovernmentWallThickness*0.5f;
-    armoredBlock({0, 0.10f, 0}, {length + 0.05f, 0.18f, 1.24f}, p.shadow);
-    armoredBlock({0, (top + 0.12f)*0.5f, 0},
-                 {length, top - 0.12f, game::kGovernmentWallThickness}, p.wall);
-    box({0, top - 0.025f, 0}, {length + 0.07f, 0.09f, 1.22f}, p.trim);
-    if (redoubt)
-    {
-        box({0, top + 0.025f, 0}, {length - 0.12f, 0.07f, 1.00f}, p.roof);
-        for (int i = -2; i <= 2; ++i)
-            armoredBlock({i*length*0.19f, top + 0.12f, face - 0.03f},
-                         {length*0.12f, 0.24f, 0.20f}, p.wall);
-    }
-    else
-    {
-        roof(length + 0.05f, 1.18f, top + 0.025f,
-             depot ? 0.18f : 0.28f, p.roof);
-        box({0, top + (depot ? 0.205f : 0.305f), 0},
-            {length + 0.09f, 0.035f, 0.085f}, p.metal);
-    }
+    const Color brick = shadowPass ? WHITE : pigment({157, 79, 47, 255}, 6);
+    const Color mortar = shadowPass ? WHITE : pigment({196, 155, 110, 255});
+    const Color recess = shadowPass ? WHITE : pigment({72, 48, 35, 255});
+    const Color body = steel ? p.wall : brick;
+    const Color cap = steel ? p.trim : mortar;
+    // All trim stays strictly inside the segment's footprint. Adjacent cells
+    // meet without extending a foundation into any original map tile.
+    armoredBlock({0, 0.255f, 0}, {length*0.96f, 0.47f, thickness*0.96f}, body);
+    box({0, 0.493f, 0}, {length*0.97f, 0.05f, thickness*0.97f}, cap);
+    if (steel)
+        armoredBlock({0, 0.535f, 0},
+                     {length*0.74f, 0.055f, thickness*0.74f}, p.metal);
+    if (shadowPass)
+        return;
 
-    // Recessed bays are large enough to read as openings from the play camera.
-    // Steel reinforcement closes those same bays with chunky bolted shutters.
-    for (int bay = -1; bay <= 1; ++bay)
+    for (int face = 0; face < 4; ++face)
     {
-        const float x = bay*length*0.285f;
-        box({x, 0.42f, face + 0.008f}, {0.49f, 0.35f, 0.045f}, p.shadow);
+        const float span = (face & 1) == 0 ? length : thickness;
+        const float depth = (face & 1) == 0 ? thickness : length;
+        const float front = depth*0.482f;
+        rlPushMatrix();
+        rlRotatef(face*90.0f, 0, 1, 0);
         if (steel)
         {
-            box({x, 0.43f, face + 0.042f}, {0.43f, 0.31f, 0.065f}, p.metal);
-            box({x, 0.43f, face + 0.079f}, {0.33f, 0.045f, 0.012f}, p.shadow);
+            box({0, 0.275f, front}, {span*0.51f, 0.25f, 0.008f}, p.metal);
+            box({0, 0.275f, front + 0.005f},
+                {span*0.33f, 0.026f, 0.004f}, p.shadow);
+            for (float side : {-1.0f, 1.0f})
+                for (float y : {0.19f, 0.36f})
+                    box({side*span*0.21f, y, front + 0.005f},
+                        {0.025f, 0.025f, 0.008f}, p.trim);
         }
         else
         {
-            box({x, 0.43f, face + 0.035f}, {0.37f, 0.23f, 0.016f},
-                shadowPass ? WHITE : pigment({43, 75, 71, 255}));
-            box({x, 0.43f, face + 0.048f}, {0.027f, 0.25f, 0.020f}, p.trim);
-            box({x, 0.44f, face + 0.048f}, {0.39f, 0.027f, 0.020f}, p.trim);
+            for (int course = 0; course < 3; ++course)
+            {
+                const float y = 0.095f + course*0.14f;
+                if (course > 0)
+                    box({0, y - 0.073f, front},
+                        {span*0.88f, 0.013f, 0.006f}, mortar);
+                for (int joint = 0; joint < 2; ++joint)
+                {
+                    const float x = span*((joint - 0.5f)*0.42f +
+                                           ((course & 1) == 0 ? -0.07f : 0.07f));
+                    box({x, y, front}, {0.013f, 0.12f, 0.006f}, mortar);
+                }
+            }
         }
-        box({x, 0.245f, face + 0.055f}, {0.53f, 0.055f, 0.11f}, p.trim);
-        box({x, 0.615f, face + 0.055f}, {0.54f, 0.055f, 0.11f}, p.trim);
-        if (!shadowPass)
-        {
-            for (float side : {-1.0f, 1.0f})
-                DrawSphereEx({x + side*0.195f, 0.54f, face + 0.089f},
-                             0.024f, 4, 6, p.trim);
-        }
-    }
-    for (float side : {-1.0f, 1.0f})
-        armoredBlock({side*length*0.46f, 0.43f, face - 0.008f},
-                     {0.17f, 0.67f, 0.19f}, p.trim);
-
-    // A single oversized duct on alternating wings breaks the repetitive roof.
-    if ((index & 1) == 0)
-    {
-        box({-length*0.25f, top + 0.13f, -0.16f}, {0.30f, 0.24f, 0.30f}, p.shadow);
-        armoredBlock({-length*0.25f, top + 0.27f, -0.16f},
-                     {0.39f, 0.16f, 0.38f}, p.metal);
-        if (!shadowPass)
-            for (int vent = -1; vent <= 1; ++vent)
-                box({-length*0.25f, top + 0.24f + vent*0.04f, 0.036f},
-                    {0.25f, 0.018f, 0.012f}, p.shadow);
-    }
-    if (!shadowPass)
-    {
-        // Broken plaster, exposed ochre bricks and short seam marks are
-        // deterministic decoration, never an input to the gameplay RNG.
-        for (int chip = 0; chip < 4; ++chip)
-            box({-length*0.41f + chip*0.19f, 0.17f + (chip % 2)*0.045f,
-                 face + 0.018f}, {0.13f, 0.033f, 0.026f}, p.accent);
+        // Health 1..4 still occupies the entire collider. Damage is painted
+        // cracks and missing surface finish; only zero health opens a gap.
         const int missing = game::kGovernmentWallMaximumHealth - health;
         for (int crack = 0; crack < missing; ++crack)
         {
-            const float x = length*0.22f - crack*0.22f;
-            box({x, 0.55f, face + 0.090f}, {0.08f, 0.23f, 0.017f}, p.shadow);
-            box({x + 0.07f, 0.66f, face + 0.09f}, {0.19f, 0.05f, 0.018f}, p.shadow);
+            const float x = span*(0.22f - crack*0.17f);
+            const float y = 0.33f - ((crack + index) & 1)*0.065f;
+            const Color scar = steel ? p.shadow : recess;
+            box({x, y, front + 0.009f}, {0.028f, 0.13f, 0.005f}, scar);
+            box({x - 0.028f, y + 0.056f, front + 0.009f},
+                {0.075f, 0.025f, 0.005f}, scar);
         }
+        rlPopMatrix();
     }
 }
 
@@ -339,15 +317,21 @@ inline void draw(const game::StageMap &map, bool alive, bool shadowPass)
     const auto theme = map.governmentBaseTheme();
     const bool steel = alive && map.governmentSteelVisible();
     const Palette p = palette(theme, steel, alive, shadowPass);
+    Palette debrisPaint = p;
+    if (!steel && !shadowPass)
+    {
+        debrisPaint.wall = pigment({157, 79, 47, 255}, 6);
+        debrisPaint.trim = pigment({196, 155, 110, 255});
+        debrisPaint.shadow = pigment({72, 48, 35, 255});
+    }
     const auto center = game::kGovernmentBaseCenter;
     rlPushMatrix();
     rlTranslatef(center.x, 0, center.z);
-    rlPushMatrix();
-    rlRotatef(game::kGovernmentPentagonYaw*RAD2DEG, 0, 1, 0);
-    DrawCylinder({0, -0.015f, 0}, kFoundationRadius, kFoundationRadius, 0.10f, 5, p.shadow);
-    DrawCylinder({0, 0.086f, 0}, kCourtyardRadius, kCourtyardRadius, 0.035f, 5,
-                 shadowPass ? WHITE : pigment({132, 124, 90, 255}));
-    rlPopMatrix();
+    armoredBlock({0, 0.016f, 0},
+                 {kFoundationRadius*2.0f, 0.06f, kFoundationRadius*2.0f}, p.shadow);
+    box({0, 0.046f, 0},
+        {kCourtyardRadius*2.0f, 0.012f, kCourtyardRadius*2.0f},
+        shadowPass ? WHITE : pigment({132, 124, 90, 255}));
     commandCore(p, theme, alive, shadowPass);
     rlPopMatrix();
 
@@ -359,9 +343,11 @@ inline void draw(const game::StageMap &map, bool alive, bool shadowPass)
         rlRotatef(-segment.yaw*RAD2DEG, 0, 1, 0);
         const int health = map.governmentWallHealth(index);
         if (health <= 0)
-            ruin(segment.halfLength*2.0f, p, index);
+            ruin(segment.halfLength*2.0f, segment.halfThickness*2.0f,
+                 debrisPaint, index);
         else
-            wing(segment.halfLength*2.0f, p, theme, steel, shadowPass, health, index);
+            wallTile(segment.halfLength*2.0f, segment.halfThickness*2.0f,
+                     p, steel, shadowPass, health, index);
         rlPopMatrix();
     }
 }

@@ -1698,15 +1698,15 @@ inline void drawTrackBelt(float side, float x, float centerY, float length,
             rlPushMatrix();
             rlTranslatef(side * x, shoeY, shoeZ);
             rlRotatef(end * (90.0f - angle * RAD2DEG), 1.0f, 0.0f, 0.0f);
-            box({0.0f, 0.0f, 0.0f}, {0.342f * widthScale, 0.030f, 0.047f}, shoePaint);
+            box({0.0f, 0.0f, 0.0f}, {0.342f * widthScale, 0.042f, 0.067f}, shoePaint);
             rlPopMatrix();
         }
-        for (int shoe = 0; shoe < 7; ++shoe)
+        for (int shoe = 0; shoe < 5; ++shoe)
         {
-            const float amount = (static_cast<float>(shoe) + phase) / 7.0f;
+            const float amount = (static_cast<float>(shoe) + phase) / 5.0f;
             box({side * x, centerY + end * (radius + 0.005f),
                  -straight + amount * straight * 2.0f},
-                {0.342f * widthScale, 0.026f, 0.041f}, shoePaint);
+                {0.342f * widthScale, 0.038f, 0.061f}, shoePaint);
         }
     }
     // A recessed mechanical backbone makes the spaces between wheels dark.
@@ -1725,17 +1725,73 @@ inline int arcadeVisualTier(const ArcadeVehicleSpec &spec)
     return spec.headY <= 0.77f ? 0 : 1;
 }
 
+// Art dimensions are independent from the immutable weapon attachments.
+// A substantial, forward-set upper casting and short exposed cannon carry
+// the arcade silhouette; the chassis is no longer the dominant broad mass.
+struct ArcadeVisualProfile
+{
+    float trackLength;
+    float trackHeight;
+    float hullWidth;
+    float hullLength;
+    float hullHeight;
+    float hullY;
+    float turretWidth;
+    float turretLength;
+    float turretHeight;
+    float turretY;
+    float turretZ;
+    float gunRadius;
+    float fenderTop;
+};
+
+inline ArcadeVisualProfile arcadeVisualProfile(const ArcadeVehicleSpec &spec)
+{
+    const int tier = arcadeVisualTier(spec);
+    const bool casemate = spec.headShape == ArcadeHeadShape::Casemate;
+    const bool german = spec.nationStyle == ArcadeNationStyle::German;
+    constexpr std::array<float, 4> towerWidths{{0.80f, 1.02f, 1.13f, 1.20f}};
+    constexpr std::array<float, 4> towerLengths{{0.74f, 0.84f, 0.92f, 0.98f}};
+    constexpr std::array<float, 4> towerHeights{{0.40f, 0.44f, 0.48f, 0.52f}};
+    constexpr std::array<float, 4> referenceWidths{{1.00f, 1.08f, 1.16f, 1.20f}};
+    constexpr std::array<float, 4> referenceLengths{{0.68f, 0.76f, 0.82f, 0.86f}};
+    constexpr std::array<float, 4> hullHeights{{0.24f, 0.27f, 0.295f, 0.30f}};
+    constexpr std::array<float, 4> gunRadii{{0.085f, 0.095f, 0.108f, 0.118f}};
+    constexpr std::array<float, 4> exposedLengths{{0.245f, 0.26f, 0.275f, 0.285f}};
+    ArcadeVisualProfile art{};
+    art.trackLength = spec.trackLength * (spec.wheeled ? 0.95f : 0.92f);
+    art.trackHeight = spec.trackHeight + (spec.wheeled ? 0.0f : 0.05f);
+    art.hullWidth = spec.trackHalfWidth *
+                    (tier == 0 ? 1.62f : tier >= 2 ? 1.99f : german ? 1.91f : 1.86f);
+    art.hullLength = art.trackLength * 0.96f;
+    art.hullHeight = casemate ? 0.235f : hullHeights[tier];
+    // Higher track shoulders do not lift the deck through the fixed gun line.
+    art.hullY = spec.trackHeight + (casemate ? 0.025f : 0.065f);
+    art.turretWidth = casemate ? spec.trackHalfWidth * 2.04f
+                               : towerWidths[tier] * spec.headWidth / referenceWidths[tier];
+    art.turretLength = casemate ? 0.92f
+                                : towerLengths[tier] + (spec.headLength - referenceLengths[tier]) * 0.25f;
+    art.turretHeight = casemate ? 0.36f : towerHeights[tier];
+    art.turretY = spec.headY + (casemate ? 0.085f : tier == 0 ? 0.05f : 0.045f);
+    art.turretZ = std::min(0.08f, art.turretLength * 0.5f -
+                                  arcadeMuzzleDistance(spec) + (casemate ? 0.25f : exposedLengths[tier]));
+    art.gunRadius = gunRadii[tier];
+    art.fenderTop = art.trackHeight + 0.037f + (0.10f + tier * 0.014f) * 0.5f;
+    return art;
+}
+
 inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
                                   const Palette &p, bool moving, bool enemy)
 {
-    const float height = spec.trackHeight;
+    const ArcadeVisualProfile art = arcadeVisualProfile(spec);
+    const float height = art.trackHeight;
     const float centerY = height * 0.5f + 0.037f;
     const bool german = spec.nationStyle == ArcadeNationStyle::German;
     const bool soviet = spec.nationStyle == ArcadeNationStyle::Soviet;
     const int tier = arcadeVisualTier(spec);
     const int wheels = spec.wheeled ? 3 : german && spec.wheelCount >= 8 ? 4 : 3;
     const float radius = spec.wheeled ? height * 0.43f : height * (wheels == 4 ? 0.29f : 0.36f);
-    const float range = spec.trackLength - height * 0.92f;
+    const float range = art.trackLength - height * 0.92f;
     const float outer = spec.trackHalfWidth + 0.184f;
     const float rotation = moving ? static_cast<float>(GetTime()) * 6.0f : 0.0f;
     const Color wheelPaint = enemy ? shade(p.paint, 0.94f) : p.lightPaint;
@@ -1748,11 +1804,11 @@ inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
                 // The T95's divided double belts are obvious in front view.
                 for (float trackOffset : {-0.090f, 0.090f})
                     drawTrackBelt(side, spec.trackHalfWidth + trackOffset,
-                                   centerY, spec.trackLength, height, p, moving, 0.47f);
+                                   centerY, art.trackLength, height, p, moving, 0.47f);
             }
             else
                 drawTrackBelt(side, spec.trackHalfWidth, centerY,
-                               spec.trackLength, height, p, moving);
+                               art.trackLength, height, p, moving);
         }
         for (int wheel = 0; wheel < wheels; ++wheel)
         {
@@ -1777,31 +1833,30 @@ inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
                            radius * 0.075f, p.edge, 6);
             }
         }
-        // Slim cast fenders sit over the belts and preserve the wheel opening.
-        drawArmorCasting({side * spec.trackHalfWidth, height + 0.064f, 0.012f},
-                          {soviet ? 0.317f : 0.346f,
-                           soviet ? 0.046f : tier >= 2 ? 0.104f : 0.073f,
-                           spec.trackLength * (soviet ? 0.97f : tier == 0 ? 0.69f : 0.84f)},
-                          german || soviet ? 0.28f : 0.54f, p.paint, 0.88f);
+        // Short rounded shoulders expose the tall, curved ends of each belt.
+        drawArmorCasting({side * spec.trackHalfWidth, height + 0.037f, 0.035f},
+                          {soviet ? 0.317f : 0.346f, 0.10f + tier * 0.014f,
+                           art.trackLength * (soviet ? 0.72f : 0.65f)},
+                          german ? 0.38f : 0.58f, p.paint, 0.84f);
         if (tier == 2)
         {
             drawArmorCasting({side * (spec.trackHalfWidth + 0.16f),
                                height + 0.013f, 0.035f},
-                              {0.080f, 0.165f, spec.trackLength * 0.57f},
+                              {0.080f, 0.165f, art.trackLength * 0.57f},
                               0.25f, p.darkPaint, 0.90f);
             box({side * (spec.trackHalfWidth + 0.204f), height + 0.030f, 0.020f},
-                {0.014f, 0.066f, spec.trackLength * 0.43f}, p.paint);
+                {0.014f, 0.066f, art.trackLength * 0.43f}, p.paint);
         }
         for (float z : {-0.24f, 0.24f})
             drawArmorRivet({side * (spec.trackHalfWidth + 0.175f),
-                            height + 0.065f, z * spec.trackLength}, p.lightPaint, 0.018f);
+                            height + 0.065f, z * art.trackLength}, p.lightPaint, 0.018f);
         if (spec.skirts)
         {
             for (int panel = 0; panel < 3; ++panel)
             {
-                const float z = (panel - 1) * spec.trackLength * 0.23f;
+                const float z = (panel - 1) * art.trackLength * 0.23f;
                 drawArmorCasting({side * (outer + 0.025f), centerY + height * 0.30f, z},
-                                  {0.056f, height * 0.31f, spec.trackLength * 0.205f},
+                                  {0.056f, height * 0.31f, art.trackLength * 0.205f},
                                   0.23f, panel == 1 ? p.darkPaint : p.paint, 0.90f);
             }
         }
@@ -1810,34 +1865,27 @@ inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
 
 inline float arcadeVisualTurretWidth(const ArcadeVehicleSpec &spec)
 {
-    if (spec.headShape == ArcadeHeadShape::Casemate)
-        return spec.trackHalfWidth * 1.96f;
-    constexpr std::array<float, 4> scales{{0.59f, 0.67f, 0.79f, 0.83f}};
-    const int tier = arcadeVisualTier(spec);
-    return spec.headWidth * scales[tier] * (tier == 0 ? 0.93f : 1.0f);
+    return arcadeVisualProfile(spec).turretWidth;
 }
 
 inline float arcadeVisualTurretHeight(const ArcadeVehicleSpec &spec)
 {
-    constexpr std::array<float, 4> scales{{0.60f, 0.67f, 0.70f, 0.79f}};
-    return spec.headHeight * (spec.headShape == ArcadeHeadShape::Casemate
-                                 ? 0.56f : scales[arcadeVisualTier(spec)]);
+    return arcadeVisualProfile(spec).turretHeight;
 }
 
 inline float arcadeVisualTurretLength(const ArcadeVehicleSpec &spec)
 {
-    return spec.headLength * (spec.headShape == ArcadeHeadShape::Casemate ? 1.14f
-                             : arcadeVisualTier(spec) == 0 ? 0.75f : 0.88f);
+    return arcadeVisualProfile(spec).turretLength;
 }
 
 inline float arcadeVisualTurretOffsetX(const ArcadeVehicleSpec &spec)
 {
-    return arcadeVisualTier(spec) == 0 ? -0.062f : 0.0f;
+    return arcadeVisualTier(spec) == 0 ? -0.030f : 0.0f;
 }
 
 inline float arcadeVisualRoofOffsetZ(const ArcadeVehicleSpec &spec)
 {
-    return spec.headShape == ArcadeHeadShape::Teardrop ? 0.055f : 0.0f;
+    return spec.headShape == ArcadeHeadShape::Teardrop ? 0.025f : 0.0f;
 }
 
 inline void drawStencilDigit(float side, float x, float y, float z,
@@ -1864,7 +1912,8 @@ inline void drawStencilDigit(float side, float x, float y, float z,
 
 inline void drawArcadeHead(const ArcadeVehicleSpec &spec, const Palette &p, bool enemy)
 {
-    const float width = arcadeVisualTurretWidth(spec);
+    const ArcadeVisualProfile art = arcadeVisualProfile(spec);
+    const float width = art.turretWidth;
     const float height = arcadeVisualTurretHeight(spec);
     const bool casemate = spec.headShape == ArcadeHeadShape::Casemate;
     const int tier = arcadeVisualTier(spec);
@@ -1877,31 +1926,31 @@ inline void drawArcadeHead(const ArcadeVehicleSpec &spec, const Palette &p, bool
     const Color paint = enemy ? shade(p.paint, 0.92f) : p.paint;
     if (!casemate)
     {
-        cylinder({offsetX, spec.headY - height * 0.48f, spec.headZ},
-                 {offsetX, spec.headY - height * 0.37f, spec.headZ},
+        cylinder({offsetX, art.turretY - height * 0.48f, art.turretZ},
+                 {offsetX, art.turretY - height * 0.37f, art.turretZ},
                  width * 0.40f, p.edge, 16);
     }
     if (casemate)
     {
         // A broad sloping bunker, with no turret ring or domed crown, makes
         // the divided-track assault vehicle visibly lower than the heavies.
-        chamferedFrustum({0.0f, spec.headY, spec.headZ}, width, length,
-                         width * 0.87f, length * 0.73f, height, 0.035f,
+        chamferedFrustum({0.0f, art.turretY, art.turretZ}, width, length,
+                         width * 0.88f, length * 0.82f, height, 0.035f,
                          0.17f, 0.08f, paint);
-        box({0.0f, spec.headY + height * 0.5f + 0.004f, spec.headZ + 0.14f},
+        box({0.0f, art.turretY + height * 0.5f + 0.004f, art.turretZ + 0.14f},
             {width * 0.48f, 0.009f, length * 0.21f}, shade(p.paint, 0.86f));
     }
     else if (rolledPlate)
     {
-        // Small reconnaissance turrets taper sharply; Tiger and Maus have
-        // broad vertical cheeks and a separate, inset rolled-steel roof.
-        const float roofWidth = width * (tier == 0 ? 0.63f : tier == 1 ? 0.78f : 0.92f);
-        const float roofLength = length * (tier == 0 ? 0.73f : 0.86f);
-        const float frontCut = spec.auxiliaryTurret ? 0.10f : tier >= 2 ? 0.12f : 0.24f;
-        chamferedFrustum({offsetX, spec.headY - 0.009f, spec.headZ},
+        // Angular families keep broad cheeks and an inset rolled-steel roof;
+        // even the light scouts have a substantial upper body now.
+        const float roofWidth = width * (tier == 0 ? 0.80f : tier == 1 ? 0.85f : 0.90f);
+        const float roofLength = length * (tier == 0 ? 0.84f : 0.88f);
+        const float frontCut = spec.auxiliaryTurret ? 0.10f : tier >= 2 ? 0.17f : 0.20f;
+        chamferedFrustum({offsetX, art.turretY - 0.009f, art.turretZ},
                          width, length, roofWidth, roofLength, height - 0.018f,
                          0.0f, frontCut, 0.12f, paint);
-        chamferedFrustum({offsetX, spec.headY + height * 0.5f - 0.013f, spec.headZ},
+        chamferedFrustum({offsetX, art.turretY + height * 0.5f - 0.013f, art.turretZ},
                          roofWidth, roofLength, roofWidth * 0.96f, roofLength * 0.96f,
                          0.026f, 0.0f, frontCut, 0.12f, shade(p.paint, 1.08f));
     }
@@ -1911,21 +1960,21 @@ inline void drawArcadeHead(const ArcadeVehicleSpec &spec, const Palette &p, bool
         // American light, round Sherman and broad Pershing shoulders keep
         // distinct casting profiles without adding overlapping sphere shells.
         const float corner = teardrop ? 0.88f : tier == 2 ? 0.60f : 0.84f;
-        const float roofTaper = teardrop ? 0.62f : tier == 1 ? 0.68f : 0.74f;
-        drawArmorCasting({offsetX, spec.headY, spec.headZ},
+        const float roofTaper = teardrop ? 0.75f : tier == 1 ? 0.78f : 0.79f;
+        drawArmorCasting({offsetX, art.turretY, art.turretZ},
                           {width, height, length}, corner, paint, roofTaper,
-                          teardrop ? 0.56f : 1.0f,
-                          arcadeVisualRoofOffsetZ(spec), teardrop ? 0.81f : 0.94f);
+                          teardrop ? 0.82f : 1.0f,
+                          arcadeVisualRoofOffsetZ(spec), teardrop ? 0.93f : 0.97f);
     }
 
     // One broad side plate and a few large fasteners survive the game camera.
     // No paired cheeks, stacked highlight blobs, or face-like front furniture.
     for (float side : {-1.0f, 1.0f})
     {
-        const float plateX = offsetX + side * width * (teardrop ? 0.355f
-                                                     : rolledPlate && tier == 0 ? 0.39f : 0.465f);
-        const float plateZ = spec.headZ + length * (teardrop ? 0.15f : 0.08f);
-        const float plateY = spec.headY - height * 0.08f;
+        const float plateX = offsetX + side * width * (teardrop ? 0.415f
+                                                     : rolledPlate && tier == 0 ? 0.44f : 0.465f);
+        const float plateZ = art.turretZ + length * (teardrop ? 0.15f : 0.08f);
+        const float plateY = art.turretY - height * 0.08f;
         box({plateX, plateY, plateZ},
             {0.036f, std::max(0.112f, height * 0.38f), length * 0.38f}, p.darkPaint);
         const float stencilX = side * plateX + 0.022f;
@@ -1950,12 +1999,13 @@ inline void drawArcadeHead(const ArcadeVehicleSpec &spec, const Palette &p, bool
 inline void drawArcadeGun(const ArcadeVehicleSpec &spec, const Palette &p,
                           bool enemy)
 {
+    const ArcadeVisualProfile art = arcadeVisualProfile(spec);
     const float y = spec.headY;
-    const float start = arcadeGunStartZ(spec);
+    const float start = art.turretZ - art.turretLength * 0.475f;
     const float tip = -arcadeMuzzleDistance(spec);
     const int tier = arcadeVisualTier(spec);
-    const float radius = std::max(0.057f + tier * 0.010f, spec.gunRadius * 1.78f);
-    const float mantletRadius = radius * (tier >= 2 ? 1.88f : 1.54f);
+    const float radius = art.gunRadius;
+    const float mantletRadius = radius * (tier >= 2 ? 1.65f : 1.54f);
     const bool german = spec.nationStyle == ArcadeNationStyle::German;
     const Color barrel = shade(p.paint, enemy ? 0.68f : 0.84f);
     const Color brake = material(Color{62, 71, 65, 255}, 10);
@@ -1973,7 +2023,7 @@ inline void drawArcadeGun(const ArcadeVehicleSpec &spec, const Palette &p,
     // A broad painted recoil sleeve and a narrow steel collar replace the
     // uniform bright tube. Its darker brake has a visibly separate mechanism.
     cylinder({0.0f, y, start - 0.047f},
-             {0.0f, y, start - spec.gunLength * 0.43f},
+             {0.0f, y, std::max(tip + 0.14f, start - (start - tip) * 0.43f)},
              radius * 1.12f, p.paint, 12);
     cylinder({0.0f, y, start - 0.045f}, {0.0f, y, start - 0.076f},
              radius * 1.17f, p.edge, 16);
@@ -2030,21 +2080,20 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
     const bool soviet = spec.nationStyle == ArcadeNationStyle::Soviet;
     const bool casemate = spec.headShape == ArcadeHeadShape::Casemate;
     const int tier = arcadeVisualTier(spec);
-    const float width = spec.trackHalfWidth *
-                        (tier == 0 ? 1.62f : tier >= 2 ? 1.99f : german ? 1.91f : 1.86f);
-    const float length = spec.trackLength * (tier == 0 ? 0.91f : 0.99f);
-    const float height = casemate ? 0.255f
-                                  : (tier == 0 ? 0.275f : 0.32f) + (spec.headY - 0.75f) * 0.38f;
-    const float hullY = spec.trackHeight + (casemate ? 0.060f : 0.085f);
+    const ArcadeVisualProfile art = arcadeVisualProfile(spec);
+    const float width = art.hullWidth;
+    const float length = art.hullLength;
+    const float height = art.hullHeight;
+    const float hullY = art.hullY;
     const float hullTop = hullY + height * 0.5f;
     const float noseZ = -length * 0.49f - 0.025f;
     const float turretWidth = arcadeVisualTurretWidth(spec);
     const float turretHeight = arcadeVisualTurretHeight(spec);
-    const float roofY = spec.headY + turretHeight * 0.5f;
+    const float roofY = art.turretY + turretHeight * 0.5f;
     const float corner = german ? 0.32f : soviet ? 0.52f : 0.65f;
 
-    // The broad chassis is the primary mass; its compact turret is sunk into
-    // the shoulders. A dark lower transmission gives the casting weight.
+    // A short, low chassis supports the large upper casting. Its front deck
+    // stays below the unchanged gun line and leaves the muzzle unobstructed.
     drawArmorCasting({0.0f, hullY - height * 0.29f, -0.027f},
                       {width * 0.86f, height * 0.54f, length * 0.88f},
                       0.50f, p.darkPaint, 0.91f);
@@ -2069,9 +2118,9 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
                  {side * width * 0.29f, hullY - 0.09f, noseZ - 0.025f},
                  0.031f, p.steel, 10);
     }
-    box({-width * 0.19f, hullTop - 0.030f, -length * 0.305f},
+    box({-width * 0.19f, hullTop - 0.030f, -length * 0.435f},
         {0.20f, 0.083f, 0.15f}, p.darkPaint);
-    box({-width * 0.19f, hullTop - 0.019f, -length * 0.383f},
+    box({-width * 0.19f, hullTop - 0.019f, -length * 0.513f},
         {0.144f, 0.027f, 0.016f}, p.optic);
     cylinder({width * 0.29f, hullY + 0.020f, noseZ + 0.043f},
              {width * 0.29f, hullY + 0.020f, noseZ - 0.028f},
@@ -2082,7 +2131,7 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
     // A bolted repair plate and two exposed-metal chips give the front deck
     // a worked-on surface. These are large paint shapes, not random noise.
     const float repairX = width * 0.17f;
-    const float repairZ = -length * 0.28f;
+    const float repairZ = -length * 0.40f;
     box({repairX, hullTop + 0.007f, repairZ},
         {width * 0.24f, 0.013f, length * 0.15f}, p.darkPaint);
     box({repairX, hullTop + 0.017f, repairZ},
@@ -2099,7 +2148,7 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
     // Roof furniture follows each casting's crown. The assault casemate has
     // two small crew hatches; the rearward Soviet crown carries an offset lid.
     const bool teardrop = spec.headShape == ArcadeHeadShape::Teardrop;
-    const float roofZ = spec.headZ + arcadeVisualRoofOffsetZ(spec);
+    const float roofZ = art.turretZ + arcadeVisualRoofOffsetZ(spec);
     const float roofX = arcadeVisualTurretOffsetX(spec);
     const int hatchCount = casemate ? 2 : 1;
     for (int hatch = 0; hatch < hatchCount; ++hatch)
@@ -2151,20 +2200,20 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
         if (tier == 1 && !soviet)
         {
             const float boxX = -(spec.trackHalfWidth + 0.152f);
-            drawArmorCasting({boxX, spec.trackHeight + 0.145f, 0.19f},
+            drawArmorCasting({boxX, art.fenderTop + 0.085f, 0.19f},
                               {0.17f, 0.18f, 0.33f}, 0.26f, p.canvas, 0.89f);
-            box({boxX - 0.088f, spec.trackHeight + 0.151f, 0.19f},
+            box({boxX - 0.088f, art.fenderTop + 0.091f, 0.19f},
                 {0.014f, 0.19f, 0.039f}, p.darkPaint);
-            box({boxX - 0.097f, spec.trackHeight + 0.175f, 0.19f},
+            box({boxX - 0.097f, art.fenderTop + 0.115f, 0.19f},
                 {0.018f, 0.042f, 0.059f}, p.steel);
         }
         if (tier >= 1 && !german)
         {
             // One readable field shovel, strapped along the right fender.
             const float toolX = spec.trackHalfWidth + 0.12f;
-            cylinder({toolX, spec.trackHeight + 0.12f, -0.24f},
-                     {toolX, spec.trackHeight + 0.12f, 0.11f}, 0.016f, p.canvas, 8);
-            drawArmorCasting({toolX, spec.trackHeight + 0.12f, -0.28f},
+            cylinder({toolX, art.fenderTop + 0.020f, -0.24f},
+                     {toolX, art.fenderTop + 0.020f, 0.11f}, 0.016f, p.canvas, 8);
+            drawArmorCasting({toolX, art.fenderTop + 0.020f, -0.28f},
                               {0.095f, 0.026f, 0.145f}, 0.46f, p.steel, 0.89f);
         }
         if (soviet)
@@ -2173,19 +2222,18 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
             for (float side : {-1.0f, 1.0f})
             {
                 const float x = side * (spec.trackHalfWidth - 0.010f);
-                cylinder({x, hullTop - 0.015f, length * 0.22f},
-                         {x, hullTop - 0.015f, length * 0.48f}, 0.085f, p.darkPaint, 12);
+                cylinder({x, art.fenderTop + 0.090f, length * 0.22f},
+                         {x, art.fenderTop + 0.090f, length * 0.48f}, 0.085f, p.darkPaint, 12);
                 for (float z : {length * 0.25f, length * 0.44f})
                 {
-                    // Saddles bridge the raised drum to the thin fender,
+                    // Saddles bridge the raised drum to the rounded fender,
                     // with their tops seated inside the lower drum surface.
-                    const float saddleBase = spec.trackHeight + 0.060f;
-                    const float saddleHeight = std::max(
-                        0.02f, hullTop - 0.065f - saddleBase);
+                    const float saddleBase = art.fenderTop - 0.018f;
+                    const float saddleHeight = 0.058f;
                     box({x, saddleBase + saddleHeight * 0.5f, z + 0.012f},
                         {0.12f, saddleHeight, 0.055f}, p.darkPaint);
-                    cylinder({x, hullTop - 0.015f, z},
-                             {x, hullTop - 0.015f, z + 0.024f}, 0.090f, p.steel, 12);
+                    cylinder({x, art.fenderTop + 0.090f, z},
+                             {x, art.fenderTop + 0.090f, z + 0.024f}, 0.090f, p.steel, 12);
                 }
             }
         }
@@ -2194,8 +2242,8 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
             // A single canvas roll sits behind the turret instead of a second
             // oversized box on top of it. German vehicles get a flat bustle.
             if (german)
-                drawArmorCasting({0.0f, spec.headY - 0.035f,
-                                   spec.headZ + spec.headLength * 0.445f},
+                drawArmorCasting({0.0f, art.turretY - 0.035f,
+                                   art.turretZ + art.turretLength * 0.445f},
                                   {turretWidth * 0.66f, 0.12f, 0.135f},
                                   0.25f, p.canvas, 0.85f);
             else
@@ -2214,24 +2262,25 @@ inline void drawArcadeVehicle(Vehicle vehicle, const Palette &p,
     {
         // Enemy roles retain the wheeled scout, small gunner, medium and heavy
         // silhouettes, with a hot slit and a squared utility box as common cues.
-        box({0.0f, spec.headY + turretHeight * 0.12f,
-             spec.headZ - spec.headLength * 0.40f},
+        box({0.0f, art.turretY + turretHeight * 0.12f,
+             art.turretZ - art.turretLength * 0.46f},
             {turretWidth * 0.38f, 0.035f, 0.023f}, material(Color{234, 100, 45, 255}, 12));
         drawArmorCasting({-width * 0.40f, hullTop + 0.025f, length * 0.30f},
                           {0.20f, 0.17f, 0.24f}, 0.25f, p.darkPaint, 0.87f);
     }
     if (spec.auxiliaryTurret)
     {
-        drawArmorCasting({-width * 0.34f, hullTop + 0.030f, -length * 0.24f},
+        const float auxiliaryX = -(spec.trackHalfWidth + 0.090f);
+        drawArmorCasting({auxiliaryX, art.fenderTop + 0.070f, -length * 0.24f},
                           {0.22f, 0.19f, 0.23f}, 0.62f, p.lightPaint, 0.75f);
-        cylinder({-width * 0.34f, hullTop + 0.036f, -length * 0.30f},
-                 {-width * 0.34f, hullTop + 0.036f, -length * 0.48f},
+        cylinder({auxiliaryX, art.fenderTop + 0.076f, -length * 0.30f},
+                 {auxiliaryX, art.fenderTop + 0.076f, -length * 0.48f},
                  0.024f, p.steel, 10);
     }
     if (vehicle == Vehicle::Maus)
-        cylinder({turretWidth * 0.20f, spec.headY - 0.025f, arcadeGunStartZ(spec)},
+        cylinder({turretWidth * 0.20f, spec.headY - 0.025f, art.turretZ - art.turretLength * 0.475f},
                  {turretWidth * 0.20f, spec.headY - 0.025f,
-                  arcadeGunStartZ(spec) - spec.gunLength * 0.55f},
+                  art.turretZ - art.turretLength * 0.475f - spec.gunLength * 0.33f},
                  0.028f, p.steel, 10);
     // Identity stripe is painted into a nose plate; the old floating recognition
     // bar is no longer needed to identify player one and player two.

@@ -11,8 +11,18 @@ mechanical file move must not update either.
   `0 -> 35`). Every stage contains 20 enemies, with at most four active enemy
   slots.
 - Enemy spawns are `(1,1)`, `(13,1)`, and `(25,1)`; player spawns are `(9,25)`
-  and `(17,25)`. Generated layouts must match their recorded hashes and keep all
-  validated spawn/player/base routes open.
+  and `(17,25)`. All 35 levels reproduce the original Battle City terrain and
+  level order on the 26x26 small-cell grid. Original half-metatiles remain
+  half-metatiles; artwork must fit their occupied cells.
+- Stage loading preserves the supplied initial grid, including the original
+  eight-cell base enclosure. It must not add perimeter roads, enlarge spawn
+  clearances, erase the base approach, or complete partial building lots.
+  Original brick barriers may require firing to open a route, so initial open
+  routes between every spawn and the base are not a load requirement.
+- Level lookup is deterministic from the canonical stage number and independent
+  of the gameplay random stream. The load check retains the real tank spawn
+  footprints. Artificial steering, Boat, and ice cases live in test fixtures,
+  never in an original stage.
 - Simulation `dt` is clamped to 0.05 seconds. Tanks move only north, south, west,
   or east. Ice momentum lasts 0.380 seconds; lane snapping is allowed within
   5/16 tile of the cardinal lane.
@@ -411,7 +421,7 @@ the shell even though its map-specific `ImpactKind` remains `None`.
 - Helmet grants at least 10 seconds of protection. Clock freezes live enemies for
   at least 8 seconds. Tank adds one life up to 99. Boat enables water travel and
   absorbs the first otherwise effective hit.
-- Shovel repairs all five government wall segments and grants 20 seconds of
+- Shovel repairs all eight government wall cells and grants 20 seconds of
   invulnerable steel. Re-collection resets the duration; the last 3 seconds flash
   on a 0.18-second period.
 - Pickups last 12.5 seconds and blink twice as fast during the final 25%. Pickup
@@ -453,11 +463,18 @@ the shell even though its map-specific `ImpactKind` remains `None`.
 ## Government Base and Enemy Creation
 
 - P1's nation selects the shared national base. The three visual themes use the
-  same physical five-segment structure.
+  same original enclosure: row 23, columns 11–14; rows 24–25, columns 11 and
+  14 (zero-based). Each wall segment occupies exactly one 1x1 cell, with no
+  angled overlap or expanded clearing footprint.
 - Each wall segment starts with 4 HP. Normal shells deal 1; level-3 power shells
   deal 2. A corner hit damages only the nearest segment. Steel protection blocks
   both shell types.
-- The core has a 0.92-tile radius and binary 1 HP, but is vulnerable only
+- A surviving wall cell retains a full brick mask and full-cell collision;
+  health zero clears its tile and mask, and repair restores both. Partial HP
+  damage is visual cracking, not a collision hole. One demolished cell is too
+  narrow for a full tank; two adjacent cells can form a tank-width opening.
+- The core is the original 2x2 AABB centered at `(13,25)` and has binary 1 HP,
+  but is vulnerable only
   through a real wall breach. Player and enemy shells, ordinary or power,
   destroy it in one hit. The destroyed core continues absorbing shells without
   repeating damage events. Destroying it loses the game.
@@ -682,11 +699,9 @@ make coverage
 ./build/Tanks3D --dump-stage-signatures
 ```
 
-The integrated self-test reports eighteen named suites and 7,191 runtime checks.
-Ten independent, raylib-free core/game executables add 154 suites and
-1,107 checks; seven app-layer executables add fifty suites and 292 checks, so
-the aggregate gate runs 222 suites and 8,590 checks across nineteen profiles.
-The nineteenth profile executes the exclusive, no-window
+The gate runs the integrated game self-test and independent raylib-free
+core/game and app-layer executables. Their output reports the current suite
+and check totals. A separate profile executes the exclusive, no-window
 release-performance-capability handshake through the instrumented game and
 byte-compares its JSON contract without changing the suite/check ledger.
 They lock vector arithmetic, all cardinal values, targeting ties, strict 5/16 lane
@@ -694,8 +709,8 @@ snapping, edge-only AABB contact, 0.380-second ice transitions, HP 1–6, every
 tuning step, nation cycling, four player levels, bonus enum/weighting,
 Shield/Boat priority, classified tally exclusion, death transitions,
 enemy-shell cleanup, all 35 direct generator goldens and their map bridge,
-stage wrapping, open spawn routes, strict map/tank/shell collision, brick
-quadrants, five base-wall segments, Shovel steel timing, exact shell spawn and
+stage wrapping, original layouts and passable spawn footprints, strict
+map/tank/shell collision, brick quadrants, eight base-wall cells, Shovel steel timing, exact shell spawn and
 impact state, frame aging/scheduling/movement/stable cleanup, cancellation
 eligibility, swept crossings, wall-separated shells,
 greedy multi-pair ordering, invalid-candidate continuation, attribution/contact
@@ -800,8 +815,8 @@ silence, `id != slot` respawn cleanup and final-shell delay, ordered two-player
 movement, Boat/water collision, blocked movement with same-frame fire, and
 concrete presentation. The observable-event suite has 76 checks and locks the
 post-commit respawn cue order. Direct and
-production regressions plus ASan/UBSan pass all 18 integrated suites and 7,191
-checks. Owned-shell cleanup, spawn-point mapping and entity adaptation, events,
+production regressions also run under ASan/UBSan. Owned-shell cleanup,
+spawn-point mapping and entity adaptation, events,
 audio, entities, map, rendering, cameras, and concrete movement/fire
 orchestration and presentation adapters remain in `Game3D`.
 Integrated metadata checks directly cover all 12 national vehicle IDs.
@@ -809,7 +824,13 @@ Stage signatures use a versioned, row-major FNV-1a byte stream over each tile
 and initial brick mask;
 they do not use `std::hash` or raw object memory. Do not replace expected hashes
 merely to make a failing refactor pass. First explain and review the intended
-layout change.
+layout change. The original-layout restoration intentionally replaces all 35
+goldens, including stage 1's previously erased base enclosure. The source maps
+must be verified independently before their goldens are accepted. All stages
+remain unique after discarding terrain identities; the tests also compare the
+loaded map to its supplied grid cell by cell, rejecting hidden terrain clears.
+Both automatic settlement and manual stage advancement verify each live map's
+expected layout, including stage 2 to 3 and the stage-35 wrap.
 
 Render-target lifetime and failure are fixed as well. A same-size valid target
 is reused. Each requested view attempts RGBA16F first and only tries RGBA8 after
