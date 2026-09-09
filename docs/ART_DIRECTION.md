@@ -118,8 +118,12 @@ or stage changes; the steel cache releases its retained data at application exit
 
 - Tank geometry lives in `src/wwii_tank_model.h`: twelve player models across
   three nations and four enemy roles use fourteen vehicle definitions.
-  The basic and heavy enemies reuse the Panzer II and Tiger definitions;
-  the fast armored car and long-gun enemy have separate definitions.
+  Enemy nations exclude the participating players' selections. American and
+  Soviet basic/fast/power/armored enemies use their medium/light/heavy/super-heavy
+  models respectively. German enemies retain the Panzer II, Sd.Kfz.231,
+  Panzer III and Tiger. Enemy armor colors and bonus-carrier flashes retain
+  their gameplay meaning. Models, contact and sun shadows, and muzzle flashes
+  all select the same national vehicle; damage does not switch models.
 - `ArcadeVehicleSpec`, vehicle selection and visual muzzle attachments retain
   their existing values. The muzzle helpers place the rendered barrel tip and
   flash; simulation shell spawning remains separately defined by

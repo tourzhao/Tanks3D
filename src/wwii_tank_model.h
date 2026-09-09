@@ -2502,6 +2502,19 @@ inline Vehicle enemyVehicle(int type)
     }
 }
 
+inline Vehicle enemyVehicle(Nation nation, int type)
+{
+    nation = tanks3d::core::normalizedNation(nation);
+    if (nation == Nation::Germany)
+        return enemyVehicle(type);
+
+    // These tiers choose silhouettes only: Fast remains the compact light
+    // tank, while the four classic enemy types retain their combat rules.
+    static constexpr std::array<int, 4> roleTiers{{1, 0, 2, 3}};
+    const int role = (type % 4 + 4) % 4;
+    return playerVehicle(nation, roleTiers[static_cast<std::size_t>(role)]);
+}
+
 // Compatibility selector retained for the original enemy mapping tests.
 // Legacy player callers deliberately continue to resolve to the Sherman.
 inline Vehicle vehicleFor(bool enemy, int identity)
@@ -2582,6 +2595,16 @@ inline float enemyMuzzleHeight(int type)
     return muzzleHeightForVehicle(enemyVehicle(type));
 }
 
+inline float enemyMuzzleDistance(Nation nation, int type)
+{
+    return muzzleDistanceForVehicle(enemyVehicle(nation, type));
+}
+
+inline float enemyMuzzleHeight(Nation nation, int type)
+{
+    return muzzleHeightForVehicle(enemyVehicle(nation, type));
+}
+
 inline float muzzleDistance(bool enemy, int identity)
 {
     return muzzleDistanceForVehicle(vehicleFor(enemy, identity));
@@ -2596,7 +2619,8 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
                      int armor, float shield, int identity, bool moving,
                      Nation nation = Nation::UnitedStates)
 {
-    const Vehicle vehicle = enemy ? enemyVehicle(identity)
+    nation = tanks3d::core::normalizedNation(nation);
+    const Vehicle vehicle = enemy ? enemyVehicle(nation, identity)
                                   : playerVehicle(nation, armor);
     const Color armorColor = enemy
                                  ? bodyColor

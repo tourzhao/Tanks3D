@@ -11820,6 +11820,76 @@ int runViewTargetAllocationSelfTests()
     return 0;
 }
 
+int runEnemyNationSelfTests(const fs::path &resourceRoot)
+{
+    struct NationCase
+    {
+        int playerCount;
+        std::array<Nation, 2> players;
+        std::array<Nation, 2> enemies;
+    };
+    using N = Nation;
+    const std::array<NationCase, 9> cases{{
+        {1, {{N::UnitedStates, N::SovietUnion}}, {{N::SovietUnion, N::Germany}}},
+        {1, {{N::SovietUnion, N::Germany}}, {{N::UnitedStates, N::Germany}}},
+        {1, {{N::Germany, N::UnitedStates}}, {{N::UnitedStates, N::SovietUnion}}},
+        {2, {{N::UnitedStates, N::SovietUnion}}, {{N::Germany, N::Germany}}},
+        {2, {{N::UnitedStates, N::Germany}}, {{N::SovietUnion, N::SovietUnion}}},
+        {2, {{N::SovietUnion, N::Germany}}, {{N::UnitedStates, N::UnitedStates}}},
+        {2, {{N::UnitedStates, N::UnitedStates}}, {{N::SovietUnion, N::Germany}}},
+        {2, {{N::SovietUnion, N::SovietUnion}}, {{N::UnitedStates, N::Germany}}},
+        {2, {{N::Germany, N::Germany}}, {{N::UnitedStates, N::SovietUnion}}},
+    }};
+    for (const NationCase &test : cases)
+    {
+        Game3D game(resourceRoot, 0xead10000U);
+        if (!checkTest(game.start(test.playerCount, 3, 1, test.players),
+                       game.lastError()))
+            return 1;
+        for (int index = 0; index < kEnemiesPerStage; ++index)
+        {
+            Enemy enemy;
+            if (!checkTest(Game3DTestAccess::sampleRandomEnemy(game, enemy) &&
+                               enemy.id == index &&
+                               game.enemyNation(enemy.id) ==
+                                   test.enemies[static_cast<std::size_t>(index % 2)],
+                           "spawned enemy did not alternate opposing nations"))
+                return 1;
+        }
+        const SessionDigest beforeLookup = game.sessionDigest();
+        const int lastId = game.enemies().front().id;
+        const Nation lastNation = game.enemyNation(lastId);
+        if (!checkTest(game.sessionDigest() == beforeLookup,
+                       "looking up enemy nation mutated the session"))
+            return 1;
+        for (int index = 0; index < test.playerCount; ++index)
+            Game3DTestAccess::setPlayerDeathEntryState(
+                game, index, index, false, 0, 0.0f);
+        if (!checkTest(game.enemyNation(lastId) == lastNation,
+                       "player defeat changed an existing enemy's nation"))
+            return 1;
+        for (bool restart : {false, true})
+        {
+            Enemy first;
+            if (!checkTest((restart ? game.restart() : game.changeStage(1)) &&
+                               Game3DTestAccess::sampleRandomEnemy(game, first) &&
+                               first.id == 0 &&
+                               game.enemyNation(first.id) == test.enemies[0],
+                           "stage change or restart lost opposing nations"))
+                return 1;
+        }
+        const SessionDigest beforeRejectedStart = game.sessionDigest();
+        Game3DTestAccess::rejectStageLoads(game);
+        if (!checkTest(!game.start(2, 3, 1, {{N::Germany, N::SovietUnion}}) &&
+                           game.enemyNation(0) == test.enemies[0] &&
+                           game.enemyNation(1) == test.enemies[1] &&
+                           game.sessionDigest() == beforeRejectedStart,
+                       "rejected new game changed the enemy nation pool"))
+            return 1;
+    }
+    return 0;
+}
+
 int runVehicleMetadataSelfTests()
 {
     if (!checkTest(std::string(wwii_tank_model::vehicleName(true, 0)) == "PANZER II AUSF. F" &&
@@ -11896,6 +11966,32 @@ int runVehicleMetadataSelfTests()
                        wwii_tank_model::muzzleDistance(true, 2) < 1.10f,
                    "enemy arcade short-gun muzzle alignment is incorrect"))
         return 1;
+
+    using Vehicle = wwii_tank_model::Vehicle;
+    const std::array<std::array<Vehicle, 4>, 3> expectedEnemyVehicles{{
+        {{Vehicle::M4A3Sherman, Vehicle::M24Chaffee,
+          Vehicle::M26Pershing, Vehicle::T28T95}},
+        {{Vehicle::T3485, Vehicle::T70, Vehicle::IS2, Vehicle::KV5Project}},
+        {{Vehicle::PanzerIIF, Vehicle::Sdkfz231SixRad,
+          Vehicle::PanzerIIIL, Vehicle::TigerIE}},
+    }};
+    for (std::size_t nationIndex = 0; nationIndex < kSelectableNations.size(); ++nationIndex)
+    {
+        const Nation nation = kSelectableNations[nationIndex];
+        for (int type = 0; type < kEnemyTypeCount; ++type)
+        {
+            const Vehicle expected = expectedEnemyVehicles[nationIndex]
+                [static_cast<std::size_t>(type)];
+            if (!checkTest(
+                    wwii_tank_model::enemyVehicle(nation, type) == expected &&
+                        wwii_tank_model::enemyMuzzleDistance(nation, type) ==
+                            wwii_tank_model::muzzleDistanceForVehicle(expected) &&
+                        wwii_tank_model::enemyMuzzleHeight(nation, type) ==
+                            wwii_tank_model::muzzleHeightForVehicle(expected),
+                    "enemy nation/type model or muzzle attachment is incorrect"))
+                return 1;
+        }
+    }
     return 0;
 }
 
@@ -11946,6 +12042,11 @@ int runSelfTests(const fs::path &resourceRoot,
     if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,
                                  "national-visual-contracts", [&]() {
             return runNationalVisualContractSelfTests(resourceRoot);
+        }) != 0)
+        return 1;
+    if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,
+                                 "opposing-enemy-nations", [&]() {
+            return runEnemyNationSelfTests(resourceRoot);
         }) != 0)
         return 1;
     if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,

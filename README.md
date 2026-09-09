@@ -24,7 +24,9 @@ Pixel Style OFF. [Compare Pixel Style ON](build/release-evidence/pixel-options-2
   rounded cabins and painted materials, inspired by the military adventure art of
   1990s arcade games.
 - 12 player tanks across United States, Soviet and German light-to-super-heavy
-  lines, plus four enemy roles.
+  lines, plus four enemy roles. Enemy vehicles come from the nations not chosen
+  by participating players: two opposing nations in solo or same-nation co-op,
+  and the remaining nation when co-op players choose different nations.
 - Destructible buildings with tiled roofs, shop awnings and exposed ruins;
   three national headquarters, rounded forest canopies, shaded riverbanks and
   clearly marked steel barriers.

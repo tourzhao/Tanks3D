@@ -1749,6 +1749,11 @@ public:
     }
     bool baseAlive() const { return baseAlive_; }
     Nation baseNation() const { return map_.governmentNation(); }
+    Nation enemyNation(int enemyId) const
+    {
+        return tanks3d::core::opposingNationForPlayers(
+            startingNations_, playerCount_, enemyId);
+    }
     bool showTargets() const { return showTargets_; }
     int stage() const { return stage_; }
     int playerCount() const { return playerCount_; }
@@ -2918,13 +2923,14 @@ private:
             EnemyShellLaunchPresentationStep::EventAppended, intent);
 
         const XZ direction = cardinalVector(intent.direction);
+        const Nation nation = enemyNation(intent.shell.ownerIndex);
         const float muzzleDistance =
-            wwii_tank_model::muzzleDistance(true, intent.enemyType);
+            wwii_tank_model::enemyMuzzleDistance(nation, intent.enemyType);
         const XZ muzzle =
             intent.tankPosition + direction * muzzleDistance;
         effects_.spawnMuzzleFlash({muzzle.x,
-                                   wwii_tank_model::muzzleHeight(
-                                       true, intent.enemyType),
+                                   wwii_tank_model::enemyMuzzleHeight(
+                                       nation, intent.enemyType),
                                    muzzle.z},
                                   {direction.x, 0.0f, direction.z},
                                   Color{255, 89, 45, 255});
@@ -4333,7 +4339,7 @@ void drawBase(const StageMap &map, bool alive, bool shadowPass = false)
 void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity,
                            Nation nation = Nation::UnitedStates, int armor = 0)
 {
-    const auto vehicle = enemy ? wwii_tank_model::enemyVehicle(identity)
+    const auto vehicle = enemy ? wwii_tank_model::enemyVehicle(nation, identity)
                                : wwii_tank_model::playerVehicle(nation, armor);
     const auto spec = wwii_tank_model::detail::arcadeVehicleSpec(vehicle);
     const auto art = wwii_tank_model::detail::arcadeVisualProfile(spec);
@@ -4475,7 +4481,7 @@ void drawShadowCasters(const Game3D &game, TankAssets &tankAssets)
             continue;
         drawTankModel(tankAssets, enemy.position, enemy.yaw,
                       enemyArmorColor(enemy.armor), true, enemy.armor, 0.0f,
-                      enemy.type, enemy.moving, Nation::Germany, true);
+                      enemy.type, enemy.moving, game.enemyNation(enemy.id), true);
     }
     tankAssets.flushQueued(true);
 }
@@ -4523,14 +4529,14 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
             body = ColorLerp(body, Color{255, 89, 35, 255}, pulse);
         }
         drawTankContactShadow(enemy.position, enemy.yaw, true, enemy.type,
-                              Nation::Germany, enemy.armor);
+                              game.enemyNation(enemy.id), enemy.armor);
         if (tankAssets.gltfProbeEnabled())
             drawGltfProbeFootprint(enemy.position,
                                    Color{255, 86, 72, 255});
         drawTankModel(tankAssets, enemy.position, enemy.yaw, body,
                       true, enemy.armor, 0.0f, enemy.type,
                       enemy.moving,
-                      Nation::Germany);
+                      game.enemyNation(enemy.id));
         if (enemy.frozenTimer > 0.0f)
         {
             DrawSphereWires({enemy.position.x, 0.58f, enemy.position.z},

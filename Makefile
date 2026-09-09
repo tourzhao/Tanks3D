@@ -161,7 +161,7 @@ RELEASE_PERFORMANCE_QA_RUNNER_TEST := \
 	tests/test_release_performance_runner.py
 
 CORE_TEST_SOURCES := tests/core_coordinates_tests.cpp \
-	tests/core_gameplay_rules_tests.cpp
+	tests/core_gameplay_rules_tests.cpp tests/core_nation_tests.cpp
 CORE_TEST_TARGETS := $(patsubst tests/%.cpp,build/tests/%,$(CORE_TEST_SOURCES))
 BONUS_SYSTEM_TEST_SOURCE := tests/bonus_system_tests.cpp
 BONUS_SYSTEM_TEST_TARGET := build/tests/bonus_system_tests
