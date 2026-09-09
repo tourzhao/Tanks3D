@@ -6,21 +6,22 @@ local co-op across the 35 original Battle City battlefield layouts.
 
 ## Current development preview
 
-**These screenshots show the current source build.** Rebuilt tanks and
-terrain, layered battle effects, an optional crisp pixel finish, a wider adjustable
-camera and the restored Battle City maps are newer than
-the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-version)
-to play with the visuals shown here.
+**These screenshots were exported from the latest Alpha 5 candidate.**
+Rebuilt tanks and terrain, layered battle effects, an optional crisp pixel
+finish, a wider adjustable camera and the original Battle City maps are newer
+than the downloadable Alpha 4 release.
+[Build the current version](#build-and-play-current-version) to play with
+the visuals shown here.
 
 [Alpha 5 candidate notes and fresh screenshots](docs/releases/v0.1.0-alpha.5.md)
 are now available for review. Its automated build gates passed; controller,
 clean-Mac, long-session, audio-owner and final approval gates remain pending.
 
-![Current source: two-player battlefield with Pixel Style off](build/release-evidence/pixel-options-20260909/gameplay-coop.png)
+![Alpha 5: forest, river, buildings and steel on original Battle City stage 26](build/release-evidence/github-preview-20260909/forest-solo.png)
 
-*Original stage 26 at 50° elevation and 25° left rotation, with staged tank
-positions for the visual review. Rendered with the wider camera and the default
-Pixel Style OFF. [Compare Pixel Style ON](build/release-evidence/pixel-options-20260909/gameplay-pixel.png).*
+*Original stage 26 at 50° elevation and 25° left rotation, with Pixel Style OFF.
+The game's built-in forest-cover showcase places the player near the trees.
+[View the two-player spawn](build/release-evidence/github-preview-20260909/battlefield-coop.png).*
 
 ## Highlights
 
@@ -44,20 +45,19 @@ Pixel Style OFF. [Compare Pixel Style ON](build/release-evidence/pixel-options-2
   battle audio uses engine sounds and effects without looping background music
   ([audio sources](ASSET_LICENSES.md#runtime-audio)).
 
-![Current source: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/battlefield-art-20260909/battle-report.png)
+![Alpha 5: T28/T95 and IS-2 tanks in the completed two-player battle report](build/release-evidence/github-preview-20260909/battle-report.png)
 
-*Battle-report preview using the game's built-in showcase. Tank geometry is
+*Battle-report preview using the game's built-in showcase after the counters
+finish animating. Tank geometry is
 original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-![Forest, steel and river model detail review](build/release-evidence/battlefield-art-20260909/terrain-detail.png)
+![Alpha 5: a German player tank faces American and Soviet enemy vehicles](build/release-evidence/github-preview-20260909/national-enemies.png)
 
-*Model detail review from the battlefield art pass: forest cover, ordinary and
-permanent steel, and river shores at detail scale.
-Permanent steel has an additional pale gold frame; gameplay damage rules are
-unchanged.*
+*Germany selected: four enemy roles use American and Soviet vehicles.
+Captured in the game's built-in tank showcase arena, with staged positions.*
 
-[View a current single-player screenshot](build/release-evidence/pixel-options-20260909/gameplay-solo.png)
-· [Pixel option and screenshot sources](build/release-evidence/pixel-options-20260909/README.md)
+[Screenshot sources and capture commands](build/release-evidence/github-preview-20260909/README.md)
+· [Pixel Style ON/OFF comparison](build/release-evidence/pixel-options-20260909/README.md)
 · [Battlefield art review](build/release-evidence/battlefield-art-20260909/README.md)
 · [Tank proportion comparison](build/release-evidence/main-showcase-20260909/tank-proportions.png)
 

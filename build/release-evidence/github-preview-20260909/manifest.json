@@ -1,0 +1,82 @@
+{
+  "source_commit": "cc5f2a7eec073accf37c2085c10bf155061acef2",
+  "source_tag": "v0.1.0-alpha.5",
+  "candidate_sha256": "d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8",
+  "binary_sha256": "9b296ffac129d8dc02ba916c325a68f073fa092f9f022c396326163c98ba119b",
+  "captures": [
+    {
+      "path": "build/release-evidence/github-preview-20260909/battlefield-coop.png",
+      "command": [
+        "/usr/bin/open",
+        "-n",
+        "-W",
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app",
+        "--args",
+        "--stage=26",
+        "--camera-yaw=-25",
+        "--camera-elevation=50",
+        "--quick-start-2p",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/github-preview-20260909/battlefield-coop.png",
+        "--release-screenshot-frame=600"
+      ],
+      "caption": "Two-player spawn on original stage 26, Pixel Style OFF.",
+      "sha256": "3579cf6ee92b11ca41a7b86bc5bfbe1b7e6a08219d4d574f130bb009126ff6dc"
+    },
+    {
+      "path": "build/release-evidence/github-preview-20260909/forest-solo.png",
+      "command": [
+        "/usr/bin/open",
+        "-n",
+        "-W",
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app",
+        "--args",
+        "--stage=26",
+        "--camera-yaw=-25",
+        "--camera-elevation=50",
+        "--quick-start",
+        "--forest-cover-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/github-preview-20260909/forest-solo.png",
+        "--release-screenshot-frame=2"
+      ],
+      "caption": "Staged forest-cover position on original stage 26, Pixel Style OFF.",
+      "sha256": "7f3e8e700da0e377b6434b4ac3f5cf269f2652cad6e70640f7d59e38a8e98d66"
+    },
+    {
+      "path": "build/release-evidence/github-preview-20260909/national-enemies.png",
+      "command": [
+        "/usr/bin/open",
+        "-n",
+        "-W",
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app",
+        "--args",
+        "--stage=26",
+        "--camera-yaw=-25",
+        "--camera-elevation=50",
+        "--quick-start-germany",
+        "--tank-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/github-preview-20260909/national-enemies.png",
+        "--release-screenshot-frame=2"
+      ],
+      "caption": "Built-in tank showcase arena: German player against American and Soviet enemy roles.",
+      "sha256": "51c54ec8b1a9e5a2115618125fbfbc6eb6cb8268b9f8e326c0f522dcde3826d5"
+    },
+    {
+      "path": "build/release-evidence/github-preview-20260909/battle-report.png",
+      "command": [
+        "/usr/bin/open",
+        "-n",
+        "-W",
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app",
+        "--args",
+        "--stage=1",
+        "--quick-start-2p",
+        "--settlement-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/github-preview-20260909/battle-report.png",
+        "--release-screenshot-frame=600"
+      ],
+      "caption": "Built-in two-player settlement showcase with T28/T95 and IS-2 models.",
+      "sha256": "2ed16009179c35158c8bfc8017b75494928dfcde1e6ef91a837b046138a93df1"
+    }
+  ],
+  "scope": "Homepage previews; capture success is not physical-controller or formal release acceptance."
+}
