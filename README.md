@@ -11,7 +11,7 @@ building models, restored Battle City maps, adjustable camera and updated contro
 the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-main)
 to play with the visuals shown here.
 
-![Current main: two-player battlefield with rebuilt tanks, buildings and headquarters](build/release-evidence/main-showcase-20260908/gameplay-coop.png)
+![Current main: two-player battlefield with rebuilt tanks, buildings and headquarters](build/release-evidence/main-showcase-20260909/gameplay-coop.png)
 
 *Local two-player play on original stage 1, with the camera rotated left 45° and set to
 45° elevation. Captured directly from the game.*
@@ -19,7 +19,7 @@ to play with the visuals shown here.
 ## Highlights
 
 - Chunky arcade machinery with continuous tracks, layered armor, distinctive
-  turrets and painted materials, inspired by the military adventure art of
+  rounded cabins and painted materials, inspired by the military adventure art of
   1990s arcade games.
 - 12 player tanks across United States, Soviet and German light-to-super-heavy
   lines, plus four enemy roles.
@@ -30,13 +30,19 @@ to play with the visuals shown here.
 - Adjustable camera rotation (-45° to +45°) and elevation (40° to 70°) in
   5-degree steps. Local co-op shares a camera that follows both players.
 
-![Current main: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/main-showcase-20260908/battle-report.png)
+![Current main: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/main-showcase-20260909/battle-report.png)
 
 *Battle-report preview using the game's built-in showcase. Tank geometry is
 original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-[View a current single-player screenshot](build/release-evidence/main-showcase-20260908/gameplay-solo.png)
-· [Screenshot sources and capture commands](build/release-evidence/main-showcase-20260908/README.md)
+![Tank proportion comparison: previous above, rebuilt below, at the same scale](build/release-evidence/main-showcase-20260909/tank-proportions.png)
+
+*The M24 before and after rebuilding its proportions, shown at the same world
+scale from the side, front and three-quarter view. The chassis is longer and
+narrower, with a lower cabin, sloping nose and exposed steel track shoes.*
+
+[View a current single-player screenshot](build/release-evidence/main-showcase-20260909/gameplay-solo.png)
+· [Screenshot sources and capture commands](build/release-evidence/main-showcase-20260909/README.md)
 
 ## Build and play current main
 

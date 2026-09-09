@@ -4008,9 +4008,13 @@ void drawBase(const StageMap &map, bool alive, bool shadowPass = false)
     tanks3d::base_model::draw(map, alive, shadowPass);
 }
 
-void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity)
+void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity,
+                           Nation nation = Nation::UnitedStates, int armor = 0)
 {
-    const bool wheeled = enemy && ((identity % 4 + 4) % 4) == 1;
+    const auto vehicle = enemy ? wwii_tank_model::enemyVehicle(identity)
+                               : wwii_tank_model::playerVehicle(nation, armor);
+    const auto spec = wwii_tank_model::detail::arcadeVehicleSpec(vehicle);
+    const auto art = wwii_tank_model::detail::arcadeVisualProfile(spec);
     const Color outer{12, 17, 12, 38};
     const Color inner{12, 17, 12, 64};
     rlPushMatrix();
@@ -4026,34 +4030,45 @@ void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity)
         rlPopMatrix();
     };
 
-    if (wheeled)
+    if (spec.wheeled)
     {
+        const float wheelRadius = art.trackHeight * 0.43f;
+        const float axleZ = art.trackLength * 0.5f - wheelRadius - 0.015f;
         for (float side : {-1.0f, 1.0f})
         {
-            for (float wheelZ : {-0.33f, 0.0f, 0.33f})
+            for (float wheelZ : {-axleZ, 0.0f, axleZ})
             {
-                ellipse(side * 0.50f, wheelZ, 0.235f, 0.235f,
+                ellipse(side * art.trackHalfWidth, wheelZ,
+                        art.trackWidth * 0.5f + 0.035f, wheelRadius + 0.025f,
                         0.004f, outer);
-                ellipse(side * 0.50f, wheelZ, 0.185f, 0.185f,
+                ellipse(side * art.trackHalfWidth, wheelZ,
+                        art.trackWidth * 0.44f, wheelRadius * 0.72f,
                         0.006f, inner);
             }
         }
-        ellipse(0.0f, 0.015f, 0.36f, 0.46f, 0.005f, outer);
+        ellipse(0.0f, -0.015f, art.hullWidth * 0.44f,
+                art.hullLength * 0.44f, 0.005f, outer);
     }
     else
     {
-        // Two narrow capsules follow the new separated tread pods.  The
-        // smaller center patch grounds the rounded nose without recreating
-        // the obsolete full-width rectangular proxy.
+        // The soft edge follows each complete belt; the denser center follows
+        // its lower straight run. T95's two belts share this same side envelope.
+        const float contactHalfLength =
+            (art.trackLength - art.trackHeight) * 0.5f + 0.035f;
         for (float side : {-1.0f, 1.0f})
         {
-            ellipse(side * 0.50f, 0.0f, 0.255f, 0.57f,
+            ellipse(side * art.trackHalfWidth, 0.0f,
+                    art.trackWidth * 0.5f + 0.035f,
+                    art.trackLength * 0.5f + 0.025f,
                     0.004f, outer);
-            ellipse(side * 0.50f, 0.0f, 0.205f, 0.51f,
+            ellipse(side * art.trackHalfWidth, 0.0f,
+                    art.trackWidth * 0.46f, contactHalfLength,
                     0.006f, inner);
         }
-        ellipse(0.0f, -0.10f, 0.38f, 0.50f, 0.004f, outer);
-        ellipse(0.0f, -0.12f, 0.31f, 0.43f, 0.006f, inner);
+        ellipse(0.0f, -0.015f, art.hullWidth * 0.44f,
+                art.hullLength * 0.46f, 0.004f, outer);
+        ellipse(0.0f, -0.015f, art.hullWidth * 0.35f,
+                art.hullLength * 0.37f, 0.006f, inner);
     }
     rlPopMatrix();
 }
@@ -4156,7 +4171,7 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
         if (player.active)
         {
             drawTankContactShadow(player.position, player.yaw, false,
-                                  player.id);
+                                  player.id, player.nation, player.level);
             if (tankAssets.gltfProbeEnabled())
                 drawGltfProbeFootprint(player.position,
                                        Color{255, 220, 72, 255});
@@ -4185,7 +4200,8 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
                 std::sin(static_cast<float>(GetTime()) * 9.0f + enemy.id);
             body = ColorLerp(body, Color{255, 89, 35, 255}, pulse);
         }
-        drawTankContactShadow(enemy.position, enemy.yaw, true, enemy.type);
+        drawTankContactShadow(enemy.position, enemy.yaw, true, enemy.type,
+                              Nation::Germany, enemy.armor);
         if (tankAssets.gltfProbeEnabled())
             drawGltfProbeFootprint(enemy.position,
                                    Color{255, 86, 72, 255});
@@ -5232,7 +5248,8 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
     {
         const Player &player = game.players()[static_cast<std::size_t>(index)];
         const XZ position = previewPosition(index);
-        drawTankContactShadow(position, kPi, false, player.id);
+        drawTankContactShadow(position, kPi, false, player.id,
+                              player.nation, player.level);
         drawTankModel(tankAssets, position, kPi,
                       playerColor(index), false, player.level, 0.0f,
                       player.id, true, player.nation);

@@ -13,22 +13,31 @@ examples and the [development guide](DEVELOPMENT.md) to build and run it.
 
 ## Shape and material language
 
-Vehicles follow the SV-001 reference's substantial upper body, short thick
-cannon and rounded track ends. A tall, full turret occupies approximately the
-central hull's width and most of its length. The short, low chassis leaves a
-small front deck beneath the gun. Continuous capsule-shaped belts have high
-curved ends, exposed road wheels and short rounded fenders. The turret grows
-forward around the established gun attachment; the muzzle tip stays fixed.
-Painted recoil sleeves, dark vented brakes and open bores make the short cannon
-read clearly at gameplay scale.
+Vehicles take their visual reference from the compact crew cabin, curved nose
+and exposed machinery of the SV-001. [WAVE's official SV-001/I model page](https://www.hobby-wave.com/products/gm033/)
+provides front, side and oblique views for judging the silhouette. Proportions
+are visual estimates from those views, not measured kit dimensions. No WAVE
+photographs or SNK game assets are imported into the project.
+
+A compact crew cabin has full cheeks and a rounded crown, seated over a deep
+hull whose nose slopes down between the tracks. The longer running gear leaves
+room for the front transmission cover and rear engine deck. Continuous belts
+wrap around large end wheels, with steel tread shoes, dark recessed carriers
+and exposed hubs. Short fenders and side skirts leave the curved ends visible.
+The short cannon has a painted recoil sleeve, a dark brake and a recessed bore;
+its visual muzzle tip and flash attachment retain their existing coordinates.
+The cabin and hull proportions are adjusted independently of that attachment.
 
 Light, medium, heavy and super-heavy roles retain distinct national shapes:
-offset light turrets, rounded American castings, rear-crowned Soviet castings,
-flat-roof German armor and a broad, substantial T95 casemate. Offset hatches,
-exhausts, stowage and vents follow the new roof and fender positions. Moving
+offset light cabins, rounded American castings, Soviet crowns that lean
+rearward, squarer German cheeks and a low, broad T95 casemate with paired
+belts on each side. The KV-5 keeps its auxiliary turret, the Maus its secondary
+cannon, and the fast armored car its three axles. Offset hatches, viewing slits,
+roof equipment, exhausts and stowage follow the new body surfaces. Moving
 vehicles use restrained suspension motion without stretching the entire model.
-Casting rings reuse their plan directions to reduce repeated trigonometry;
-shorter belts use fewer straight tread shoes without increasing mesh detail.
+Smooth cabin normals preserve the curved shoulders; tread shoes and wheel
+faces provide their own normals. Contact shadows follow each vehicle's actual
+track or wheel footprint.
 
 Architecture uses warm plaster, exposed brick, oxidized green metal, terracotta
 roofs and deep window recesses. Residential shutters, industrial doors,
@@ -72,10 +81,13 @@ lighting stays stable when preceding offscreen geometry is omitted.
   three nations and four enemy roles use fourteen vehicle definitions.
   The basic and heavy enemies reuse the Panzer II and Tiger definitions;
   the fast armored car and long-gun enemy have separate definitions.
-- `ArcadeVehicleSpec`, vehicle selection and muzzle attachments keep their
-  existing gameplay values. `ArcadeVisualProfile` controls the larger turrets,
-  short chassis, high tracks and thicker guns independently. Model details do
-  not consume gameplay randomness.
+- `ArcadeVehicleSpec`, vehicle selection and visual muzzle attachments retain
+  their existing values. The muzzle helpers place the rendered barrel tip and
+  flash; simulation shell spawning remains separately defined by
+  `shellSpawnPosition` in `src/game/combat_system.cpp`. `ArcadeVisualProfile`
+  controls cabin proportions, hull depth, running gear and gun thickness.
+  These drawing dimensions do not change collision bounds, projectile paths
+  or gameplay randomness.
 - Architecture and trees live in `src/environment_assets.h`; building profiles,
   stage seeds, height caps, forest alpha bounds and brick masks retain their
   contracts. Roofs and ruins share major geometry with the shadow pass.

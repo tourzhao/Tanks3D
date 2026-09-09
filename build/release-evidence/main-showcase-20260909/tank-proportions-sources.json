@@ -1,0 +1,48 @@
+{
+  "artifact": "tank-proportions.png",
+  "artifact_sha256": "97f9829927222a18fbe68dd9806ebc6467887ed5c74f36f9e5c8116ff267f237",
+  "pixels": [
+    1536,
+    1080
+  ],
+  "panel_pixels": [
+    512,
+    420
+  ],
+  "layout": "2 rows x 3 columns; baseline above, revision-03 below; side/front/three-quarter",
+  "composition": "raylib ImageDraw and labels; no resizing; no external photography or reference art",
+  "verification": "CPU-only raylib image comparison: zero differing pixels in all six embedded source regions",
+  "visual_review": "Reviewed composite; titles, dimensions and camera labels readable; no source-panel clipping",
+  "sources": [
+    {
+      "path": "build/sv001-rebuild-20260908/baseline-m24-side.png",
+      "sha256": "74e46fe9156b2241888cf0ff761e3d0e4f7d81ec48fbba7da697e0672be46082"
+    },
+    {
+      "path": "build/sv001-rebuild-20260908/baseline-m24-front.png",
+      "sha256": "813f4136eedb3fc659f780a769aa0b069cb1fcab9ac356f1fdca3a422a5480b5"
+    },
+    {
+      "path": "build/sv001-rebuild-20260908/baseline-m24-three-quarter.png",
+      "sha256": "755c79366ff537578d98b410ff80c13768bc63fa456a0942470c60dd8b5fc61b"
+    },
+    {
+      "path": "build/sv001-rebuild-20260908/revision-03-m24-side.png",
+      "sha256": "b2fbcd6ed91c03b3f5a00c554c60c94135d4470d21a82d560e22ef7ca20b57f4"
+    },
+    {
+      "path": "build/sv001-rebuild-20260908/revision-03-m24-front.png",
+      "sha256": "8c63f09378f92accbbcb47a982a2b8f70c5c7bbcab8772b63eb2ce40906c06f0"
+    },
+    {
+      "path": "build/sv001-rebuild-20260908/revision-03-m24-three-quarter.png",
+      "sha256": "9ab54ed64395c3aa51e2a1569f5a5933364295ed3857504d6437d623f6e7623e"
+    }
+  ],
+  "dimension_sources": [
+    "build/sv001-rebuild-20260908/baseline-dimensions.csv",
+    "build/sv001-rebuild-20260908/revision-03-dimensions.csv"
+  ],
+  "reproduce_source": "build/sv001-rebuild-20260908/proportions_composite.cpp",
+  "verification_source": "build/sv001-rebuild-20260908/verify_composite.cpp"
+}
