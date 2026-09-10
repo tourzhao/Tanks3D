@@ -350,9 +350,9 @@ constexpr float kFastEnemySpeed =
 // Normal enemy steering remains on its original 100-899 ms clock.  This local
 // fallback only engages after a tank has repeatedly failed to advance.
 constexpr float kPlayerReloadTime = 0.120f;
-// Keep the fixed tilted camera local, but show enough surrounding lanes to
-// plan interceptions without relying on the minimap for every nearby threat.
-constexpr float kSoloCameraSpan = 15.5f;
+// Show surrounding lanes at the same viewing angle. Co-op uses this minimum
+// span too, then expands for player separation and the current aspect ratio.
+constexpr float kSoloCameraSpan = 18.5f;
 // Camera elevation is measured above the ground plane. The supported range
 // keeps tank silhouettes readable at the low endpoint while allowing a much
 // flatter, near-top-down composition at the high endpoint.
@@ -378,16 +378,24 @@ struct GameplayCameraElevationGeometry
 };
 
 GameplayCameraElevationGeometry gameplayCameraElevationGeometry(
-    int requestedDegrees)
+    int requestedDegrees, float orthographicSpan = kSoloCameraSpan)
 {
     const float radians =
         static_cast<float>(normalizedCameraElevationDegrees(
             requestedDegrees)) *
         (kPi / 180.0f);
     const float groundDepthProjection = std::sin(radians);
+    // A large orthographic image can extend behind a fixed camera's near
+    // plane. Retreat along the same axis without changing its image scale.
+    // Four units leave clearance for foreground terrain and tank height;
+    // the normal 18.5-unit view keeps its original orbit at every elevation.
+    const float orbitDistance = std::max(
+        kGameplayCameraOrbitDistance,
+        orthographicSpan * 0.5f * std::cos(radians) /
+            groundDepthProjection + 4.0f);
     return {
-        std::cos(radians) * kGameplayCameraOrbitDistance,
-        groundDepthProjection * kGameplayCameraOrbitDistance,
+        std::cos(radians) * orbitDistance,
+        groundDepthProjection * orbitDistance,
         groundDepthProjection};
 }
 
@@ -650,9 +658,9 @@ constexpr std::size_t kAudioCueCount =
     static_cast<std::size_t>(AudioCue::Count);
 constexpr std::size_t kAudioVoiceCount = 12U;
 
-// These are the original 2D edition's SoundConfig values.  There is no
-// separate music track in that edition: its musical cues are the stage-start,
-// game-over, and high-score jingles, while idle/moving form the battle bed.
+// Cue mapping and playback settings follow krystiankaluzny/Tanks. Stage-start
+// and game-over recordings come from JustoSenka/BattleCity; see ASSET_LICENSES.md.
+// Music consists of one-shot jingles, while idle/moving form the battle bed.
 constexpr std::array<const char *, kAudioCueCount> kAudioCueFiles{{
     "stage_start_up.ogg", "pause.ogg", "game_over.ogg",
     "highscore_beaten.ogg", "menu_item_selected.ogg",
@@ -1741,6 +1749,11 @@ public:
     }
     bool baseAlive() const { return baseAlive_; }
     Nation baseNation() const { return map_.governmentNation(); }
+    Nation enemyNation(int enemyId) const
+    {
+        return tanks3d::core::opposingNationForPlayers(
+            startingNations_, playerCount_, enemyId);
+    }
     bool showTargets() const { return showTargets_; }
     int stage() const { return stage_; }
     int playerCount() const { return playerCount_; }
@@ -2910,13 +2923,14 @@ private:
             EnemyShellLaunchPresentationStep::EventAppended, intent);
 
         const XZ direction = cardinalVector(intent.direction);
+        const Nation nation = enemyNation(intent.shell.ownerIndex);
         const float muzzleDistance =
-            wwii_tank_model::muzzleDistance(true, intent.enemyType);
+            wwii_tank_model::enemyMuzzleDistance(nation, intent.enemyType);
         const XZ muzzle =
             intent.tankPosition + direction * muzzleDistance;
         effects_.spawnMuzzleFlash({muzzle.x,
-                                   wwii_tank_model::muzzleHeight(
-                                       true, intent.enemyType),
+                                   wwii_tank_model::enemyMuzzleHeight(
+                                       nation, intent.enemyType),
                                    muzzle.z},
                                   {direction.x, 0.0f, direction.z},
                                   Color{255, 89, 45, 255});
@@ -3459,8 +3473,6 @@ private:
         focus = focus * (1.0f / static_cast<float>(trackedPlayers));
         const CameraPlanarBasis cameraBasis =
             cameraPlanarBasis(cameraYawDegrees_);
-        const GameplayCameraElevationGeometry elevationGeometry =
-            gameplayCameraElevationGeometry(cameraElevationDegrees_);
         // Follow every movement instead of waiting for the player group to
         // reach a large screen-space dead zone. Solo play tracks the tank;
         // co-op tracks the midpoint and expands the view for separation.
@@ -3474,37 +3486,36 @@ private:
                  tracked[1].z - tracked[0].z},
                 cameraYawDegrees_, cameraElevationDegrees_, aspect);
         }
+        const float zoomRate = desiredFovy > cameraFovy_ ? 14.0f : 3.5f;
+        const float zoomBlend = 1.0f - std::exp(-zoomRate * dt);
+        cameraFovy_ += (desiredFovy - cameraFovy_) * zoomBlend;
+        const GameplayCameraElevationGeometry elevationGeometry =
+            gameplayCameraElevationGeometry(cameraElevationDegrees_,
+                                             cameraFovy_);
 
         for (int index = 0; index < playerCount_; ++index)
         {
-            // Orbit at a fixed distance using the selected azimuth and
-            // elevation. Co-op tracks the midpoint and zooms as necessary.
+            // Smooth the focus while keeping the orbit synchronized with
+            // this frame's span, including rapid portrait-window expansion.
             const Vector3 desiredTarget{
                 focus.x, kGameplayCameraTargetHeight, focus.z};
-            const Vector3 desiredPosition{
-                focus.x + cameraBasis.offsetX *
-                              elevationGeometry.depthOffset,
-                kGameplayCameraTargetHeight +
-                    elevationGeometry.verticalOffset,
-                focus.z + cameraBasis.offsetZ *
-                              elevationGeometry.depthOffset};
             CameraRig &rig = cameraRigs_[index];
             const float blend = rig.initialized
                                     ? 1.0f - std::exp(
                                                  -kGameplayCameraFollowResponsiveness *
                                                  dt)
                                     : 1.0f;
-            rig.position.x += (desiredPosition.x - rig.position.x) * blend;
-            rig.position.y += (desiredPosition.y - rig.position.y) * blend;
-            rig.position.z += (desiredPosition.z - rig.position.z) * blend;
             rig.target.x += (desiredTarget.x - rig.target.x) * blend;
             rig.target.y += (desiredTarget.y - rig.target.y) * blend;
             rig.target.z += (desiredTarget.z - rig.target.z) * blend;
+            rig.position = {
+                rig.target.x + cameraBasis.offsetX *
+                                   elevationGeometry.depthOffset,
+                rig.target.y + elevationGeometry.verticalOffset,
+                rig.target.z + cameraBasis.offsetZ *
+                                   elevationGeometry.depthOffset};
             rig.initialized = true;
         }
-        const float zoomRate = desiredFovy > cameraFovy_ ? 14.0f : 3.5f;
-        const float zoomBlend = 1.0f - std::exp(-zoomRate * dt);
-        cameraFovy_ += (desiredFovy - cameraFovy_) * zoomBlend;
     }
 
     void play(AudioCue cue)
@@ -3753,51 +3764,388 @@ void drawGroundDetail(int row, int column)
     }
 }
 
+struct SteelTileTriangle
+{
+    std::array<Vector3, 3> points;
+    Vector3 normal;
+    Color color;
+};
+
+struct SteelTileGeometry
+{
+    std::vector<SteelTileTriangle> triangles;
+    std::size_t shadowTriangleCount = 0;
+};
+
+// Record the existing immediate-mode shapes once, including their world-space
+// rounding and flat normals. Replaying does not switch shaders or textures.
+class SteelTileGeometryBuilder
+{
+public:
+    explicit SteelTileGeometryBuilder(SteelTileGeometry &geometry)
+        : geometry_(geometry)
+    {
+    }
+
+    void pushMatrix()
+    {
+        assert(matrixDepth_ < matrixStack_.size());
+        matrixStack_[matrixDepth_++] = transform_;
+    }
+
+    void popMatrix()
+    {
+        assert(matrixDepth_ > 0);
+        transform_ = matrixStack_[--matrixDepth_];
+    }
+
+    void translate(float x, float y, float z)
+    {
+        transform_ = MatrixMultiply(MatrixTranslate(x, y, z), transform_);
+    }
+
+    void rotate(float degrees, float x, float y, float z)
+    {
+        transform_ = MatrixMultiply(MatrixRotate({x, y, z}, DEG2RAD*degrees),
+                                    transform_);
+    }
+
+    void armoredBlock(Vector3 center, Vector3 size, Color color)
+    {
+        // Keep the contour and triangle order of base_model::armoredBlock.
+        const float x = size.x*0.5f, z = size.z*0.5f;
+        const float bevel = std::min(x, z)*0.26f;
+        const float shoulder = std::min(size.y*0.22f, 0.13f);
+        const std::array<Vector2, 8> contour{{
+            {-x + bevel, -z}, {x - bevel, -z},
+            {x, -z + bevel}, {x, z - bevel},
+            {x - bevel, z}, {-x + bevel, z},
+            {-x, z - bevel}, {-x, -z + bevel}}};
+        const float bottom = center.y - size.y*0.5f;
+        const float top = center.y + size.y*0.5f;
+        for (std::size_t index = 0; index < contour.size(); ++index)
+        {
+            const Vector2 a = contour[index];
+            const Vector2 b = contour[(index + 1) % contour.size()];
+            const Vector3 lowA{center.x + a.x, bottom, center.z + a.y};
+            const Vector3 lowB{center.x + b.x, bottom, center.z + b.y};
+            const Vector3 midA{lowA.x, top - shoulder, lowA.z};
+            const Vector3 midB{lowB.x, top - shoulder, lowB.z};
+            const Vector3 topA{center.x + a.x*0.90f, top, center.z + a.y*0.90f};
+            const Vector3 topB{center.x + b.x*0.90f, top, center.z + b.y*0.90f};
+            triangle(lowB, lowA, midA, color);
+            triangle(lowB, midA, midB, color);
+            triangle(midB, midA, topA, color);
+            triangle(midB, topA, topB, color);
+            triangle({center.x, top, center.z}, topB, topA, color);
+            triangle({center.x, bottom, center.z}, lowA, lowB, color);
+        }
+    }
+
+    void cube(Vector3 center, float width, float height, float length, Color color)
+    {
+        // Six complete faces, in DrawCube's front/back/top/bottom/right/left
+        // order. Like DrawCube, the current texture coordinate is untouched.
+        const float x = width/2, y = height/2, z = length/2;
+        const std::array<Vector3, 8> corners{{
+            {-x, -y, -z}, {x, -y, -z}, {-x, y, -z}, {x, y, -z},
+            {-x, -y, z}, {x, -y, z}, {-x, y, z}, {x, y, z}}};
+        static constexpr std::array<std::array<int, 6>, 6> faces{{
+            {{4, 5, 6, 7, 6, 5}}, {{0, 2, 1, 3, 1, 2}},
+            {{2, 6, 7, 3, 2, 7}}, {{0, 5, 4, 1, 5, 0}},
+            {{1, 3, 7, 5, 1, 7}}, {{0, 6, 2, 4, 6, 0}}}};
+        static constexpr std::array<Vector3, 6> normals{{
+            {0, 0, 1}, {0, 0, -1}, {0, 1, 0},
+            {0, -1, 0}, {1, 0, 0}, {-1, 0, 0}}};
+        pushMatrix();
+        translate(center.x, center.y, center.z);
+        for (std::size_t face = 0; face < faces.size(); ++face)
+            for (int triangle = 0; triangle < 2; ++triangle)
+            {
+                const auto &indices = faces[face];
+                append(corners[indices[triangle*3]],
+                       corners[indices[triangle*3 + 1]],
+                       corners[indices[triangle*3 + 2]], normals[face], color);
+            }
+        popMatrix();
+    }
+
+private:
+    void triangle(Vector3 a, Vector3 b, Vector3 c, Color color)
+    {
+        const Vector3 u{b.x - a.x, b.y - a.y, b.z - a.z};
+        const Vector3 v{c.x - a.x, c.y - a.y, c.z - a.z};
+        Vector3 normal{u.y*v.z - u.z*v.y, u.z*v.x - u.x*v.z,
+                       u.x*v.y - u.y*v.x};
+        const float length = std::sqrt(normal.x*normal.x + normal.y*normal.y +
+                                       normal.z*normal.z);
+        if (length > 0.00001f)
+        {
+            normal.x /= length;
+            normal.y /= length;
+            normal.z /= length;
+        }
+        append(a, b, c, normal, color);
+    }
+
+    void append(Vector3 a, Vector3 b, Vector3 c, Vector3 normal, Color color)
+    {
+        if (matrixDepth_ > 0)
+        {
+            a = Vector3Transform(a, transform_);
+            b = Vector3Transform(b, transform_);
+            c = Vector3Transform(c, transform_);
+            // rlNormal3f rotates without renormalizing. Preserve that behavior.
+            normal = {transform_.m0*normal.x + transform_.m4*normal.y + transform_.m8*normal.z,
+                      transform_.m1*normal.x + transform_.m5*normal.y + transform_.m9*normal.z,
+                      transform_.m2*normal.x + transform_.m6*normal.y + transform_.m10*normal.z};
+        }
+        geometry_.triangles.push_back({{{a, b, c}}, normal, color});
+    }
+
+    SteelTileGeometry &geometry_;
+    Matrix transform_ = MatrixIdentity();
+    std::array<Matrix, 4> matrixStack_{};
+    std::size_t matrixDepth_ = 0;
+};
+
+SteelTileGeometry buildSteelTileGeometry(int row, int column, bool permanent)
+{
+    // Cold plated barriers share a clear armor mark. No windows, tiled roof,
+    // or warm masonry color competes with the destructible brick buildings.
+    SteelTileGeometry geometry;
+    geometry.triangles.reserve(permanent ? 1080 : 936);
+    SteelTileGeometryBuilder builder(geometry);
+    const float x = column + 0.5f;
+    const float z = row + 0.5f;
+    const auto paint = [](Color color) {
+        // The graphic steel response remains readable at the gameplay scale.
+        return materialColor(color, 10);
+    };
+    const Color dark = paint({46, 65, 80, 255});
+    const Color body = paint(permanent ? Color{112, 145, 166, 255}
+                                      : Color{107, 151, 174, 255});
+    const Color light = paint({173, 203, 213, 255});
+    const Color edge = paint({76, 110, 134, 255});
+    const Color permanentMark = paint({220, 199, 111, 255});
+    builder.armoredBlock({x, 0.075f, z}, {0.96f, 0.15f, 0.96f}, dark);
+    builder.armoredBlock({x, 0.405f, z}, {0.90f, 0.60f, 0.90f}, body);
+    builder.armoredBlock({x, 0.730f, z}, {0.96f, 0.12f, 0.96f}, light);
+    for (float sideX : {-1.0f, 1.0f})
+        for (float sideZ : {-1.0f, 1.0f})
+            builder.armoredBlock({x + sideX*0.401f, 0.40f, z + sideZ*0.401f},
+                         {0.10f, 0.60f, 0.10f}, edge);
+    builder.armoredBlock({x, 0.801f, z}, {0.72f, 0.045f, 0.72f}, body);
+    for (float angle : {-45.0f, 45.0f})
+    {
+        builder.pushMatrix();
+        builder.translate(x, 0.827f, z);
+        builder.rotate(angle, 0, 1, 0);
+        builder.cube({0, 0, 0}, 0.055f, 0.022f, 0.53f, light);
+        builder.popMatrix();
+    }
+    geometry.shadowTriangleCount = geometry.triangles.size();
+    // Crossed structural ribs identify reinforced metal without a letter or
+    // pickup-like emblem. Every plate and bolt remains inside its own tile.
+    if (permanent)
+        for (float side : {-1.0f, 1.0f})
+        {
+            builder.cube({x + side*0.32f, 0.827f, z}, 0.028f, 0.008f, 0.67f, permanentMark);
+            builder.cube({x, 0.827f, z + side*0.32f}, 0.67f, 0.008f, 0.028f, permanentMark);
+        }
+    for (int face = 0; face < 4; ++face)
+    {
+        builder.pushMatrix();
+        builder.translate(x, 0, z);
+        builder.rotate(face*90.0f, 0, 1, 0);
+        builder.cube({0, 0.42f, 0.454f}, 0.70f, 0.43f, 0.016f, dark);
+        builder.armoredBlock({0, 0.435f, 0.465f}, {0.63f, 0.365f, 0.024f}, body);
+        for (float side : {-1.0f, 1.0f})
+        {
+            for (float y : {0.29f, 0.575f})
+                builder.cube({side*0.265f, y, 0.482f},
+                         0.036f, 0.036f, 0.018f, light);
+        }
+        for (float angle : {-52.0f, 52.0f})
+        {
+            builder.pushMatrix();
+            builder.translate(0, 0.435f, 0.484f);
+            builder.rotate(angle, 0, 0, 1);
+            builder.cube({0, 0, 0}, 0.043f, 0.345f, 0.018f, light);
+            builder.popMatrix();
+        }
+        if (permanent)
+            for (float side : {-1.0f, 1.0f})
+                builder.cube({side*0.327f, 0.435f, 0.483f},
+                         0.025f, 0.30f, 0.006f, permanentMark);
+        builder.popMatrix();
+    }
+    return geometry;
+}
+
+class SteelTileGeometryCache
+{
+    friend struct SteelTileGeometryCacheTestAccess;
+
+public:
+    const SteelTileGeometry &get(int row, int column, bool permanent)
+    {
+        if (row < 0 || row >= kMapSize || column < 0 || column >= kMapSize)
+        {
+            // Keep diagnostic/gallery coordinates valid without unbounded keys.
+            fallback_ = buildSteelTileGeometry(row, column, permanent);
+            return fallback_;
+        }
+        const int key = (permanent ? kMapSize*kMapSize : 0) + row*kMapSize + column;
+        const int slot = slots_[key] - 1;
+        if (slot >= 0)
+        {
+            entries_[slot].lastUse = ++clock_;
+            return entries_[slot].geometry;
+        }
+        auto oldest = std::min_element(entries_.begin(), entries_.end(),
+            [](const Entry &a, const Entry &b) { return a.lastUse < b.lastUse; });
+        if (oldest->key >= 0)
+            slots_[oldest->key] = 0;
+        oldest->geometry = buildSteelTileGeometry(row, column, permanent);
+        oldest->key = key;
+        oldest->lastUse = ++clock_;
+        slots_[key] = static_cast<int>(oldest - entries_.begin()) + 1;
+        return oldest->geometry;
+    }
+
+    void clear()
+    {
+        for (auto &entry : entries_)
+            entry = Entry{};
+        slots_.fill(0);
+        fallback_ = SteelTileGeometry{};
+        clock_ = 0;
+    }
+
+private:
+    struct Entry
+    {
+        SteelTileGeometry geometry;
+        std::uint64_t lastUse = 0;
+        int key = -1;
+    };
+    // The 35 original maps contain at most 176 steel cells. 256 entries keep
+    // both whole-map shadow and visible passes warm, with a 14 MiB upper bound.
+    // Cells are stage-independent; only cold misses scan this fixed array.
+    std::array<Entry, 256> entries_{};
+    std::array<int, 2*kMapSize*kMapSize> slots_{};
+    SteelTileGeometry fallback_;
+    std::uint64_t clock_ = 0;
+};
+
+SteelTileGeometryCache &steelTileGeometryCache()
+{
+    static SteelTileGeometryCache cache;
+    return cache;
+}
+
+void clearSteelTileGeometryCache()
+{
+    steelTileGeometryCache().clear();
+}
+
 void drawSteelTile(int row, int column, bool permanent,
                    bool shadowPass = false)
 {
-    // Cast armored redoubts: broad chamfers, a heavy lid and unmistakable
-    // dark embrasures. The one-cell collision footprint remains unchanged.
-    using tanks3d::base_model::detail::armoredBlock;
-    const float x = column + 0.5f;
-    const float z = row + 0.5f;
-    const auto paint = [shadowPass](Color color) {
-        return shadowPass ? WHITE : materialColor(color, 7);
-    };
-    const Color dark = paint({39, 53, 51, 255});
-    const Color body = paint(permanent ? Color{131, 128, 98, 255}
-                                      : Color{104, 139, 130, 255});
-    const Color light = paint(permanent ? Color{186, 174, 132, 255}
-                                       : Color{162, 182, 151, 255});
-    const Color edge = paint({75, 102, 92, 255});
-    const Color ochre = paint({224, 167, 66, 255});
-    armoredBlock({x, 0.09f, z}, {0.98f, 0.18f, 0.98f}, dark);
-    armoredBlock({x, 0.40f, z}, {0.90f, 0.56f, 0.90f}, body);
-    armoredBlock({x, 0.70f, z}, {0.98f, 0.15f, 0.98f}, light);
-    DrawCylinder({x - 0.06f, 0.774f, z - 0.045f}, 0.23f, 0.25f,
-                 0.055f, 12, edge);
-    DrawCylinder({x - 0.06f, 0.83f, z - 0.045f}, 0.19f, 0.20f,
-                 0.025f, 12, body);
-    if (shadowPass)
-        return;
-    DrawCube({x - 0.06f, 0.873f, z - 0.045f}, 0.13f, 0.04f, 0.035f, dark);
-    for (int face = 0; face < 4; ++face)
+    const SteelTileGeometry &geometry = steelTileGeometryCache().get(row, column, permanent);
+    const std::size_t count = shadowPass ? geometry.shadowTriangleCount :
+                                          geometry.triangles.size();
+    Color previousColor{};
+    Vector3 previousNormal{};
+    rlBegin(RL_TRIANGLES);
+    for (std::size_t index = 0; index < count; ++index)
     {
-        rlPushMatrix();
-        rlTranslatef(x, 0, z);
-        rlRotatef(face*90.0f, 0, 1, 0);
-        DrawCube({0, 0.46f, 0.451f}, 0.59f, 0.20f, 0.038f, dark);
-        DrawCube({0, 0.55f, 0.472f}, 0.67f, 0.065f, 0.08f, light);
-        DrawCube({0, 0.365f, 0.472f}, 0.64f, 0.055f, 0.075f, edge);
-        DrawCube({0, 0.45f, 0.478f}, 0.040f, 0.12f, 0.025f, body);
-        for (float side : {-1.0f, 1.0f})
+        const SteelTileTriangle &triangle = geometry.triangles[index];
+        const Color color = shadowPass ? WHITE : triangle.color;
+        if (index == 0 || color.r != previousColor.r || color.g != previousColor.g ||
+            color.b != previousColor.b || color.a != previousColor.a)
         {
-            DrawCube({side*0.33f, 0.32f, 0.465f}, 0.09f, 0.24f, 0.07f, edge);
-            DrawSphereEx({side*0.33f, 0.36f, 0.51f}, 0.029f, 4, 6, light);
-            DrawCube({side*0.21f, 0.20f, 0.458f}, 0.13f, 0.08f, 0.019f, ochre);
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            previousColor = color;
         }
-        rlPopMatrix();
+        const Vector3 normal = triangle.normal;
+        if (index == 0 || normal.x != previousNormal.x || normal.y != previousNormal.y ||
+            normal.z != previousNormal.z)
+        {
+            rlNormal3f(normal.x, normal.y, normal.z);
+            previousNormal = normal;
+        }
+        for (const Vector3 &point : triangle.points)
+            rlVertex3f(point.x, point.y, point.z);
     }
+    rlEnd();
+}
+
+void drawWaterTile(const StageMap &map, int row, int column)
+{
+    const std::uint32_t seed = static_cast<std::uint32_t>(row + 1) * 92821U ^
+                               static_cast<std::uint32_t>(column + 1) * 68917U;
+    // Use the matte painted-world response for water: broad blue-green value
+    // regions and stepped reflections remain legible after pixel sampling.
+    const Color deep = materialColor({31, 87, 128, 255}, 7);
+    const Color shallow = materialColor({48, 141, 156, 255}, 7);
+    const Color bank = materialColor({118, 143, 118, 255}, 8);
+    const Color ripple = materialColor({93, 172, 185, 255}, 7);
+    const Color glint = materialColor({163, 211, 204, 255}, 7);
+    DrawCube({column + 0.5f, -0.015f, row + 0.5f}, 1.0f, 0.05f, 1.0f, deep);
+    const auto patch = [row, column](float x, float z, float width,
+                                    float depth, float y, Color color) {
+        const float left = column + x, top = row + z;
+        rlBegin(RL_QUADS);
+        rlColor4ub(color.r, color.g, color.b, color.a);
+        rlNormal3f(0, 1, 0);
+        rlVertex3f(left, y, top);
+        rlVertex3f(left, y, top + depth);
+        rlVertex3f(left + width, y, top + depth);
+        rlVertex3f(left + width, y, top);
+        rlEnd();
+    };
+    for (int edge = 0; edge < 4; ++edge)
+    {
+        static constexpr std::array<std::array<int, 2>, 4> neighbor{{
+            {{-1, 0}}, {{0, 1}}, {{1, 0}}, {{0, -1}}}};
+        if (map.tile(row + neighbor[edge][0], column + neighbor[edge][1]) == '~')
+            continue;
+        for (int step = 0; step < 3; ++step)
+        {
+            const float along = step / 3.0f;
+            const float depth = 0.09f + 0.025f *
+                static_cast<float>((seed >> (edge * 3 + step)) & 3U);
+            if (edge == 0 || edge == 2)
+                patch(along, edge == 0 ? 0.0f : 1.0f - depth,
+                      1.0f/3.0f, depth, 0.014f, shallow);
+            else
+                patch(edge == 3 ? 0.0f : 1.0f - depth, along,
+                      depth, 1.0f/3.0f, 0.014f, shallow);
+        }
+        if (edge == 0 || edge == 2)
+            patch(0, edge == 0 ? 0.0f : 0.974f, 1, 0.026f, 0.018f, bank);
+        else
+            patch(edge == 3 ? 0.0f : 0.974f, 0, 0.026f, 1, 0.018f, bank);
+    }
+    const float drift = std::round(std::sin(static_cast<float>(GetTime()) * 0.9f +
+                                           (seed & 15U)) * 2.0f) * 0.016f;
+    const auto unit = [seed](int shift) {
+        return static_cast<float>((seed >> shift) & 7U) / 7.0f;
+    };
+    const float firstX = 0.21f + unit(2)*0.13f + drift;
+    const float firstZ = 0.22f + unit(6)*0.21f;
+    const float firstLength = 0.17f + unit(10)*0.13f;
+    const float stair = (seed & 32U) != 0U ? 0.027f : -0.026f;
+    patch(firstX, firstZ, firstLength, 0.027f, 0.020f, ripple);
+    patch(firstX + firstLength*0.68f, firstZ + stair,
+          0.07f + unit(13)*0.05f, 0.026f, 0.020f, glint);
+    const float secondX = 0.40f + unit(16)*0.13f - drift;
+    const float secondZ = 0.57f + unit(19)*0.15f;
+    patch(secondX, secondZ, 0.11f + unit(22)*0.11f, 0.024f, 0.020f, ripple);
+    patch(secondX - 0.045f, secondZ + 0.024f,
+          0.075f + unit(25)*0.03f, 0.024f, 0.020f, glint);
 }
 
 unsigned char forestEdgeMask(const StageMap &map, int row, int column)
@@ -3897,27 +4245,7 @@ void drawTerrain(const StageMap &map, const EnvironmentAssets &environment,
             }
             else if (value == '~')
             {
-                const float wave = std::sin(static_cast<float>(GetTime()) * 1.6f + row * 0.7f + column * 0.5f);
-                const Color water = materialColor(Color{49, 125, 123, 255}, 7);
-                const Color foam = materialColor(Color{155, 195, 159, 255}, 7);
-                // Joined water cells form a single pool, edged with a narrow
-                // worn bank only where the simulation's water really ends.
-                DrawCube({column + 0.5f, -0.015f, row + 0.5f},
-                         1.0f, 0.05f, 1.0f, water);
-                DrawCube({column + 0.45f + wave*0.05f, 0.018f, row + 0.32f},
-                         0.42f, 0.008f, 0.024f, foam);
-                DrawCube({column + 0.65f - wave*0.03f, 0.017f, row + 0.68f},
-                         0.19f, 0.006f, 0.018f, foam);
-                const Color bank = materialColor(Color{123, 116, 78, 255}, 8);
-                for (int side = -1; side <= 1; side += 2)
-                {
-                    if (map.tile(row + side, column) != '~')
-                        DrawCube({column + 0.5f, 0.01f, row + 0.5f + side*0.48f},
-                                 1.0f, 0.07f, 0.04f, bank);
-                    if (map.tile(row, column + side) != '~')
-                        DrawCube({column + 0.5f + side*0.48f, 0.01f, row + 0.5f},
-                                 0.04f, 0.07f, 1.0f, bank);
-                }
+                drawWaterTile(map, row, column);
             }
             else if (value == '-')
             {
@@ -4008,9 +4336,13 @@ void drawBase(const StageMap &map, bool alive, bool shadowPass = false)
     tanks3d::base_model::draw(map, alive, shadowPass);
 }
 
-void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity)
+void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity,
+                           Nation nation = Nation::UnitedStates, int armor = 0)
 {
-    const bool wheeled = enemy && ((identity % 4 + 4) % 4) == 1;
+    const auto vehicle = enemy ? wwii_tank_model::enemyVehicle(nation, identity)
+                               : wwii_tank_model::playerVehicle(nation, armor);
+    const auto spec = wwii_tank_model::detail::arcadeVehicleSpec(vehicle);
+    const auto art = wwii_tank_model::detail::arcadeVisualProfile(spec);
     const Color outer{12, 17, 12, 38};
     const Color inner{12, 17, 12, 64};
     rlPushMatrix();
@@ -4026,34 +4358,45 @@ void drawTankContactShadow(XZ position, float yaw, bool enemy, int identity)
         rlPopMatrix();
     };
 
-    if (wheeled)
+    if (spec.wheeled)
     {
+        const float wheelRadius = art.trackHeight * 0.43f;
+        const float axleZ = art.trackLength * 0.5f - wheelRadius - 0.015f;
         for (float side : {-1.0f, 1.0f})
         {
-            for (float wheelZ : {-0.33f, 0.0f, 0.33f})
+            for (float wheelZ : {-axleZ, 0.0f, axleZ})
             {
-                ellipse(side * 0.50f, wheelZ, 0.235f, 0.235f,
+                ellipse(side * art.trackHalfWidth, wheelZ,
+                        art.trackWidth * 0.5f + 0.035f, wheelRadius + 0.025f,
                         0.004f, outer);
-                ellipse(side * 0.50f, wheelZ, 0.185f, 0.185f,
+                ellipse(side * art.trackHalfWidth, wheelZ,
+                        art.trackWidth * 0.44f, wheelRadius * 0.72f,
                         0.006f, inner);
             }
         }
-        ellipse(0.0f, 0.015f, 0.36f, 0.46f, 0.005f, outer);
+        ellipse(0.0f, -0.015f, art.hullWidth * 0.44f,
+                art.hullLength * 0.44f, 0.005f, outer);
     }
     else
     {
-        // Two narrow capsules follow the new separated tread pods.  The
-        // smaller center patch grounds the rounded nose without recreating
-        // the obsolete full-width rectangular proxy.
+        // The soft edge follows each complete belt; the denser center follows
+        // its lower straight run. T95's two belts share this same side envelope.
+        const float contactHalfLength =
+            (art.trackLength - art.trackHeight) * 0.5f + 0.035f;
         for (float side : {-1.0f, 1.0f})
         {
-            ellipse(side * 0.50f, 0.0f, 0.255f, 0.57f,
+            ellipse(side * art.trackHalfWidth, 0.0f,
+                    art.trackWidth * 0.5f + 0.035f,
+                    art.trackLength * 0.5f + 0.025f,
                     0.004f, outer);
-            ellipse(side * 0.50f, 0.0f, 0.205f, 0.51f,
+            ellipse(side * art.trackHalfWidth, 0.0f,
+                    art.trackWidth * 0.46f, contactHalfLength,
                     0.006f, inner);
         }
-        ellipse(0.0f, -0.10f, 0.38f, 0.50f, 0.004f, outer);
-        ellipse(0.0f, -0.12f, 0.31f, 0.43f, 0.006f, inner);
+        ellipse(0.0f, -0.015f, art.hullWidth * 0.44f,
+                art.hullLength * 0.46f, 0.004f, outer);
+        ellipse(0.0f, -0.015f, art.hullWidth * 0.35f,
+                art.hullLength * 0.37f, 0.006f, inner);
     }
     rlPopMatrix();
 }
@@ -4138,7 +4481,7 @@ void drawShadowCasters(const Game3D &game, TankAssets &tankAssets)
             continue;
         drawTankModel(tankAssets, enemy.position, enemy.yaw,
                       enemyArmorColor(enemy.armor), true, enemy.armor, 0.0f,
-                      enemy.type, enemy.moving, Nation::Germany, true);
+                      enemy.type, enemy.moving, game.enemyNation(enemy.id), true);
     }
     tankAssets.flushQueued(true);
 }
@@ -4156,12 +4499,12 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
         if (player.active)
         {
             drawTankContactShadow(player.position, player.yaw, false,
-                                  player.id);
+                                  player.id, player.nation, player.level);
             if (tankAssets.gltfProbeEnabled())
                 drawGltfProbeFootprint(player.position,
                                        Color{255, 220, 72, 255});
             drawTankModel(tankAssets, player.position, player.yaw, playerColor(player.id),
-                          false, player.level, player.shieldTimer, player.id,
+                          false, player.level, 0.0f, player.id,
                           player.moving, player.nation);
             if (player.hasBoat)
                 drawBoatFloatation(player.position, player.yaw);
@@ -4185,14 +4528,15 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
                 std::sin(static_cast<float>(GetTime()) * 9.0f + enemy.id);
             body = ColorLerp(body, Color{255, 89, 35, 255}, pulse);
         }
-        drawTankContactShadow(enemy.position, enemy.yaw, true, enemy.type);
+        drawTankContactShadow(enemy.position, enemy.yaw, true, enemy.type,
+                              game.enemyNation(enemy.id), enemy.armor);
         if (tankAssets.gltfProbeEnabled())
             drawGltfProbeFootprint(enemy.position,
                                    Color{255, 86, 72, 255});
         drawTankModel(tankAssets, enemy.position, enemy.yaw, body,
                       true, enemy.armor, 0.0f, enemy.type,
                       enemy.moving,
-                      Nation::Germany);
+                      game.enemyNation(enemy.id));
         if (enemy.frozenTimer > 0.0f)
         {
             DrawSphereWires({enemy.position.x, 0.58f, enemy.position.z},
@@ -4205,6 +4549,26 @@ void drawWorld(const Game3D &game, TankAssets &tankAssets,
         }
     }
     tankAssets.flushQueued(false);
+}
+
+void drawTankProtection(const Game3D &game)
+{
+    // Protection is an unlit overlay, not a lit part of the tank's armor.
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
+    BeginBlendMode(BLEND_ADDITIVE);
+    for (const Player &player : game.players())
+    {
+        if (!player.active || player.shieldTimer <= 0.0f)
+            continue;
+        rlPushMatrix();
+        rlTranslatef(player.position.x, 0.0f, player.position.z);
+        wwii_tank_model::detail::drawShield(player.shieldTimer, player.id);
+        rlPopMatrix();
+    }
+    EndBlendMode();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
 }
 
 Vector3 creationStarPoint(Vector3 center, Vector3 right, Vector3 up,
@@ -4322,7 +4686,7 @@ void drawEnemyCreationWarnings(const Game3D &game, Camera3D camera)
     EndBlendMode();
 }
 
-void drawEmissiveBattleFx(const Game3D &game)
+void drawEmissiveBattleFx(const Game3D &game, const Camera3D &camera)
 {
     // The physical penetrator is deliberately readable without bloom. Its
     // gameplay AABB remains the classic half-tile sprite footprint, while this
@@ -4334,16 +4698,21 @@ void drawEmissiveBattleFx(const Game3D &game)
             continue;
         const float velocityLength = std::max(0.001f, std::sqrt(lengthSquared(shell.velocity)));
         const XZ direction = shell.velocity * (1.0f / velocityLength);
-        const float radius = shell.power ? 0.090f : 0.068f;
+        const float radius = shell.power ? 0.095f : 0.074f;
         const float bodyLength = shell.power ? 0.30f : 0.23f;
         const Vector3 nose{shell.position.x, 0.67f, shell.position.z};
         const Vector3 base{shell.position.x - direction.x * bodyLength,
                            0.67f,
                            shell.position.z - direction.z * bodyLength};
-        DrawCylinderEx(base, nose, radius, radius * 0.54f, 9,
-                       shell.owner == ShellOwner::Player
-                           ? Color{167, 137, 73, 255}
-                           : Color{126, 129, 125, 255});
+        const Vector3 shoulder{shell.position.x - direction.x * bodyLength * 0.28f,
+                                0.67f,
+                                shell.position.z - direction.z * bodyLength * 0.28f};
+        const Color metal = shell.owner == ShellOwner::Player
+                                ? Color{183, 147, 77, 255}
+                                : Color{151, 154, 141, 255};
+        DrawCylinderEx(base, shoulder, radius, radius, 7, metal);
+        DrawCylinderEx(shoulder, nose, radius, radius * 0.12f, 7,
+                       Color{235, 212, 149, 255});
         const Vector3 bandRear{
             shell.position.x - direction.x * bodyLength * 0.82f, 0.67f,
             shell.position.z - direction.z * bodyLength * 0.82f};
@@ -4351,11 +4720,12 @@ void drawEmissiveBattleFx(const Game3D &game)
             shell.position.x - direction.x * bodyLength * 0.66f, 0.67f,
             shell.position.z - direction.z * bodyLength * 0.66f};
         DrawCylinderEx(bandRear, bandFront, radius * 1.06f,
-                       radius * 1.06f, 9, Color{82, 73, 53, 245});
-        DrawSphere(nose, radius * 0.72f, Color{236, 211, 137, 255});
+                       radius * 1.06f, 7, Color{76, 70, 51, 255});
     }
     EndBlendMode();
 
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
     BeginBlendMode(BLEND_ADDITIVE);
     for (const Shell &shell : game.shells())
     {
@@ -4370,28 +4740,30 @@ void drawEmissiveBattleFx(const Game3D &game)
         const Vector3 flameBase{shell.position.x - direction.x * bodyLength,
                                 0.67f,
                                 shell.position.z - direction.z * bodyLength};
-        const Vector3 hotTail{flameBase.x - direction.x * (shell.power ? 0.34f : 0.26f),
+        const Vector3 hotTail{flameBase.x - direction.x * (shell.power ? 0.19f : 0.14f),
                               0.67f,
-                              flameBase.z - direction.z * (shell.power ? 0.34f : 0.26f)};
-        const Vector3 tracerTail{hotTail.x - direction.x * (shell.power ? 0.40f : 0.30f),
+                              flameBase.z - direction.z * (shell.power ? 0.19f : 0.14f)};
+        const Vector3 tracerTail{hotTail.x - direction.x * (shell.power ? 0.15f : 0.11f),
                                  0.67f,
-                                 hotTail.z - direction.z * (shell.power ? 0.40f : 0.30f)};
+                                 hotTail.z - direction.z * (shell.power ? 0.15f : 0.11f)};
 
-        DrawSphere({shell.position.x, 0.67f, shell.position.z},
-                   shell.power ? 0.125f : 0.095f, Fade(color, 0.48f));
         DrawCylinderEx(hotTail, flameBase, 0.007f,
-                       shell.power ? 0.078f : 0.060f, 9, Fade(color, 0.92f));
+                       shell.power ? 0.050f : 0.038f, 7, Fade(color, 0.78f));
         const Vector3 coreTail{hotTail.x + direction.x * 0.07f, 0.67f,
                                hotTail.z + direction.z * 0.07f};
         DrawCylinderEx(coreTail, flameBase, 0.004f,
-                       shell.power ? 0.038f : 0.028f, 8,
-                       Color{255, 249, 200, 230});
-        DrawCylinderEx(tracerTail, hotTail, 0.002f, 0.017f, 7,
-                       Fade(color, 0.36f));
+                       shell.power ? 0.023f : 0.017f, 6,
+                       Color{255, 236, 164, 180});
+        DrawCylinderEx(tracerTail, hotTail, 0.002f, 0.011f, 5,
+                       Fade(color, 0.26f));
     }
     EndBlendMode();
-    game.effects().draw();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
+    game.effects().draw(camera);
 
+    rlDrawRenderBatchActive();
+    rlDisableDepthMask();
     BeginBlendMode(BLEND_ADDITIVE);
     const float time = static_cast<float>(GetTime());
     for (const Enemy &enemy : game.enemies())
@@ -4409,6 +4781,8 @@ void drawEmissiveBattleFx(const Game3D &game)
                      Color{255, 112, 36, 125});
     }
     EndBlendMode();
+    rlDrawRenderBatchActive();
+    rlEnableDepthMask();
 }
 
 Color miniMapTileColor(char value, bool permanent)
@@ -5232,7 +5606,8 @@ void renderSettlement(const Game3D &game, SceneLighting &lighting,
     {
         const Player &player = game.players()[static_cast<std::size_t>(index)];
         const XZ position = previewPosition(index);
-        drawTankContactShadow(position, kPi, false, player.id);
+        drawTankContactShadow(position, kPi, false, player.id,
+                              player.nation, player.level);
         drawTankModel(tankAssets, position, kPi,
                       playerColor(index), false, player.level, 0.0f,
                       player.id, true, player.nation);
@@ -5465,11 +5840,12 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
         lighting.begin(sharedCamera.position);
         drawWorld(game, tankAssets, environment, terrainView);
         lighting.end();
+        drawTankProtection(game);
         drawEnemyCreationWarnings(game, sharedCamera);
         for (const Pickup &pickup : game.bonuses())
             bonusAssets.draw(pickup, sharedCamera,
                              static_cast<float>(GetTime()));
-        drawEmissiveBattleFx(game);
+        drawEmissiveBattleFx(game, sharedCamera);
         drawForestForeground(game.map(), environment,
                              game.cameraYawDegrees(), terrainView);
         EndMode3D();
@@ -5529,6 +5905,7 @@ struct MenuSettings
     AdvancedGameSettings advanced{};
     int cameraYawDegrees = 0;
     int cameraElevationDegrees = kDefaultCameraElevationDegrees;
+    bool pixelStyleEnabled = false;
     int selected = 0;
     int advancedSelected = 0;
     bool advancedOpen = false;
@@ -5612,7 +5989,8 @@ bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
     return changed;
 }
 
-constexpr int kAdvancedMenuRowCount = 7;
+constexpr int kAdvancedMenuPixelStyleRow = 6;
+constexpr int kAdvancedMenuRowCount = 8;
 constexpr int kAdvancedMenuBackRow = kAdvancedMenuRowCount - 1;
 
 bool advancedSettingsAreDefault(const MenuSettings &settings)
@@ -5624,7 +6002,8 @@ bool advancedSettingsAreDefault(const MenuSettings &settings)
            settings.advanced.enemySpawnRatePercent == 0 &&
            settings.cameraYawDegrees == 0 &&
            settings.cameraElevationDegrees ==
-               kDefaultCameraElevationDegrees;
+               kDefaultCameraElevationDegrees &&
+           !settings.pixelStyleEnabled;
 }
 
 bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
@@ -5691,6 +6070,13 @@ bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
         }
     }
 
+    if (settings.advancedSelected == kAdvancedMenuPixelStyleRow &&
+        (direction != 0 || input.confirmPressed))
+    {
+        settings.pixelStyleEnabled = !settings.pixelStyleEnabled;
+        changed = true;
+    }
+
     if (input.resetPressed)
     {
         changed = changed || !advancedSettingsAreDefault(settings);
@@ -5698,6 +6084,7 @@ bool updateAdvancedMenu(MenuSettings &settings, const UiInputFrame &input)
         settings.cameraYawDegrees = 0;
         settings.cameraElevationDegrees =
             kDefaultCameraElevationDegrees;
+        settings.pixelStyleEnabled = false;
     }
     return changed;
 }
@@ -5876,7 +6263,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
     const int panelWidth = std::min(900, width - 40);
     const int panelX = (width - panelWidth) / 2;
     const int panelY = compact ? 126 : 178;
-    const int rowHeight = compact ? 34 : 48;
+    const int rowHeight = compact ? 28 : 40;
     const int noteRowHeight = compact ? 18 : 26;
     const int panelHeight = 28 + kAdvancedMenuRowCount * rowHeight +
                             (compact ? 66 : 96);
@@ -5890,7 +6277,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
 
     const std::array<std::string, kAdvancedMenuRowCount> labels{{
         "PLAYER HP", "ENEMY SPEED", "FIRE FREQUENCY", "SPAWN PACE",
-        "VIEW HORIZONTAL", "VIEW ELEVATION", "BACK TO SETUP"}};
+        "VIEW HORIZONTAL", "VIEW ELEVATION", "PIXEL STYLE", "BACK TO SETUP"}};
     const std::array<std::string, kAdvancedMenuRowCount> values{{
         settings.advanced.playerMaximumHitPoints == 1
             ? "1  BANDAGE OFF"
@@ -5900,6 +6287,7 @@ void drawAdvancedMenu(const MenuSettings &settings)
         percentageLabel(settings.advanced.enemySpawnRatePercent),
         cameraYawLabel(settings.cameraYawDegrees),
         cameraElevationLabel(settings.cameraElevationDegrees),
+        settings.pixelStyleEnabled ? "ON" : "OFF",
         "RETURN"}};
     const int valueCenter = panelX + panelWidth - 190;
     for (int index = 0; index < kAdvancedMenuRowCount; ++index)
@@ -5912,8 +6300,12 @@ void drawAdvancedMenu(const MenuSettings &settings)
                  static_cast<float>(panelWidth - 40),
                  static_cast<float>(rowHeight - 4)},
                 0.16f, 6, Color{42, 72, 76, 235});
-        drawTextShadow((selected ? ">  " : "   ") + labels[index],
-                       panelX + 38, y, compact ? 18 : 21,
+        const std::string label =
+            (selected ? ">  " : "   ") + labels[index];
+        const int labelFont = fittedFontSize(
+            label, valueCenter - 170 - (panelX + 38) - 12,
+            compact ? 18 : 21, 13);
+        drawTextShadow(label, panelX + 38, y, labelFont,
                        selected ? RAYWHITE : Color{170, 185, 188, 255});
         const int valueFont = fittedFontSize(values[index], 270,
                                              compact ? 19 : 22, 13);
@@ -5942,10 +6334,10 @@ void drawAdvancedMenu(const MenuSettings &settings)
     const int helpY = panelY + panelHeight + (compact ? 10 : 14);
     drawCenteredText("D-PAD / STICK OR KEYS: SELECT / CHANGE", width / 2,
                      helpY, compact ? 14 : 17, LIGHTGRAY);
-    drawCenteredText("BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
+    drawCenteredText("BOTTOM FACE / ENTER: TOGGLE / SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
                      width / 2, helpY + (compact ? 24 : 32),
                      fittedFontSize(
-                         "BOTTOM FACE / ENTER: SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
+                         "BOTTOM FACE / ENTER: TOGGLE / SELECT    MINUS / ESC: RETURN    TOP FACE / R: RESET",
                          width - 40, compact ? 14 : 17, 11),
                      Color{255, 224, 94, 255});
     EndDrawing();
@@ -6807,6 +7199,7 @@ int main(int argc, char **argv)
             continue;
         }
         tankAssets.setAnimationClock(GetTime());
+        postProcess.setPixelStyleEnabled(settings.pixelStyleEnabled);
         if (!renderGame(game, viewTargets, lighting, tankAssets, environment,
                         bonusAssets, postProcess,
                         !releaseScreenshot.requested()))
@@ -6920,6 +7313,7 @@ int main(int argc, char **argv)
     tankAssets.unload();
     bonusAssets.unload();
     environment.unload();
+    clearSteelTileGeometryCache();
     postProcess.unload();
     lighting.unload();
     if (IsAudioDeviceReady())

@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 
 // Incremental environment art layer.  It owns only the authored ground
 // texture; the modular skyline is assembled from reusable architectural
@@ -305,6 +306,7 @@ public:
 
     void load(const std::filesystem::path &resourceRoot)
     {
+        forestCacheStorage().reset();
         std::filesystem::path textureRoot = resourceRoot / "textures";
         if (!std::filesystem::is_regular_file(textureRoot / "battlefield_grass.png"))
             textureRoot = resourceRoot.parent_path() / "3d" / "assets" / "textures";
@@ -339,6 +341,7 @@ public:
 
     void unload()
     {
+        forestCacheStorage().reset();
         if (IsTextureValid(grass_))
             UnloadTexture(grass_);
         if (IsTextureValid(masonry_))
@@ -607,7 +610,9 @@ public:
     void drawForestStructure(int stage, int row, int column,
                              unsigned char edgeMask) const
     {
-        const ForestPlan plan = forestPlan(stage, row, column, edgeMask);
+        const ForestCellCache *cached = forestCellCache(stage, row, column, edgeMask);
+        const ForestPlan plan = cached ? cached->plan
+                                      : forestPlan(stage, row, column, edgeMask);
         for (int index = 0; index < plan.treeCount; ++index)
             drawForestTrunk(plan.trees[static_cast<std::size_t>(index)]);
     }
@@ -617,11 +622,14 @@ public:
     void drawForestCanopy(int stage, int row, int column,
                           unsigned char edgeMask) const
     {
-        const ForestPlan plan = forestPlan(stage, row, column, edgeMask);
+        ForestCellCache *cached = forestCellCache(stage, row, column, edgeMask);
+        const ForestPlan plan = cached ? cached->plan
+                                      : forestPlan(stage, row, column, edgeMask);
         for (int index = 0; index < plan.treeCount; ++index)
         {
             const ForestTree &tree = plan.trees[static_cast<std::size_t>(index)];
-            drawTieredForestCrown(tree, forestPalette(tree.palette), 1.0f);
+            drawTieredForestCrown(tree, forestPalette(tree.palette), 1.0f,
+                cached ? &cached->lit[static_cast<std::size_t>(index)] : nullptr);
         }
     }
 
@@ -630,13 +638,16 @@ public:
     static void drawForestShadow(int stage, int row, int column,
                                  unsigned char edgeMask)
     {
-        const ForestPlan plan = forestPlan(stage, row, column, edgeMask);
+        ForestCellCache *cached = forestCellCache(stage, row, column, edgeMask);
+        const ForestPlan plan = cached ? cached->plan
+                                      : forestPlan(stage, row, column, edgeMask);
         static constexpr std::array<Color, 4> shadowColors{{
             WHITE, WHITE, WHITE, WHITE}};
         for (int index = 0; index < 2; ++index)
         {
             drawTieredForestCrown(
-                plan.trees[static_cast<std::size_t>(index)], shadowColors, 0.62f);
+                plan.trees[static_cast<std::size_t>(index)], shadowColors, 0.62f,
+                cached ? &cached->shadow[static_cast<std::size_t>(index)] : nullptr);
         }
     }
 
@@ -648,6 +659,62 @@ public:
     }
 
 private:
+    static constexpr int kForestCrownSegments = 16;
+    static constexpr int kForestCrownRings = 7;
+    static constexpr int kForestCrownTriangles =
+        (kForestCrownRings - 1) * kForestCrownSegments * 2 + kForestCrownSegments;
+
+    struct ForestCrownGeometry
+    {
+        std::array<std::array<Vector3, kForestCrownSegments>, kForestCrownRings> rings{};
+        Vector3 apex{};
+        std::array<Vector3, kForestCrownTriangles> normals{};
+        std::array<Color, kForestCrownTriangles> colors{};
+    };
+
+    struct ForestCellCache
+    {
+        ForestPlan plan{};
+        std::array<std::unique_ptr<ForestCrownGeometry>, 3> lit{};
+        std::array<std::unique_ptr<ForestCrownGeometry>, 2> shadow{};
+    };
+
+    struct ForestRenderCache
+    {
+        int stage = 0;
+        std::array<std::unique_ptr<ForestCellCache>, 26 * 26> cells{};
+    };
+
+    // One shared CPU cache also serves the static shadow entry point. Cells
+    // and the two radius variants allocate only when drawn; changing stages
+    // releases the previous arena. The 676-cell limit bounds retained memory.
+    static std::unique_ptr<ForestRenderCache> &forestCacheStorage()
+    {
+        static std::unique_ptr<ForestRenderCache> cache;
+        return cache;
+    }
+
+    static ForestCellCache *forestCellCache(int stage, int row, int column,
+                                            unsigned char requestedEdgeMask)
+    {
+        if (row < 0 || row >= 26 || column < 0 || column >= 26)
+            return nullptr;
+        auto &cache = forestCacheStorage();
+        if (!cache || cache->stage != stage)
+        {
+            cache = std::make_unique<ForestRenderCache>();
+            cache->stage = stage;
+        }
+        auto &cell = cache->cells[static_cast<std::size_t>(row * 26 + column)];
+        const unsigned char edgeMask = requestedEdgeMask & kForestAllEdges;
+        if (!cell || cell->plan.edgeMask != edgeMask)
+        {
+            cell = std::make_unique<ForestCellCache>();
+            cell->plan = forestPlan(stage, row, column, edgeMask);
+        }
+        return cell.get();
+    }
+
     static constexpr float kForestPi = 3.14159265358979323846f;
 
     static float urbanWallHeight(const UrbanBuildingProfile &profile)
@@ -671,12 +738,12 @@ private:
     static std::array<Color, 4> forestPalette(unsigned char requestedPalette)
     {
         static constexpr std::array<std::array<Color, 4>, 3> palettes{{
-            {{Color{31, 61, 47, 132}, Color{52, 88, 48, 126},
-              Color{86, 113, 55, 116}, Color{137, 149, 72, 104}}},
-            {{Color{25, 61, 53, 132}, Color{42, 89, 63, 126},
-              Color{71, 117, 68, 116}, Color{113, 143, 81, 104}}},
-            {{Color{46, 63, 39, 132}, Color{73, 94, 44, 126},
-              Color{106, 120, 53, 116}, Color{152, 153, 76, 104}}}}};
+            {{Color{24, 61, 47, 132}, Color{43, 99, 57, 126},
+              Color{88, 142, 70, 116}, Color{153, 179, 92, 104}}},
+            {{Color{22, 65, 57, 132}, Color{38, 104, 72, 126},
+              Color{77, 151, 92, 116}, Color{135, 184, 113, 104}}},
+            {{Color{39, 65, 36, 132}, Color{74, 108, 43, 126},
+              Color{118, 148, 61, 116}, Color{177, 186, 95, 104}}}}};
         return palettes[requestedPalette % palettes.size()];
     }
 
@@ -807,61 +874,91 @@ private:
         rlVertex3f(third.x, third.y, third.z);
     }
 
-    static void drawTieredForestCrown(
+    static std::unique_ptr<ForestCrownGeometry> makeForestCrownGeometry(
         const ForestTree &tree, const std::array<Color, 4> &colors,
         float radiusScale)
     {
-        static constexpr int segmentCount = 10;
-        static constexpr int ringCount = 4;
+        static constexpr int segmentCount = kForestCrownSegments;
+        static constexpr int ringCount = kForestCrownRings;
         static constexpr std::array<float, ringCount> ringHeight{{
-            0.0f, 0.23f, 0.61f, 0.88f}};
+            0.0f, 0.13f, 0.35f, 0.57f, 0.77f, 0.92f, 0.98f}};
         static constexpr std::array<float, ringCount> ringRadius{{
-            0.48f, 0.99f, 0.94f, 0.60f}};
-        std::array<std::array<Vector3, segmentCount>, ringCount> rings{};
+            0.30f, 0.69f, 0.93f, 1.00f, 0.89f, 0.59f, 0.27f}};
+        auto geometry = std::make_unique<ForestCrownGeometry>();
+        auto &rings = geometry->rings;
         const float crownHeight = tree.crownTopHeight - tree.crownBaseHeight;
+        const float lobePhase = forestUnit(tree.seed ^ 0x632be5abU) *
+                                (2.0f * kForestPi);
 
         for (int ring = 0; ring < ringCount; ++ring)
         {
             const float heightFraction = ringHeight[static_cast<std::size_t>(ring)];
             const float y = tree.crownBaseHeight + crownHeight * heightFraction;
             const float centerX = tree.trunkTop.x +
-                forestSigned(tree.seed ^
-                             (0x7f4a7c15U + static_cast<std::uint32_t>(ring))) *
-                    0.008f;
+                forestSigned(tree.seed ^ 0x7f4a7c15U) * heightFraction * 0.008f;
             const float centerZ = tree.trunkTop.z +
-                forestSigned(tree.seed ^
-                             (0x94d049bbU + static_cast<std::uint32_t>(ring))) *
-                    0.008f;
+                forestSigned(tree.seed ^ 0x94d049bbU) * heightFraction * 0.008f;
             for (int segment = 0; segment < segmentCount; ++segment)
             {
-                const std::uint32_t detailSeed =
-                    tree.seed ^
-                    (0x165667b1U * static_cast<std::uint32_t>(ring + 1)) ^
-                    (0xd3a2646cU * static_cast<std::uint32_t>(segment + 1));
-                const float irregularity = 0.87f + forestUnit(detailSeed) * 0.16f;
+                // Broad, low-frequency bulges form rounded leaf groups in
+                // one transparent skin. Closely spaced shoulder rings close
+                // the dome smoothly; the top ring varies by only 1.6% of H.
                 const float angle = tree.crownTwist +
                                     static_cast<float>(segment) *
                                         (2.0f * kForestPi /
-                                         static_cast<float>(segmentCount)) +
-                                    static_cast<float>(ring) * 0.065f;
+                                         static_cast<float>(segmentCount));
+                const float irregularity =
+                    0.91f + 0.06f * std::cos(3.0f * angle + lobePhase +
+                                             heightFraction * 0.16f) +
+                    0.024f * std::cos(2.0f * angle - lobePhase);
                 const float radius = tree.crownRadius *
                                      ringRadius[static_cast<std::size_t>(ring)] *
                                      radiusScale * irregularity;
+                const float heightVariation = ring == ringCount - 1
+                    ? crownHeight * 0.008f * std::cos(2.0f * angle + lobePhase)
+                    : ring > 0
+                        ? crownHeight * 0.017f * std::cos(2.0f * angle + lobePhase)
+                        : 0.0f;
                 rings[static_cast<std::size_t>(ring)]
                      [static_cast<std::size_t>(segment)] = {
                     centerX + std::cos(angle) * radius * tree.crownScaleX,
-                    y + (ring > 0 && ring < ringCount - 1
-                             ? forestSigned(detailSeed ^ 0xb7e15162U) * crownHeight * 0.05f
-                             : 0.0f),
+                    y + heightVariation,
                     centerZ + std::sin(angle) * radius * tree.crownScaleZ};
             }
         }
 
         const Vector3 apex{
-            tree.trunkTop.x + forestSigned(tree.seed ^ 0xfd7046c5U) * 0.008f,
+            tree.trunkTop.x + forestSigned(tree.seed ^ 0x7f4a7c15U) * 0.008f,
             tree.crownTopHeight,
-            tree.trunkTop.z + forestSigned(tree.seed ^ 0xb55a4f09U) * 0.008f};
-        rlBegin(RL_TRIANGLES);
+            tree.trunkTop.z + forestSigned(tree.seed ^ 0x94d049bbU) * 0.008f};
+        geometry->apex = apex;
+        std::size_t triangleIndex = 0;
+        const auto remember = [&](Vector3 first, Vector3 second, Vector3 third,
+                                  Color color) {
+            const Vector3 firstEdge{second.x - first.x, second.y - first.y,
+                                    second.z - first.z};
+            const Vector3 secondEdge{third.x - first.x, third.y - first.y,
+                                     third.z - first.z};
+            Vector3 normal{
+                firstEdge.y * secondEdge.z - firstEdge.z * secondEdge.y,
+                firstEdge.z * secondEdge.x - firstEdge.x * secondEdge.z,
+                firstEdge.x * secondEdge.y - firstEdge.y * secondEdge.x};
+            const float normalLength = std::sqrt(normal.x * normal.x +
+                                                 normal.y * normal.y +
+                                                 normal.z * normal.z);
+            if (normalLength > 0.000001f)
+            {
+                normal.x /= normalLength;
+                normal.y /= normalLength;
+                normal.z /= normalLength;
+            }
+            else
+            {
+                normal = {0.0f, 1.0f, 0.0f};
+            }
+            geometry->normals[triangleIndex] = normal;
+            geometry->colors[triangleIndex++] = color;
+        };
         for (int ring = 0; ring < ringCount - 1; ++ring)
         {
             for (int segment = 0; segment < segmentCount; ++segment)
@@ -879,10 +976,15 @@ private:
                 const Vector3 upperNext =
                     rings[static_cast<std::size_t>(ring + 1)]
                          [static_cast<std::size_t>(next)];
-                const Color color = colors[static_cast<std::size_t>(ring)];
-                const float facetLight = (segment % 3) == 0 ? 1.09f : 0.97f;
-                emitSurfaceTriangle(lower, upperNext, lowerNext, color);
-                emitSurfaceTriangle(lower, upper, upperNext, shade(color, facetLight));
+                static constexpr std::array<std::size_t, ringCount - 1> tones{{
+                    0U, 1U, 1U, 2U, 2U, 3U}};
+                const Color color = colors[tones[static_cast<std::size_t>(ring)]];
+                const float facetAngle = static_cast<float>(segment) *
+                    (2.0f * kForestPi / static_cast<float>(segmentCount));
+                const float facetLight = 1.0f +
+                    0.05f * std::cos(3.0f * facetAngle + lobePhase);
+                remember(lower, upperNext, lowerNext, color);
+                remember(lower, upper, upperNext, shade(color, facetLight));
             }
         }
         for (int segment = 0; segment < segmentCount; ++segment)
@@ -892,7 +994,57 @@ private:
                 rings[ringCount - 1][static_cast<std::size_t>(segment)];
             const Vector3 lowerNext =
                 rings[ringCount - 1][static_cast<std::size_t>(next)];
-            emitSurfaceTriangle(lower, apex, lowerNext, colors[3]);
+            remember(lower, apex, lowerNext, colors[3]);
+        }
+        return geometry;
+    }
+
+    static void drawTieredForestCrown(
+        const ForestTree &tree, const std::array<Color, 4> &colors,
+        float radiusScale, std::unique_ptr<ForestCrownGeometry> *cached)
+    {
+        std::unique_ptr<ForestCrownGeometry> transient;
+        if (cached == nullptr)
+            cached = &transient;
+        if (!*cached)
+            *cached = makeForestCrownGeometry(tree, colors, radiusScale);
+        const ForestCrownGeometry &geometry = **cached;
+        std::size_t triangleIndex = 0;
+        const auto emit = [&](Vector3 first, Vector3 second, Vector3 third) {
+            const Color color = geometry.colors[triangleIndex];
+            const Vector3 normal = geometry.normals[triangleIndex++];
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlNormal3f(normal.x, normal.y, normal.z);
+            rlVertex3f(first.x, first.y, first.z);
+            rlVertex3f(second.x, second.y, second.z);
+            rlVertex3f(third.x, third.y, third.z);
+        };
+        // Replay the original world-space vertex and normal stream. No matrix,
+        // material, primitive or alpha-order change accompanies the cache.
+        rlBegin(RL_TRIANGLES);
+        for (int ring = 0; ring < kForestCrownRings - 1; ++ring)
+        {
+            for (int segment = 0; segment < kForestCrownSegments; ++segment)
+            {
+                const int next = (segment + 1) % kForestCrownSegments;
+                const Vector3 lower = geometry.rings[static_cast<std::size_t>(ring)]
+                                                   [static_cast<std::size_t>(segment)];
+                const Vector3 lowerNext = geometry.rings[static_cast<std::size_t>(ring)]
+                                                       [static_cast<std::size_t>(next)];
+                const Vector3 upper = geometry.rings[static_cast<std::size_t>(ring + 1)]
+                                                   [static_cast<std::size_t>(segment)];
+                const Vector3 upperNext = geometry.rings[static_cast<std::size_t>(ring + 1)]
+                                                       [static_cast<std::size_t>(next)];
+                emit(lower, upperNext, lowerNext);
+                emit(lower, upper, upperNext);
+            }
+        }
+        for (int segment = 0; segment < kForestCrownSegments; ++segment)
+        {
+            const int next = (segment + 1) % kForestCrownSegments;
+            emit(geometry.rings[kForestCrownRings - 1][static_cast<std::size_t>(segment)],
+                 geometry.apex,
+                 geometry.rings[kForestCrownRings - 1][static_cast<std::size_t>(next)]);
         }
         rlEnd();
     }

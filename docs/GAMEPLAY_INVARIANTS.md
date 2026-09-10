@@ -462,6 +462,13 @@ the shell even though its map-specific `ImpactKind` remains `None`.
 
 ## Government Base and Enemy Creation
 
+- Enemy vehicles belong to nations not selected by participating players.
+  Solo ignores the unused P2 menu choice; same-nation co-op has two opposing
+  nations, and different-nation co-op has one. Successfully spawned enemy IDs
+  alternate through those nations in USA/USSR/Germany order, restarting at ID 0
+  each stage. Defeated players remain members of their selected side. This
+  presentation selection consumes no random draws and does not alter enemy
+  role, armor, movement, firing, collision bounds or rewards.
 - P1's nation selects the shared national base. The three visual themes use the
   same original enclosure: row 23, columns 11–14; rows 24–25, columns 11 and
   14 (zero-based). Each wall segment occupies exactly one 1x1 cell, with no

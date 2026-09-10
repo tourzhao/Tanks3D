@@ -1,0 +1,50 @@
+[
+  {
+    "stage": 1,
+    "roster": "German-Tiger",
+    "frames": 429,
+    "average_fps": 85.78599557348022,
+    "one_percent_low_fps": 29.248371688307415,
+    "render_ms": 11.65583458974359
+  },
+  {
+    "stage": 1,
+    "roster": "USA-T95",
+    "frames": 420,
+    "average_fps": 84.01597943601203,
+    "one_percent_low_fps": 43.73496562721446,
+    "render_ms": 11.90178680952381
+  },
+  {
+    "stage": 1,
+    "roster": "USSR-KV5",
+    "frames": 418,
+    "average_fps": 83.68170752215097,
+    "one_percent_low_fps": 52.95616820605393,
+    "render_ms": 11.948233885167465
+  },
+  {
+    "stage": 26,
+    "roster": "German-Tiger",
+    "frames": 298,
+    "average_fps": 59.411094535132186,
+    "one_percent_low_fps": 35.3387321728023,
+    "render_ms": 16.831518318791947
+  },
+  {
+    "stage": 26,
+    "roster": "USA-T95",
+    "frames": 309,
+    "average_fps": 61.804230932236926,
+    "one_percent_low_fps": 42.91131839661858,
+    "render_ms": 16.17984600647249
+  },
+  {
+    "stage": 26,
+    "roster": "USSR-KV5",
+    "frames": 303,
+    "average_fps": 60.42611128406374,
+    "one_percent_low_fps": 45.02391895694588,
+    "render_ms": 16.548832927392738
+  }
+]

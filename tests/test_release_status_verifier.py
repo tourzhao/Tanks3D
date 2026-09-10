@@ -68,6 +68,14 @@ CONTROL_EVIDENCE_IDS = (
     "one_player_gameplay",
     "two_player_gameplay",
 )
+# Independent fixture expectation; do not derive the required notices from
+# the verifier, so dropping a production requirement remains detectable.
+AUDIO_NOTICE_FILES = (
+    "ASSET_LICENSES.md",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSES/MIT-upstream.txt",
+    "LICENSES/MIT-JustoSenka-BattleCity.txt",
+)
 
 
 def digest(path):
@@ -147,6 +155,7 @@ class ReleaseFixture:
             "ASSET_LICENSES.md": "fixture asset and audio provenance\n",
             "THIRD_PARTY_NOTICES.md": "fixture third-party notices\n",
             "LICENSES/MIT-upstream.txt": "fixture upstream MIT notice\n",
+            "LICENSES/MIT-JustoSenka-BattleCity.txt": "fixture BattleCity MIT notice\n",
         }
         for name, contents in notice_files.items():
             path = self.root / name
@@ -1697,11 +1706,7 @@ class ReleaseFixture:
         audio_path = self.persistent_evidence_path("audio-decision.txt")
         audio_path.write_text("audio decision evidence\n", encoding="utf-8")
         audio_evidence = []
-        for relative in (
-            "ASSET_LICENSES.md",
-            "THIRD_PARTY_NOTICES.md",
-            "LICENSES/MIT-upstream.txt",
-        ):
+        for relative in AUDIO_NOTICE_FILES:
             path = self.root / relative
             audio_evidence.append(
                 {
@@ -1876,15 +1881,10 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
     def test_final_ready_audio_decision_report_must_be_persistent(self):
         fixture = self.new_fixture()
         fixture.make_all_pass()
-        canonical_notices = {
-            "ASSET_LICENSES.md",
-            "THIRD_PARTY_NOTICES.md",
-            "LICENSES/MIT-upstream.txt",
-        }
         decision_report = next(
             artifact
             for artifact in fixture.status["audio"]["evidence"]
-            if artifact["path"] not in canonical_notices
+            if artifact["path"] not in AUDIO_NOTICE_FILES
         )
         source = fixture.root / decision_report["path"]
         ignored = (
@@ -1968,15 +1968,10 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
 
         fixture = self.new_fixture()
         fixture.make_all_pass()
-        canonical_notices = {
-            "ASSET_LICENSES.md",
-            "THIRD_PARTY_NOTICES.md",
-            "LICENSES/MIT-upstream.txt",
-        }
         artifact = next(
             item
             for item in fixture.status["audio"]["evidence"]
-            if item["path"] not in canonical_notices
+            if item["path"] not in AUDIO_NOTICE_FILES
         )
         evidence_path = fixture.root / artifact["path"]
         evidence_path.write_text(
@@ -2012,7 +2007,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         artifact = next(
             item
             for item in fixture.status["audio"]["evidence"]
-            if item["path"] not in canonical_notices
+            if item["path"] not in AUDIO_NOTICE_FILES
         )
         evidence_path = fixture.root / artifact["path"]
         evidence_path.write_text(
@@ -2352,7 +2347,7 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.make_all_pass()
         fixture.status["audio"]["evidence"] = []
         fixture.write_status()
-        self.assert_failed(fixture.run(), "must hash the asset, third-party, and MIT notices")
+        self.assert_failed(fixture.run(), "must hash all canonical repository audio notices")
 
         fixture = self.new_fixture()
         fixture.make_all_pass()
@@ -2727,6 +2722,68 @@ class ReleaseStatusVerifierTests(unittest.TestCase):
         fixture.status["audio"]["owner"] = "Different Owner"
         fixture.write_status()
         self.assert_failed(fixture.run(), "must be the release owner")
+
+    def test_audio_new_source_license_is_publishable_repository_evidence(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        notices = {
+            item["path"]: item["sha256"]
+            for item in fixture.status["audio"]["evidence"]
+            if item["path"] in AUDIO_NOTICE_FILES
+        }
+        self.assertEqual(
+            notices,
+            {relative: digest(fixture.root / relative) for relative in AUDIO_NOTICE_FILES},
+        )
+        # The second source's MIT notice belongs at its canonical repository
+        # path, rather than being mistaken for an unversioned decision report.
+        result = fixture.run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("all required Alpha gates PASS", result.stdout)
+
+    def test_audio_accept_requires_each_repository_notice_hash(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        complete_evidence = list(fixture.status["audio"]["evidence"])
+        for relative in AUDIO_NOTICE_FILES:
+            with self.subTest(notice=relative):
+                fixture.status["audio"]["evidence"] = [
+                    item for item in complete_evidence if item["path"] != relative
+                ]
+                fixture.write_status()
+                expected = "must hash all canonical repository audio notices; missing: {}".format(
+                    relative
+                )
+                self.assert_failed(fixture.run(), expected)
+                self.assert_failed(fixture.run(allow_blocked=True), expected)
+
+    def test_audio_new_source_license_hash_is_verified(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        relative = "LICENSES/MIT-JustoSenka-BattleCity.txt"
+        notice = fixture.root / relative
+        notice.write_text("changed fixture source license\n", encoding="utf-8")
+        index = next(
+            index
+            for index, item in enumerate(fixture.status["audio"]["evidence"])
+            if item["path"] == relative
+        )
+        self.assert_failed(
+            fixture.run(), "status.audio.evidence[{}] hash mismatch".format(index)
+        )
+
+    def test_audio_notices_do_not_replace_a_decision_report(self):
+        fixture = self.new_fixture()
+        fixture.make_all_pass()
+        fixture.status["audio"]["evidence"] = [
+            item
+            for item in fixture.status["audio"]["evidence"]
+            if item["path"] in AUDIO_NOTICE_FILES
+        ]
+        fixture.write_status()
+        self.assert_failed(
+            fixture.run(), "selected audio decision requires a hashed decision report"
+        )
 
     def test_known_issue_review_and_approval_chronology_are_enforced(self):
         fixture = self.new_fixture()

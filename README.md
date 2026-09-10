@@ -4,41 +4,64 @@ Arcade tank combat on destructible 3D battlefields for macOS. Defend your
 headquarters, upgrade through three national tank lines, and play solo or
 local co-op across the 35 original Battle City battlefield layouts.
 
-## Current main preview
+## Current development preview
 
-**These screenshots show the current `main` source build.** The new tank and
-building models, restored Battle City maps, adjustable camera and updated controller input are newer than
-the downloadable Alpha 4 release. [Build the current version](#build-and-play-current-main)
-to play with the visuals shown here.
+**These screenshots were exported from the latest Alpha 5 candidate.**
+Rebuilt tanks and terrain, layered battle effects, an optional crisp pixel
+finish, a wider adjustable camera and the original Battle City maps are newer
+than the downloadable Alpha 4 release.
+[Build the current version](#build-and-play-current-version) to play with
+the visuals shown here.
 
-![Current main: two-player battlefield with rebuilt tanks, buildings and headquarters](build/release-evidence/main-showcase-20260908/gameplay-coop.png)
+[Alpha 5 candidate notes and fresh screenshots](docs/releases/v0.1.0-alpha.5.md)
+are now available for review. Its automated build gates passed; controller,
+clean-Mac, long-session, audio-owner and final approval gates remain pending.
 
-*Local two-player play on original stage 1, with the camera rotated left 45° and set to
-45° elevation. Captured directly from the game.*
+![Alpha 5: forest, river, buildings and steel on original Battle City stage 26](build/release-evidence/github-preview-20260909/forest-solo.png)
+
+*Original stage 26 at 50° elevation and 25° left rotation, with Pixel Style OFF.
+The game's built-in forest-cover showcase places the player near the trees.
+[View the two-player spawn](build/release-evidence/github-preview-20260909/battlefield-coop.png).*
 
 ## Highlights
 
 - Chunky arcade machinery with continuous tracks, layered armor, distinctive
-  turrets and painted materials, inspired by the military adventure art of
+  rounded cabins and painted materials, inspired by the military adventure art of
   1990s arcade games.
 - 12 player tanks across United States, Soviet and German light-to-super-heavy
-  lines, plus four enemy roles.
+  lines, plus four enemy roles. Enemy vehicles come from the nations not chosen
+  by participating players: two opposing nations in solo or same-nation co-op,
+  and the remaining nation when co-op players choose different nations.
 - Destructible buildings with tiled roofs, shop awnings and exposed ruins;
-  three national field headquarters, forest cover and steel fortifications.
+  three national headquarters, rounded forest canopies, shaded riverbanks and
+  clearly marked steel barriers.
 - All 35 original Battle City maps in their original order, with full-map
   radar, nine pickups, upgrades, HP, streaks and shell cancellation.
-- Adjustable camera rotation (-45° to +45°) and elevation (40° to 70°) in
-  5-degree steps. Local co-op shares a camera that follows both players.
+- Optional crisp pixel edges on the 3D scene, with sharp HUD text; short shell tracers,
+  layered orange fire and rolling smoke distinguish combat effects.
+- A 19% wider default view, with adjustable rotation (-45° to +45°) and
+  elevation (40° to 70°). Local co-op shares a camera that follows both players.
+- Battle City stage-start and game-over cues from JustoSenka/BattleCity;
+  battle audio uses engine sounds and effects without looping background music
+  ([audio sources](ASSET_LICENSES.md#runtime-audio)).
 
-![Current main: detailed T28/T95 and IS-2 tanks in the two-player battle report](build/release-evidence/main-showcase-20260908/battle-report.png)
+![Alpha 5: T28/T95 and IS-2 tanks in the completed two-player battle report](build/release-evidence/github-preview-20260909/battle-report.png)
 
-*Battle-report preview using the game's built-in showcase. Tank geometry is
+*Battle-report preview using the game's built-in showcase after the counters
+finish animating. Tank geometry is
 original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-[View a current single-player screenshot](build/release-evidence/main-showcase-20260908/gameplay-solo.png)
-· [Screenshot sources and capture commands](build/release-evidence/main-showcase-20260908/README.md)
+![Alpha 5: a German player tank faces American and Soviet enemy vehicles](build/release-evidence/github-preview-20260909/national-enemies.png)
 
-## Build and play current main
+*Germany selected: four enemy roles use American and Soviet vehicles.
+Captured in the game's built-in tank showcase arena, with staged positions.*
+
+[Screenshot sources and capture commands](build/release-evidence/github-preview-20260909/README.md)
+· [Pixel Style ON/OFF comparison](build/release-evidence/pixel-options-20260909/README.md)
+· [Battlefield art review](build/release-evidence/battlefield-art-20260909/README.md)
+· [Tank proportion comparison](build/release-evidence/main-showcase-20260909/tank-proportions.png)
+
+## Build and play current version
 
 On macOS, with Homebrew and the Xcode Command Line Tools installed:
 
@@ -66,7 +89,7 @@ and choose **Open**. If macOS blocks it, use
 
 Alpha 4 is an early pre-release and is not Apple notarized.
 
-## Controls in current main
+## Controls in the current version
 
 - **P1:** Arrow keys; `Space`/Right Option/Right Control fires.
 - **P2:** `WASD`; `F`/Left Option/Left Control fires.
@@ -76,7 +99,8 @@ Alpha 4 is an early pre-release and is not Apple notarized.
   `+` starts or pauses; `-` returns. ABXY never exits the game.
 - `Enter` pauses · `Esc` returns to setup · `R` restarts.
 - **Advanced Settings:** `View Horizontal` and `View Elevation` adjust the
-  camera. Default: 0° horizontal, 50° elevation.
+  camera. Default: 0° horizontal, 50° elevation. `Pixel Style` toggles the
+  optional pixel treatment (default OFF); left/right or confirm changes it.
 
 ## More
 

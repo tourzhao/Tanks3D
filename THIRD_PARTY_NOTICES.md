@@ -28,13 +28,31 @@ project-owned or relabeled under PolyForm. The procedural 3D presentation is
 project-authored. See [map sources and verification](docs/BATTLE_CITY_MAPS.md)
 and `ASSET_LICENSES.md` for ordering, corrections and reference credits.
 
-The sound set was authored and refined in the upstream project by Redas
-Jefisovas (`holoflash`), beginning with the commit explicitly described as
+Twenty runtime OGG files retain their original names and bytes from
+[`krystiankaluzny/Tanks@f59aea31638117e20bc03276026bdbb9f8828b47`](https://github.com/krystiankaluzny/Tanks/tree/f59aea31638117e20bc03276026bdbb9f8828b47/resources/sounds).
+The upstream sound-set history credits Redas Jefisovas (`holoflash`), beginning
+with the commit explicitly described as
 [`add original effect sounds`](https://github.com/krystiankaluzny/Tanks/commit/326c2935).
 The OGG conversion used by this repository was also contributed by `holoflash`
 in
 [`krystiankaluzny/Tanks` pull request 35](https://github.com/krystiankaluzny/Tanks/pull/35).
 See `ASSET_LICENSES.md` for the audio provenance limitation.
+
+## Battle City musical cues
+
+The two remaining runtime cues come from
+[`JustoSenka/BattleCity@3a07004ba8e53baea74ff70d2ecc22b017eb9b20`](https://github.com/JustoSenka/BattleCity/tree/3a07004ba8e53baea74ff70d2ecc22b017eb9b20/Assets/Audio):
+`Assets/Audio/levelstarting.ogg` is copied without byte changes to
+`resources/sounds/stage_start_up.ogg`, and `Assets/Audio/gameover.ogg` to
+`resources/sounds/game_over.ogg`.
+
+The source repository declares the MIT License, copyright 2019 Justas Glodenis.
+Its full notice is in
+[`LICENSES/MIT-JustoSenka-BattleCity.txt`](LICENSES/MIT-JustoSenka-BattleCity.txt).
+That repository declaration is not independent confirmation of rights in the
+original *Battle City* music or these recordings. No project authorship or
+PolyForm-only ownership is claimed. See the
+[audio provenance and hashes](ASSET_LICENSES.md#runtime-audio).
 
 ## raylib 6.0, embedded dependencies, and shadow-map example
 

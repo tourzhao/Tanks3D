@@ -1,0 +1,1025 @@
+{
+  "schema": "tanks3d-release-status-v1",
+  "requirements": "docs/release-requirements/macos-alpha-v2.json",
+  "release": {
+    "version": "0.1.0",
+    "channel": "alpha.5",
+    "tag": "v0.1.0-alpha.5",
+    "source_commit": "cc5f2a7eec073accf37c2085c10bf155061acef2",
+    "candidate_dir": "build/release/v0.1.0-alpha.5",
+    "artifact": {
+      "path": "build/release/v0.1.0-alpha.5/Tanks3D-0.1.0-alpha.5-macos-arm64-macos26.0.zip",
+      "sha256": "d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8"
+    },
+    "checksum": {
+      "path": "build/release/v0.1.0-alpha.5/Tanks3D-0.1.0-alpha.5-macos-arm64-macos26.0.zip.sha256",
+      "sha256": "0e551aa40f43337152394cc593d8e51ace82d4b46dfc26d3ca56a45b55b81f7d"
+    },
+    "attestation": {
+      "path": "build/release/v0.1.0-alpha.5/attestation.txt",
+      "sha256": "42669736efa41566ada742bf137431e1afecebf9b5e2aa055c465f38ed943aa2"
+    },
+    "gate_log": {
+      "path": "build/release/v0.1.0-alpha.5/alpha-candidate-gates.log",
+      "sha256": "1c329c8e65d591bd9a9049658cdb386a3bd8a327e42f18d9135528944fdaca60"
+    },
+    "build_config": {
+      "path": "build/release/v0.1.0-alpha.5/build-config.txt",
+      "sha256": "8fdb8ace9df0819898a8e463b23a015b2ebdb7b962ee6f8c0a43c8c6cc53b58c"
+    }
+  },
+  "documents": {
+    "release_page": {
+      "path": "docs/releases/v0.1.0-alpha.5.md",
+      "sha256": "601ab78f86a523155757246b03c580c92542750e963f658e4082ca76afc93039"
+    },
+    "qa_report": {
+      "path": "docs/releases/v0.1.0-alpha.5-qa.md",
+      "sha256": "df48b9058a2d0ab0b2a1231f35c76103a65668804e164755c1eb7ee7264e4887"
+    }
+  },
+  "report": {
+    "qa_owner": "",
+    "completed_at_utc": null,
+    "release_date": null
+  },
+  "gameplay": [
+    {
+      "id": "start_and_control",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "start_and_control",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "movement_and_collision",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "movement_and_collision",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "fire_hits_and_shell_cancellation",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "fire_hits_and_shell_cancellation",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "pause_and_resume",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "pause_and_resume",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "escape_returns_to_setup",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "escape_returns_to_setup",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "hp_death_and_respawn",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "hp_death_and_respawn",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "streak_increment_and_reset",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "streak_increment_and_reset",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "base_breach_and_core_loss",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "base_breach_and_core_loss",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "classified_ko_rows_and_totals",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "classified_ko_rows_and_totals",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "grenade_excluded_from_direct_ko",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "grenade_excluded_from_direct_ko",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "settlement_transition",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "settlement_transition",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "fullscreen_toggle",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "fullscreen_toggle",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "resize_hud_camera_and_minimap",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "resize_hud_camera_and_minimap",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "audio_cues_and_volume",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "audio_cues_and_volume",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "complete_stage_stability",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "complete_stage_stability",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    }
+  ],
+  "bases": [
+    {
+      "id": "usa",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "usa",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "ussr",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "ussr",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "germany",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "germany",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    }
+  ],
+  "pickups": [
+    {
+      "id": "grenade",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "grenade",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "helmet",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "helmet",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "clock",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "clock",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "shovel",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "shovel",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "tank",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "tank",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "star",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "star",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "gun",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "gun",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "boat",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "boat",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "bandage_heal",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "bandage_heal",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "bandage_absent_at_full_hp",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "bandage_absent_at_full_hp",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "bandage_disabled_at_max_hp_1",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "bandage_disabled_at_max_hp_1",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "pickup_lifetime_12_5_seconds",
+      "mode": "one_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "pickup_lifetime_12_5_seconds",
+      "mode": "two_player",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    }
+  ],
+  "settlement": [
+    {
+      "id": "basic_tank_ko",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "fast_tank_ko",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "power_tank_ko",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "armor_tank_ko",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "ko_total",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "score_points",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    },
+    {
+      "id": "grenade_exclusion",
+      "status": "NOT_RUN",
+      "tester": "",
+      "tested_at_utc": null,
+      "evidence_ids": [],
+      "checks_confirmed": [],
+      "notes": "Not run against this candidate."
+    }
+  ],
+  "published_controls": {
+    "id": "published_controls_match",
+    "status": "NOT_RUN",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "notes": "Published controls and advanced settings have not been verified against this candidate."
+  },
+  "clean_mac": {
+    "status": "NOT_RUN",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "details": {
+      "mac_model": "",
+      "chip": "",
+      "uname_machine": "",
+      "ram": "",
+      "macos_version": "",
+      "macos_build": "",
+      "clean_machine_method": "",
+      "download_url": "",
+      "download_client": "",
+      "downloaded_artifact_filename": "",
+      "downloaded_artifact_sha256": "",
+      "checksum_command": "",
+      "checksum_exit_code": "",
+      "prior_app_absent": "",
+      "prior_approval_absent": "",
+      "minimum_macos_met": "",
+      "source_checkout_absent": "",
+      "homebrew_raylib_unused": ""
+    },
+    "notes": "A source-free clean-Mac download test has not been run."
+  },
+  "gatekeeper": {
+    "status": "BLOCKED",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "details": {
+      "zip_quarantine_command": "",
+      "zip_quarantine_exit_code": "",
+      "zip_quarantine_output": "",
+      "app_quarantine_command": "",
+      "app_quarantine_exit_code": "",
+      "app_quarantine_output": "",
+      "codesign_command": "",
+      "codesign_exit_code": "",
+      "spctl_command": "",
+      "spctl_exit_code": "",
+      "first_finder_launch": "",
+      "dialog_text": "",
+      "documented_launch_path": "",
+      "main_menu_reached": "",
+      "signature_preserved": "",
+      "conclusion": "",
+      "release_note_wording_verified": ""
+    },
+    "notes": "Quarantined first-launch behavior has not been tested."
+  },
+  "extended_session": {
+    "status": "NOT_RUN",
+    "tester": "",
+    "tested_at_utc": null,
+    "evidence_ids": [],
+    "checks_confirmed": [],
+    "details": {
+      "duration_minutes": "",
+      "stages_completed": "",
+      "mode_mix": "",
+      "measurement_tools": "",
+      "sampling_interval_seconds": "",
+      "fps_acceptance_criterion": "",
+      "average_fps": "",
+      "minimum_fps": "",
+      "minimum_average_fps": "",
+      "minimum_one_percent_low_fps": "",
+      "one_percent_low_fps": "",
+      "thermal_state": "",
+      "throttling": "",
+      "fan_observation": "",
+      "memory_start_mb": "",
+      "memory_end_mb": "",
+      "memory_growth_observation": "",
+      "maximum_memory_growth_mb": "",
+      "rendering_artifacts": "",
+      "audio_issues": "",
+      "crashes_hangs_or_softlocks": "",
+      "crash_count": "",
+      "hang_count": "",
+      "softlock_count": "",
+      "logs_and_capture_locations": ""
+    },
+    "notes": "Candidate-generated thirty-minute telemetry has not been collected."
+  },
+  "evidence": [
+    {
+      "id": "main_menu_and_advanced_settings",
+      "status": "NOT_RUN",
+      "artifacts": [],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Evidence has not been collected for this candidate."
+    },
+    {
+      "id": "one_player_gameplay",
+      "status": "NOT_RUN",
+      "artifacts": [
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/one-player.png",
+          "sha256": "a6d3a0a6a7302e6b9d804154c24818d52132be06c3bb5d0ba6f590781adaa834",
+          "kind": "png"
+        }
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Publication image is unreviewed; interactive evidence is not recorded."
+    },
+    {
+      "id": "two_player_gameplay",
+      "status": "NOT_RUN",
+      "artifacts": [
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/two-player.png",
+          "sha256": "c58d45f1f6b934e2043f72f6bb10b5860e45f2a77dea0fec4a63ab1b50dc40ce",
+          "kind": "png"
+        }
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Publication image is unreviewed; interactive evidence is not recorded."
+    },
+    {
+      "id": "national_bases",
+      "status": "NOT_RUN",
+      "artifacts": [
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/base-usa.png",
+          "sha256": "00336fc22b1773ac91b08b5b568239922b2e59edc23af9470d904ffcd012b853",
+          "kind": "png"
+        },
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/base-ussr.png",
+          "sha256": "95f52272b6bae5596b8d4d0c05c7a5313ffaeee14a855729e5ca6738acc3c801",
+          "kind": "png"
+        },
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/base-germany.png",
+          "sha256": "a903da9bd6187015ae1016b34d5c8701a5b43d5fcfdd90b854e49baeb288ac6b",
+          "kind": "png"
+        }
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Publication image is unreviewed; interactive evidence is not recorded."
+    },
+    {
+      "id": "pickup_and_minimap",
+      "status": "NOT_RUN",
+      "artifacts": [
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/bonuses.png",
+          "sha256": "06ff40a1b0ed42f4e2127cbd5d4c2f673d778d8a33d3439b504c396dd3606de0",
+          "kind": "png"
+        }
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Publication image is unreviewed; interactive evidence is not recorded."
+    },
+    {
+      "id": "settlement_report",
+      "status": "NOT_RUN",
+      "artifacts": [
+        {
+          "path": "docs/assets/releases/v0.1.0-alpha.5/settlement.png",
+          "sha256": "d941f9998cad308a52e88ab67050f1fc92f6c389a67efcadaf3328ccf098c885",
+          "kind": "png"
+        }
+      ],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Publication image is unreviewed; interactive evidence is not recorded."
+    },
+    {
+      "id": "gatekeeper_launch",
+      "status": "NOT_RUN",
+      "artifacts": [],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Evidence has not been collected for this candidate."
+    },
+    {
+      "id": "extended_session_metrics",
+      "status": "NOT_RUN",
+      "artifacts": [],
+      "interactive": {
+        "candidate_sha256": "",
+        "tester": "",
+        "machine": "",
+        "tested_at_utc": null,
+        "signature": "",
+        "coverage_refs": {}
+      },
+      "reviewer": "",
+      "reviewed_at_utc": null,
+      "notes": "Evidence has not been collected for this candidate."
+    }
+  ],
+  "known_issues": {
+    "status": "NOT_RUN",
+    "conclusion": "NONE",
+    "reviewer": "",
+    "reviewed_at_utc": null,
+    "signature": "",
+    "issues": [],
+    "notes": "Known-issue review has not been completed."
+  },
+  "audio": {
+    "decision": "NONE",
+    "checks_confirmed": [],
+    "rationale": "",
+    "evidence": [],
+    "owner": "",
+    "authority": "",
+    "signature": "",
+    "decided_at_utc": null
+  },
+  "approvals": [
+    {
+      "role": "qa_lead",
+      "status": "BLOCKED",
+      "name": "",
+      "signature": "",
+      "approved_at_utc": null,
+      "evidence_ids": [],
+      "notes": "Required manual evidence and decisions are incomplete."
+    },
+    {
+      "role": "release_owner",
+      "status": "BLOCKED",
+      "name": "",
+      "signature": "",
+      "approved_at_utc": null,
+      "evidence_ids": [],
+      "notes": "Required manual evidence and decisions are incomplete."
+    }
+  ]
+}

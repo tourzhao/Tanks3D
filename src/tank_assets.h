@@ -182,8 +182,7 @@ public:
 
     void draw(float x, float z, float yaw, Color bodyColor, bool enemy,
               int armor, float shield, int identity, bool moving,
-              tanks3d::core::Nation nation =
-                  tanks3d::core::Nation::UnitedStates,
+              tanks3d::core::Nation nation,
               bool shadowPass = false)
     {
         if (gltfProbeEnabled())
@@ -195,6 +194,15 @@ public:
         }
         wwii_tank_model::DrawTank(x, z, yaw, bodyColor, enemy,
                                   armor, shield, identity, moving, nation);
+    }
+
+    // Preserve the pre-national-selection roster for callers omitting nation.
+    void draw(float x, float z, float yaw, Color bodyColor, bool enemy,
+              int armor, float shield, int identity, bool moving)
+    {
+        draw(x, z, yaw, bodyColor, enemy, armor, shield, identity, moving,
+             enemy ? tanks3d::core::Nation::Germany
+                   : tanks3d::core::Nation::UnitedStates);
     }
 
     void flushQueued(bool shadowPass)

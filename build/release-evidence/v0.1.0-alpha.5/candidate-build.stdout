@@ -1,0 +1,14 @@
+sh scripts/build_alpha_candidate.sh "/Users/tzhao80/Desktop/VCP/3D_Tank_Game" "alpha.5"
+Running Alpha candidate gate: clean
+Running Alpha candidate gate: test-alpha-candidate
+Running Alpha candidate gate: debug
+Running Alpha candidate gate: test-architecture
+Running Alpha candidate gate: test
+Running Alpha candidate gate: test-sanitize
+Running Alpha candidate gate: coverage
+Running Alpha candidate gate: test-dist
+Verified Alpha candidate: /Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release/.v0.1.0-alpha.5.candidate.Bn7ptk
+Bound source: cc5f2a7eec073accf37c2085c10bf155061acef2 (v0.1.0-alpha.5)
+Artifact SHA-256: d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8
+Alpha candidate created: /Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release/v0.1.0-alpha.5
+Artifact SHA-256: d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8

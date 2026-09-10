@@ -1,0 +1,6 @@
+SAMPLED stage=1 view=German-Tiger frames=429 native=2560x1440
+SAMPLED stage=1 view=USA-T95 frames=420 native=2560x1440
+SAMPLED stage=1 view=USSR-KV5 frames=418 native=2560x1440
+SAMPLED stage=26 view=German-Tiger frames=298 native=2560x1440
+SAMPLED stage=26 view=USA-T95 frames=309 native=2560x1440
+SAMPLED stage=26 view=USSR-KV5 frames=303 native=2560x1440

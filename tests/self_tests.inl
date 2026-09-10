@@ -3149,11 +3149,13 @@ int runSettingsProgressionAndSettlementSelfTests(
         advancedMenuRow(menuDefaults) == 4;
     menuDefaults.playerCount = 2;
     if (!checkTest(onePlayerAdvancedRow &&
-                       kAdvancedMenuRowCount == 7 &&
-                       kAdvancedMenuBackRow == 6 &&
+                       kAdvancedMenuRowCount == 8 &&
+                       kAdvancedMenuPixelStyleRow == 6 &&
+                       kAdvancedMenuBackRow == 7 &&
                        menuRowCount(menuDefaults) == 6 &&
                        advancedMenuRow(menuDefaults) == 5 &&
                        advancedSettingsAreDefault(menuDefaults) &&
+                       !menuDefaults.pixelStyleEnabled &&
                        percentageLabel(-30) == "-30%" &&
                        percentageLabel(0) == "0%  DEFAULT" &&
                        percentageLabel(30) == "+30%" &&
@@ -3213,16 +3215,76 @@ int runSettingsProgressionAndSettlementSelfTests(
                     kCameraElevationMinimumDegrees,
             "camera elevation menu step or endpoint clamping is incorrect"))
         return 1;
+    MenuSettings pixelMenu;
+    pixelMenu.advancedSelected = kAdvancedMenuPixelStyleRow;
+    const bool pixelRightEnabled =
+        updateAdvancedMenu(pixelMenu, adjustCameraRight) &&
+        pixelMenu.pixelStyleEnabled &&
+        !advancedSettingsAreDefault(pixelMenu);
+    const bool pixelLeftDisabled =
+        updateAdvancedMenu(pixelMenu, adjustCameraLeft) &&
+        !pixelMenu.pixelStyleEnabled &&
+        advancedSettingsAreDefault(pixelMenu);
+    UiInputFrame confirmAdvanced;
+    confirmAdvanced.confirmPressed = true;
+    const bool pixelConfirmEnabled =
+        updateAdvancedMenu(pixelMenu, confirmAdvanced) &&
+        pixelMenu.pixelStyleEnabled;
+    UiInputFrame confirmAndAdjust = confirmAdvanced;
+    confirmAndAdjust.leftPressed = true;
+    const bool pixelCombinedInputTogglesOnce =
+        updateAdvancedMenu(pixelMenu, confirmAndAdjust) &&
+        !pixelMenu.pixelStyleEnabled &&
+        advancedSettingsAreDefault(pixelMenu);
+    if (!checkTest(pixelRightEnabled && pixelLeftDisabled &&
+                       pixelConfirmEnabled &&
+                       pixelCombinedInputTogglesOnce,
+                   "pixel style input must toggle once without changing gameplay or camera defaults"))
+        return 1;
+    UiInputFrame advanceRow;
+    advanceRow.downPressed = true;
+    pixelMenu.advancedSelected = 5;
+    const bool pixelRowReachable =
+        updateAdvancedMenu(pixelMenu, advanceRow) &&
+        pixelMenu.advancedSelected == kAdvancedMenuPixelStyleRow;
+    const bool backRowReachable =
+        updateAdvancedMenu(pixelMenu, advanceRow) &&
+        pixelMenu.advancedSelected == kAdvancedMenuBackRow;
+    const bool backConfirmDoesNotToggle =
+        !updateAdvancedMenu(pixelMenu, confirmAdvanced) &&
+        !pixelMenu.pixelStyleEnabled;
+    const bool downWrapsToFirst =
+        updateAdvancedMenu(pixelMenu, advanceRow) &&
+        pixelMenu.advancedSelected == 0;
+    UiInputFrame previousRow;
+    previousRow.upPressed = true;
+    const bool upWrapsToBack =
+        updateAdvancedMenu(pixelMenu, previousRow) &&
+        pixelMenu.advancedSelected == kAdvancedMenuBackRow;
+    if (!checkTest(pixelRowReachable && backRowReachable &&
+                       backConfirmDoesNotToggle && downWrapsToFirst &&
+                       upWrapsToBack,
+                   "advanced menu navigation must include pixel style and keep the return row separate"))
+        return 1;
     menuDefaults.advanced.enemySpeedPercent = 5;
     menuDefaults.cameraYawDegrees = 35;
     menuDefaults.cameraElevationDegrees = 70;
+    menuDefaults.pixelStyleEnabled = true;
     UiInputFrame resetAdvanced;
     resetAdvanced.resetPressed = true;
     const bool advancedResetChanged =
         updateAdvancedMenu(menuDefaults, resetAdvanced);
     if (!checkTest(advancedResetChanged &&
-                       advancedSettingsAreDefault(menuDefaults),
+                       advancedSettingsAreDefault(menuDefaults) &&
+                       !menuDefaults.pixelStyleEnabled,
                    "advanced settings reset is incorrect"))
+        return 1;
+    pixelMenu.pixelStyleEnabled = true;
+    if (!checkTest(updateAdvancedMenu(pixelMenu, resetAdvanced) &&
+                       !pixelMenu.pixelStyleEnabled &&
+                       advancedSettingsAreDefault(pixelMenu) &&
+                       !updateAdvancedMenu(pixelMenu, resetAdvanced),
+                   "reset must report a visual-only change and restore pixel style to off"))
         return 1;
     bool elevationGeometryValid = true;
     for (const int degrees : std::array<int, 3>{{
@@ -3317,7 +3379,7 @@ int runSettingsProgressionAndSettlementSelfTests(
                            0.0001f &&
                        std::fabs(kEnemyBlockedEscapeDelay - 0.30f) <
                            0.0001f &&
-                       std::fabs(kSoloCameraSpan - 15.5f) < 0.0001f &&
+                       std::fabs(kSoloCameraSpan - 18.5f) < 0.0001f &&
                        std::fabs(kGameplayCameraOrbitDistance -
                                  21.017376f) < 0.0001f &&
                        std::fabs(kGameplayCameraTargetHeight - 0.35f) <
@@ -3566,6 +3628,8 @@ int runSettingsProgressionAndSettlementSelfTests(
                 const CameraRig &camera =
                     centeredCameraGame.cameraRigs()[0];
                 soloCameraCentered = soloCameraCentered &&
+                    std::fabs(centeredCameraGame.cameraForPlayer(0).fovy -
+                              18.5f) < 0.0001f &&
                     std::fabs(camera.target.x - position.x) < 0.0001f &&
                     std::fabs(camera.target.z - position.z) < 0.0001f &&
                     std::fabs(camera.position.x - camera.target.x -
@@ -3580,8 +3644,8 @@ int runSettingsProgressionAndSettlementSelfTests(
         }
     }
     if (!checkTest(soloCameraCentered,
-                   "solo camera did not center its active tank across yaw, "
-                   "elevation, and playable positions"))
+                   "solo camera did not retain its wider span and center its "
+                   "active tank across yaw, elevation, and playable positions"))
         return 1;
 
     bool smoothCameraFollow = true;
@@ -3765,10 +3829,46 @@ int runSettingsProgressionAndSettlementSelfTests(
     const std::array<float, 6> cameraAspects{{
         4.0f / 3.0f, 16.0f / 9.0f, 21.0f / 9.0f,
         1.0f, 8.0f / 9.0f, 9.0f / 16.0f}};
-    const std::array<XZ, 2> diagonalSeparations{{
+    const std::array<XZ, 4> cameraSeparations{{
+        {0.0f, 0.0f}, {4.0f, 0.0f},
         {24.25f, 24.25f}, {24.25f, -24.25f}}};
+    const auto foregroundAheadOfNearPlane = [](const Camera3D &camera,
+                                              float aspect) {
+        const Vector3 forward = Vector3Normalize(
+            Vector3Subtract(camera.target, camera.position));
+        const Vector3 right = Vector3Normalize(
+            Vector3CrossProduct(forward, camera.up));
+        const Vector3 up = Vector3CrossProduct(right, forward);
+        for (const float horizontal : {-1.0f, 1.0f})
+        {
+            for (const float vertical : {-1.0f, 1.0f})
+            {
+                const Vector3 screenPlanePoint = Vector3Add(
+                    camera.target, Vector3Add(
+                        Vector3Scale(right, horizontal * camera.fovy *
+                                               aspect * 0.5f),
+                        Vector3Scale(up, vertical * camera.fovy * 0.5f)));
+                // Intersect the four actual orthographic corner rays with
+                // the apron and a plane above tanks/canopies. Their camera
+                // depth must remain ahead of raylib's 0.01 near plane.
+                for (const float height : {-0.12f, 2.0f})
+                {
+                    const float distance =
+                        (height - screenPlanePoint.y) / forward.y;
+                    const Vector3 point = Vector3Add(
+                        screenPlanePoint, Vector3Scale(forward, distance));
+                    if (Vector3DotProduct(
+                            Vector3Subtract(point, camera.position),
+                            forward) <= 0.01f)
+                        return false;
+                }
+            }
+        }
+        return true;
+    };
     bool resizedCoopFramingSafe = true;
-    bool landscapeFramingUnchanged = true;
+    bool widerLandscapeFramingCorrect = true;
+    bool foregroundDepthSafe = true;
     for (int yawDegrees = kCameraYawMinimumDegrees;
          yawDegrees <= kCameraYawMaximumDegrees;
          yawDegrees += kCameraYawStepDegrees)
@@ -3789,10 +3889,23 @@ int runSettingsProgressionAndSettlementSelfTests(
             const Vector3 up = Vector3CrossProduct(right, forward);
             for (float aspect : cameraAspects)
             {
-                for (const XZ separation : diagonalSeparations)
+                for (const XZ separation : cameraSeparations)
                 {
                     const float span = gameplayCameraSpan(
                         separation, yawDegrees, elevationDegrees, aspect);
+                    const GameplayCameraElevationGeometry geometry =
+                        gameplayCameraElevationGeometry(elevationDegrees,
+                                                         span);
+                    const CameraPlanarBasis basis =
+                        cameraPlanarBasis(yawDegrees);
+                    Camera3D expandedCamera = camera;
+                    expandedCamera.fovy = span;
+                    expandedCamera.position = {
+                        camera.target.x + basis.offsetX * geometry.depthOffset,
+                        camera.target.y + geometry.verticalOffset,
+                        camera.target.z + basis.offsetZ * geometry.depthOffset};
+                    foregroundDepthSafe = foregroundDepthSafe &&
+                        foregroundAheadOfNearPlane(expandedCamera, aspect);
                     const Vector3 playerOffset{
                         separation.x * 0.5f, 0.0f,
                         separation.z * 0.5f};
@@ -3808,32 +3921,60 @@ int runSettingsProgressionAndSettlementSelfTests(
                     if (aspect == 16.0f / 9.0f)
                     {
                         const float previousSpan = std::clamp(
-                            std::max({kSoloCameraSpan,
+                            std::max({15.5f,
                                       projectedUp * 2.0f + 4.5f,
                                       (projectedRight * 2.0f + 6.0f) /
                                           aspect}),
-                            kSoloCameraSpan, 38.0f);
-                        landscapeFramingUnchanged =
-                            landscapeFramingUnchanged &&
-                            std::fabs(span - previousSpan) < 0.0001f;
+                            15.5f, 38.0f);
+                        widerLandscapeFramingCorrect =
+                            widerLandscapeFramingCorrect &&
+                            std::fabs(span - std::max(18.5f, previousSpan)) <
+                                0.0001f;
                     }
                 }
             }
         }
     }
-    if (!checkTest(resizedCoopFramingSafe && landscapeFramingUnchanged,
+    if (!checkTest(resizedCoopFramingSafe && widerLandscapeFramingCorrect,
                    "resized co-op view crops a tank or its framing margin, "
-                   "or changes the existing 16:9 composition"))
+                   "or changes more than the minimum 16:9 camera span"))
+        return 1;
+    constexpr float regressionAspect = 640.0f / 900.0f;
+    const float regressionSpan = gameplayCameraSpan(
+        {24.25f, -24.25f}, 0, 40, regressionAspect);
+    const GameplayCameraElevationGeometry regressionGeometry =
+        gameplayCameraElevationGeometry(40, regressionSpan);
+    Camera3D regressionCamera{};
+    regressionCamera.target = {13.0f, kGameplayCameraTargetHeight, 13.0f};
+    regressionCamera.position = {
+        13.0f, kGameplayCameraTargetHeight + regressionGeometry.verticalOffset,
+        13.0f + regressionGeometry.depthOffset};
+    regressionCamera.up = {0, 1, 0};
+    regressionCamera.fovy = regressionSpan;
+    regressionCamera.projection = CAMERA_ORTHOGRAPHIC;
+    Camera3D fixedOrbitCamera = regressionCamera;
+    fixedOrbitCamera.position = Vector3Add(
+        regressionCamera.target,
+        Vector3Scale(Vector3Normalize(Vector3Subtract(
+                         regressionCamera.position, regressionCamera.target)),
+                     kGameplayCameraOrbitDistance));
+    if (!checkTest(foregroundDepthSafe &&
+                       !foregroundAheadOfNearPlane(fixedOrbitCamera,
+                                                  regressionAspect) &&
+                       foregroundAheadOfNearPlane(regressionCamera,
+                                                  regressionAspect),
+                   "wide portrait near plane clips foreground terrain or "
+                   "no longer reproduces the fixed-orbit regression"))
         return 1;
     const float fallbackCameraSpan = gameplayCameraSpan(
-        diagonalSeparations[0], 45, 70, 16.0f / 9.0f);
+        cameraSeparations[2], 45, 70, 16.0f / 9.0f);
     bool invalidCameraAspectsUseFallback = true;
     for (float aspect : std::array<float, 4>{{
              0.0f, -1.0f, std::numeric_limits<float>::infinity(),
              std::numeric_limits<float>::quiet_NaN()}})
     {
         invalidCameraAspectsUseFallback = invalidCameraAspectsUseFallback &&
-            gameplayCameraSpan(diagonalSeparations[0], 45, 70, aspect) ==
+            gameplayCameraSpan(cameraSeparations[2], 45, 70, aspect) ==
                 fallbackCameraSpan;
     }
     if (!checkTest(invalidCameraAspectsUseFallback &&
@@ -11296,8 +11437,132 @@ struct FakeViewTargetAllocator
     }
 };
 
+struct SteelTileGeometryCacheTestAccess
+{
+    static std::size_t size(const SteelTileGeometryCache &cache)
+    {
+        return static_cast<std::size_t>(std::count_if(
+            cache.entries_.begin(), cache.entries_.end(),
+            [](const auto &entry) { return entry.key >= 0; }));
+    }
+
+    static bool hasConsistentIndex(const SteelTileGeometryCache &cache)
+    {
+        for (std::size_t slot = 0; slot < cache.entries_.size(); ++slot)
+        {
+            const auto &entry = cache.entries_[slot];
+            if (entry.key >= 0 && cache.slots_[entry.key] != static_cast<int>(slot) + 1)
+                return false;
+            if (entry.key < 0 && !entry.geometry.triangles.empty())
+                return false;
+        }
+        for (std::size_t key = 0; key < cache.slots_.size(); ++key)
+        {
+            const int slot = cache.slots_[key] - 1;
+            if (slot >= 0 && (slot >= static_cast<int>(cache.entries_.size()) ||
+                             cache.entries_[slot].key != static_cast<int>(key)))
+                return false;
+        }
+        return true;
+    }
+
+    static bool containsOrdinaryOrigin(const SteelTileGeometryCache &cache)
+    {
+        return cache.slots_[0] != 0;
+    }
+};
+
 int runViewTargetAllocationSelfTests()
 {
+    {
+        SteelTileGeometryCache cache;
+        const auto sameGeometry = [](const SteelTileGeometry &a,
+                                     const SteelTileGeometry &b) {
+            if (a.shadowTriangleCount != b.shadowTriangleCount ||
+                a.triangles.size() != b.triangles.size())
+                return false;
+            const auto samePoint = [](Vector3 x, Vector3 y) {
+                return x.x == y.x && x.y == y.y && x.z == y.z;
+            };
+            for (std::size_t index = 0; index < a.triangles.size(); ++index)
+            {
+                const auto &x = a.triangles[index];
+                const auto &y = b.triangles[index];
+                if (!samePoint(x.normal, y.normal) || x.color.r != y.color.r ||
+                    x.color.g != y.color.g || x.color.b != y.color.b || x.color.a != y.color.a)
+                    return false;
+                for (std::size_t vertex = 0; vertex < x.points.size(); ++vertex)
+                    if (!samePoint(x.points[vertex], y.points[vertex]))
+                        return false;
+            }
+            return true;
+        };
+        // The most steel-heavy original map has 176 cells. Shadow and visible
+        // passes must reuse the allocations, rather than thrash a smaller LRU.
+        std::array<const SteelTileTriangle *, 176> warmAllocations{};
+        for (std::size_t cell = 0; cell < warmAllocations.size(); ++cell)
+        {
+            const int row = static_cast<int>(cell)/kMapSize;
+            const int column = static_cast<int>(cell)%kMapSize;
+            warmAllocations[cell] = cache.get(row, column, false).triangles.data();
+        }
+        bool reused = true;
+        for (int pass = 0; pass < 2; ++pass)
+            for (std::size_t cell = 0; cell < warmAllocations.size(); ++cell)
+                reused &= cache.get(static_cast<int>(cell)/kMapSize,
+                                    static_cast<int>(cell)%kMapSize, false).triangles.data() ==
+                          warmAllocations[cell];
+        if (!checkTest(reused && SteelTileGeometryCacheTestAccess::size(cache) == 176 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache),
+                       "whole-map steel shadow and visible passes reuse warm geometry"))
+            return 1;
+
+        const SteelTileGeometry ordinary = cache.get(0, 0, false);
+        const SteelTileGeometry &permanent = cache.get(0, 0, true);
+        bool steelTags = true;
+        for (const auto &triangle : permanent.triangles)
+            steelTags &= triangle.color.a == 10;
+        bool sameShadow = ordinary.shadowTriangleCount == permanent.shadowTriangleCount;
+        for (std::size_t index = 0; sameShadow && index < ordinary.shadowTriangleCount; ++index)
+        {
+            const auto &a = ordinary.triangles[index];
+            const auto &b = permanent.triangles[index];
+            for (std::size_t vertex = 0; vertex < a.points.size(); ++vertex)
+                sameShadow &= a.points[vertex].x == b.points[vertex].x &&
+                              a.points[vertex].y == b.points[vertex].y &&
+                              a.points[vertex].z == b.points[vertex].z;
+        }
+        if (!checkTest(permanent.triangles.size() > ordinary.triangles.size() && steelTags &&
+                       sameShadow && sameGeometry(ordinary, cache.get(0, 0, false)),
+                       "permanent steel keeps its trim and material without replacing ordinary steel"))
+            return 1;
+
+        // Evict the oldest cell and check its rebuilt geometry against the
+        // original cold result, including full normals and material tags.
+        for (int cell = 1; cell <= 256; ++cell)
+            cache.get(cell/kMapSize, cell%kMapSize, false);
+        if (!checkTest(SteelTileGeometryCacheTestAccess::size(cache) == 256 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache) &&
+                       !SteelTileGeometryCacheTestAccess::containsOrdinaryOrigin(cache) &&
+                       sameGeometry(ordinary, cache.get(0, 0, false)),
+                       "bounded steel cache preserves cold geometry after eviction and revisit"))
+            return 1;
+        cache.clear();
+        if (!checkTest(SteelTileGeometryCacheTestAccess::size(cache) == 0 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache) &&
+                       sameGeometry(ordinary, cache.get(0, 0, false)) &&
+                       SteelTileGeometryCacheTestAccess::size(cache) == 1 &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache),
+                       "clearing the steel cache releases geometry and resets lookup slots"))
+            return 1;
+        const std::size_t cachedCells = SteelTileGeometryCacheTestAccess::size(cache);
+        const SteelTileGeometry outside = cache.get(-1, kMapSize, true);
+        if (!checkTest(SteelTileGeometryCacheTestAccess::size(cache) == cachedCells &&
+                       sameGeometry(outside, buildSteelTileGeometry(-1, kMapSize, true)) &&
+                       SteelTileGeometryCacheTestAccess::hasConsistentIndex(cache),
+                       "out-of-map steel diagnostics use a bounded fallback without corrupting slots"))
+            return 1;
+    }
     {
         // Compare the terrain rejection against raylib's actual screen
         // projection across the selectable camera orbit, including tall
@@ -11340,9 +11605,11 @@ int runViewTargetAllocationSelfTests()
             return true;
         };
         for (const Vector3 focus : {
+                 Vector3{0.875f, kGameplayCameraTargetHeight, 0.875f},
                  Vector3{0.875f, kGameplayCameraTargetHeight, 25.125f},
                  Vector3{13.0f, kGameplayCameraTargetHeight, 13.0f},
-                 Vector3{25.125f, kGameplayCameraTargetHeight, 0.875f}})
+                 Vector3{25.125f, kGameplayCameraTargetHeight, 0.875f},
+                 Vector3{25.125f, kGameplayCameraTargetHeight, 25.125f}})
         {
             for (const Vector2 viewport : {Vector2{1280, 720},
                                            Vector2{720, 1280},
@@ -11355,8 +11622,6 @@ int runViewTargetAllocationSelfTests()
                         cameraPlanarBasis(yawDegrees);
                     for (const int elevationDegrees : {40, 50, 70})
                     {
-                        const GameplayCameraElevationGeometry geometry =
-                            gameplayCameraElevationGeometry(elevationDegrees);
                         const float coopSpan = std::max(
                             gameplayCameraSpan({24.25f, 24.25f}, yawDegrees,
                                                elevationDegrees, aspect),
@@ -11366,6 +11631,9 @@ int runViewTargetAllocationSelfTests()
                             viewport.x < viewport.y && coopSpan > 38.0f;
                         for (const float span : {kSoloCameraSpan, coopSpan})
                         {
+                            const GameplayCameraElevationGeometry geometry =
+                                gameplayCameraElevationGeometry(elevationDegrees,
+                                                                 span);
                             for (const float shake : {0.0f, 0.12f})
                             {
                                 Camera3D camera{};
@@ -11552,6 +11820,76 @@ int runViewTargetAllocationSelfTests()
     return 0;
 }
 
+int runEnemyNationSelfTests(const fs::path &resourceRoot)
+{
+    struct NationCase
+    {
+        int playerCount;
+        std::array<Nation, 2> players;
+        std::array<Nation, 2> enemies;
+    };
+    using N = Nation;
+    const std::array<NationCase, 9> cases{{
+        {1, {{N::UnitedStates, N::SovietUnion}}, {{N::SovietUnion, N::Germany}}},
+        {1, {{N::SovietUnion, N::Germany}}, {{N::UnitedStates, N::Germany}}},
+        {1, {{N::Germany, N::UnitedStates}}, {{N::UnitedStates, N::SovietUnion}}},
+        {2, {{N::UnitedStates, N::SovietUnion}}, {{N::Germany, N::Germany}}},
+        {2, {{N::UnitedStates, N::Germany}}, {{N::SovietUnion, N::SovietUnion}}},
+        {2, {{N::SovietUnion, N::Germany}}, {{N::UnitedStates, N::UnitedStates}}},
+        {2, {{N::UnitedStates, N::UnitedStates}}, {{N::SovietUnion, N::Germany}}},
+        {2, {{N::SovietUnion, N::SovietUnion}}, {{N::UnitedStates, N::Germany}}},
+        {2, {{N::Germany, N::Germany}}, {{N::UnitedStates, N::SovietUnion}}},
+    }};
+    for (const NationCase &test : cases)
+    {
+        Game3D game(resourceRoot, 0xead10000U);
+        if (!checkTest(game.start(test.playerCount, 3, 1, test.players),
+                       game.lastError()))
+            return 1;
+        for (int index = 0; index < kEnemiesPerStage; ++index)
+        {
+            Enemy enemy;
+            if (!checkTest(Game3DTestAccess::sampleRandomEnemy(game, enemy) &&
+                               enemy.id == index &&
+                               game.enemyNation(enemy.id) ==
+                                   test.enemies[static_cast<std::size_t>(index % 2)],
+                           "spawned enemy did not alternate opposing nations"))
+                return 1;
+        }
+        const SessionDigest beforeLookup = game.sessionDigest();
+        const int lastId = game.enemies().front().id;
+        const Nation lastNation = game.enemyNation(lastId);
+        if (!checkTest(game.sessionDigest() == beforeLookup,
+                       "looking up enemy nation mutated the session"))
+            return 1;
+        for (int index = 0; index < test.playerCount; ++index)
+            Game3DTestAccess::setPlayerDeathEntryState(
+                game, index, index, false, 0, 0.0f);
+        if (!checkTest(game.enemyNation(lastId) == lastNation,
+                       "player defeat changed an existing enemy's nation"))
+            return 1;
+        for (bool restart : {false, true})
+        {
+            Enemy first;
+            if (!checkTest((restart ? game.restart() : game.changeStage(1)) &&
+                               Game3DTestAccess::sampleRandomEnemy(game, first) &&
+                               first.id == 0 &&
+                               game.enemyNation(first.id) == test.enemies[0],
+                           "stage change or restart lost opposing nations"))
+                return 1;
+        }
+        const SessionDigest beforeRejectedStart = game.sessionDigest();
+        Game3DTestAccess::rejectStageLoads(game);
+        if (!checkTest(!game.start(2, 3, 1, {{N::Germany, N::SovietUnion}}) &&
+                           game.enemyNation(0) == test.enemies[0] &&
+                           game.enemyNation(1) == test.enemies[1] &&
+                           game.sessionDigest() == beforeRejectedStart,
+                       "rejected new game changed the enemy nation pool"))
+            return 1;
+    }
+    return 0;
+}
+
 int runVehicleMetadataSelfTests()
 {
     if (!checkTest(std::string(wwii_tank_model::vehicleName(true, 0)) == "PANZER II AUSF. F" &&
@@ -11628,6 +11966,32 @@ int runVehicleMetadataSelfTests()
                        wwii_tank_model::muzzleDistance(true, 2) < 1.10f,
                    "enemy arcade short-gun muzzle alignment is incorrect"))
         return 1;
+
+    using Vehicle = wwii_tank_model::Vehicle;
+    const std::array<std::array<Vehicle, 4>, 3> expectedEnemyVehicles{{
+        {{Vehicle::M4A3Sherman, Vehicle::M24Chaffee,
+          Vehicle::M26Pershing, Vehicle::T28T95}},
+        {{Vehicle::T3485, Vehicle::T70, Vehicle::IS2, Vehicle::KV5Project}},
+        {{Vehicle::PanzerIIF, Vehicle::Sdkfz231SixRad,
+          Vehicle::PanzerIIIL, Vehicle::TigerIE}},
+    }};
+    for (std::size_t nationIndex = 0; nationIndex < kSelectableNations.size(); ++nationIndex)
+    {
+        const Nation nation = kSelectableNations[nationIndex];
+        for (int type = 0; type < kEnemyTypeCount; ++type)
+        {
+            const Vehicle expected = expectedEnemyVehicles[nationIndex]
+                [static_cast<std::size_t>(type)];
+            if (!checkTest(
+                    wwii_tank_model::enemyVehicle(nation, type) == expected &&
+                        wwii_tank_model::enemyMuzzleDistance(nation, type) ==
+                            wwii_tank_model::muzzleDistanceForVehicle(expected) &&
+                        wwii_tank_model::enemyMuzzleHeight(nation, type) ==
+                            wwii_tank_model::muzzleHeightForVehicle(expected),
+                    "enemy nation/type model or muzzle attachment is incorrect"))
+                return 1;
+        }
+    }
     return 0;
 }
 
@@ -11678,6 +12042,11 @@ int runSelfTests(const fs::path &resourceRoot,
     if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,
                                  "national-visual-contracts", [&]() {
             return runNationalVisualContractSelfTests(resourceRoot);
+        }) != 0)
+        return 1;
+    if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,
+                                 "opposing-enemy-nations", [&]() {
+            return runEnemyNationSelfTests(resourceRoot);
         }) != 0)
         return 1;
     if (runSelectedSelfTestSuite(selection, SelfTestSelection::Unit,

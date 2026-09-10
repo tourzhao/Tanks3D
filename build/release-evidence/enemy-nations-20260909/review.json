@@ -1,0 +1,71 @@
+{
+  "review": "Opposing national enemy vehicles",
+  "base_commit": "332a7a8",
+  "setup": {
+    "stage": 1,
+    "viewport": [
+      1280,
+      720
+    ],
+    "fixed_visual_clock": 12,
+    "players": 1,
+    "staged_enemy_ids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "enemy_type": "id / 2",
+    "upper_row": "even enemy IDs, first unselected nation",
+    "lower_row": "odd enemy IDs, second unselected nation",
+    "role_columns": [
+      "basic",
+      "fast",
+      "power",
+      "armor"
+    ]
+  },
+  "checks": {
+    "make_clean_then_test": {
+      "suites": 244,
+      "checks": 15620,
+      "passed": true
+    },
+    "make_test_sanitize": {
+      "suites": 19,
+      "checks": 13978,
+      "passed": true
+    },
+    "native_review": [
+      "PASS rendered two-player movement/fire, pause, pickups, battle report, next stage and menu",
+      "PASS all three solo factions, both opposing nations, four enemy roles and firing"
+    ]
+  },
+  "screenshots": [
+    {
+      "path": "opponents-for-USA.png",
+      "sha256": "3266f4abcc2134fb6c2f1960c3365db4e5da7952d34e6958b47cfb05c9f3cd5f"
+    },
+    {
+      "path": "opponents-for-USSR.png",
+      "sha256": "e1ce2046bbaf493f57324eb419bc053f6e64d61bda9cce92ab36fe3b570d74b3"
+    },
+    {
+      "path": "opponents-for-GERMANY.png",
+      "sha256": "4f8fdc14b3086e24d7672e03a116d465c35ea3104ba248abc53f839f1ab0ebe3"
+    },
+    {
+      "path": "opponents-for-GERMANY-firing.png",
+      "sha256": "d07aafa8ea059a461cabb1e7b46cec0472e8abda9c792c256ef1acabc9e8f2e7"
+    }
+  ],
+  "source_sha256": {
+    "src/core/nation.h": "aa58b504bf6e9da2575613039253a2ef20c3d97483b835244596dac3dd2fc403",
+    "src/main.cpp": "64fc197c184852b17912731c0a82cfe01f74d65fbd516749471cd7d0993b5e24",
+    "src/wwii_tank_model.h": "1dfffeb09c97def3a6f28822997d7322bfd45e129aab9cb036106793ea121b45"
+  }
+}

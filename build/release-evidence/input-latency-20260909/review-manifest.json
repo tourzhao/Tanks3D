@@ -1,0 +1,49 @@
+{
+  "baseline_commit": "3900f1b9836ef2337b3d7b6f9f2d10ac81b56f6f",
+  "source_sha256": {
+    "src/main.cpp": "d2e079d8a4e1026ac14715f6a2fae22444b3ecf9deef0a2de6ad73ea9fcbac5b",
+    "src/environment_assets.h": "a38894fac127f2851b0699140aa1e52a853939e5994da015f043cb35280435ad",
+    "src/post_process.h": "a5adff353333b5c7c0cfa680c65eb0d38f715e4603f689404c471faadfb55540",
+    "src/platform/macos_gamepad_backend.mm": "aacffa7eb2b853e88b290b0af4dd36269f7e871e22fdc6e82bf131befdda80c5",
+    "src/platform/gamepad_event_accumulator.h": "08f4255116191512f97c42b6290de0013dd125f571073cae6e25848e78ba96c9",
+    "src/app/input_adapter.cpp": "f0dd997e656140cbb0919a3389e41d2a1473eb7247b480f709b3ead7bc04da0b",
+    "tests/self_tests.inl": "fee059d5eaeeda6778c738c179a42c607d93341207f1ea54be3b1eaad19a6dcf"
+  },
+  "runtime_images_identical": true,
+  "runtime_image_sha256": {
+    "advanced-640x900-off.png": "04a1254599f42932d43ae4ca37e30389896206c38cc4ef459d394eb6f28e1730",
+    "pickups-runtime.png": "a07ce4662250c6329b908c0d82357abb30f6889d53a376b11ffa83d967e20c77",
+    "solo-stage35-off.png": "075971c763dfc263b1601ed2ca06ea9c6d4de9893ce1b9bcc2dcda8debe4ea3c",
+    "advanced-900x600-on.png": "e97115af9ccc73ab42c76c142b9d026dd8f0b339aade1d8741d7cbbda05c0b67",
+    "controls-runtime.png": "d89738b603a6a4d49777f894c2ec4aa92ed0e18e4b773618e43cd12cee836f53",
+    "battlefield-off.png": "27baffb9e534ca024cbddcd37b79024bbf3f8a1095a4107c49c0b448327a6f1d",
+    "menu-runtime.png": "a9b593db3821822772189848a8a01f0090f7918ce7c5d489b9e487d58c184bb8",
+    "settlement-runtime.png": "60625805b4046eea75473ebea78a50174ea21d7f76ad9187dbb0c9fd26adf5e3",
+    "advanced-800x500-on.png": "63a078b9c709b1de1c9808d15666c5a62f6b2dfd8364f2b94b79edf62bc73b20",
+    "advanced-1280x720-off.png": "5a04d5667367d7b9b8aeed74d3f6d724d1e3e878a9343a555ba9b30cc19eaac1",
+    "coop-stage1-runtime.png": "00a1520b2cca5c74b969535b5c7db4c2bda791bd6593b158a6c69eb24cec4d8c",
+    "battlefield-on.png": "fa74cf699c476254da8d19d51fe0f54f2a7c4614fd613aa970ae4ed9a54bfd09",
+    "stage-transition-runtime.png": "70c7862361c76e556c5ce5cc627f05d4c9f0b1c670dab936dba84d21b2bd2765",
+    "advanced-1280x720-on.png": "3d052c88ebf3c50af39dfa3cbd217f3f0fbe2cde1b494820e448e3dfec96dd6d",
+    "advanced-900x600-off.png": "78abc4a91279816e1d9987af9263ec64c83b5ad2a3dba6dcd6949d1c497807b2",
+    "pause-runtime.png": "15b12cbc6c7626c127c69d7d37755cc1dd625da6a24209454fd01d4494c640f7",
+    "solo-stage35-on.png": "8e743bfc060fca786733f53334aaa43256ed1064becf7b4c90cc683cdf5cb3a9",
+    "advanced-640x900-on.png": "102a10101e9b9c4823070e9974ca6fc6f17ec3559df0cb8c88727d5608aa3da7",
+    "advanced-800x500-off.png": "4da7c54325dbd310545ad250581d9e1dbf043f2445454aed217162a239debc77"
+  },
+  "validation": {
+    "make_test_suites": 239,
+    "make_test_checks": 15266,
+    "asan_ubsan_integrated_checks": 13732,
+    "forest_geometry_stream_cases": 18252,
+    "steel_geometry_stream_cases": 2704
+  },
+  "controller_observation": {
+    "name": "Pro Controller",
+    "category": "Switch Pro Controller",
+    "connection": "Bluetooth (reported by user)",
+    "probe_seconds": 4,
+    "change_callbacks_observed": 0,
+    "end_to_end_latency_measured": false
+  }
+}

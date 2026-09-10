@@ -36,9 +36,21 @@ active prefix, pass `RAYLIB_PREFIX=/path/to/raylib` to `make`.
 
 In **Advanced Settings**, **View Horizontal** selects -45° to +45° and
 **View Elevation** selects 40° to 70°, both in 5° steps. The default is 0°
-horizontal and 50° elevation. Tank movement remains in four map directions;
-the gamepad left stick follows the selected view. The shared co-op camera
-tracks both players and expands to keep them visible.
+horizontal and 50° elevation. The minimum orthographic view spans 18.5 world
+units vertically, about 19% wider than the previous 15.5-unit view at the same
+angle. Tank movement remains in four map directions; the gamepad left stick
+follows the selected view. The camera follows the solo tank or the co-op
+midpoint even at map edges. Co-op expands beyond the minimum to keep both
+players visible, including uncapped expansion in narrow portrait windows.
+At large spans the camera retreats along the same viewing axis so its near
+plane cannot cut through foreground terrain; the normal 18.5-unit view keeps
+its original camera position.
+
+**Pixel Style** in Advanced Settings switches the gameplay scene between the
+full-detail view (**OFF**, the default) and a crisp pixel grid (**ON**). Use left,
+right or the confirm button to toggle it. Reset restores OFF. The choice stays
+active while returning to setup, restarting or advancing stages in the current
+app session. HUD text and menus remain sharp in either mode.
 
 For a quick two-player stage 10 preview after building:
 
@@ -60,6 +72,14 @@ and sanitizers before submitting refactors. Focused targets include
 `test-release-status`; `make coverage` reports production coverage. Visual
 changes also require checking menus, one/two-player controls, pause, pickups,
 stage completion and the battle report.
+
+`make test-tank-drawing` checks legacy and explicit-national drawing calls by
+recording their complete geometry commands without opening a GPU window.
+It runs with `make test` and coverage; `make test-sanitize` also runs it and
+the standalone nation-selection boundary cases under ASan/UBSan. Coverage keeps
+the drawing test's profile separate and prints a second report for the two
+rendering headers, including legacy overloads unused by the main executable.
+These supplementary counts are not merged into the main production report.
 
 Keep generated screenshots, binaries and reports under `build/`. `make clean`
 preserves `build/release/` and `build/release-evidence/`; other build outputs

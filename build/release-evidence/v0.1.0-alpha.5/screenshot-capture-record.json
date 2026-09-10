@@ -1,0 +1,93 @@
+{
+  "candidate_sha256": "d82b1ca75e6b9503fdfbe84baf32f2f7a6e3ea7a042d8a7a438cb7be501e59d8",
+  "source_commit": "cc5f2a7eec073accf37c2085c10bf155061acef2",
+  "binary_sha256": "9b296ffac129d8dc02ba916c325a68f073fa092f9f022c396326163c98ba119b",
+  "captures": [
+    {
+      "name": "one-player",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--quick-start",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/one-player.png",
+        "--release-screenshot-frame=600"
+      ],
+      "sha256": "a6d3a0a6a7302e6b9d804154c24818d52132be06c3bb5d0ba6f590781adaa834"
+    },
+    {
+      "name": "two-player",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--quick-start-2p",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/two-player.png",
+        "--release-screenshot-frame=600"
+      ],
+      "sha256": "c58d45f1f6b934e2043f72f6bb10b5860e45f2a77dea0fec4a63ab1b50dc40ce"
+    },
+    {
+      "name": "base-usa",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--camera-elevation=60",
+        "--quick-start",
+        "--base-damage-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/base-usa.png",
+        "--release-screenshot-frame=2"
+      ],
+      "sha256": "00336fc22b1773ac91b08b5b568239922b2e59edc23af9470d904ffcd012b853"
+    },
+    {
+      "name": "base-ussr",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--camera-elevation=60",
+        "--quick-start-ussr",
+        "--base-damage-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/base-ussr.png",
+        "--release-screenshot-frame=2"
+      ],
+      "sha256": "95f52272b6bae5596b8d4d0c05c7a5313ffaeee14a855729e5ca6738acc3c801"
+    },
+    {
+      "name": "base-germany",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--camera-elevation=60",
+        "--quick-start-germany",
+        "--base-damage-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/base-germany.png",
+        "--release-screenshot-frame=2"
+      ],
+      "sha256": "a903da9bd6187015ae1016b34d5c8701a5b43d5fcfdd90b854e49baeb288ac6b"
+    },
+    {
+      "name": "bonuses",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--quick-start",
+        "--bonus-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/bonuses.png",
+        "--release-screenshot-frame=2"
+      ],
+      "sha256": "06ff40a1b0ed42f4e2127cbd5d4c2f673d778d8a33d3439b504c396dd3606de0"
+    },
+    {
+      "name": "settlement",
+      "command": [
+        "/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/candidate-capture/Tanks3D.app/Contents/MacOS/Tanks3D",
+        "--stage=1",
+        "--quick-start-2p",
+        "--settlement-showcase",
+        "--release-screenshot=/Users/tzhao80/Desktop/VCP/3D_Tank_Game/build/release-evidence/v0.1.0-alpha.5/screenshots/settlement.png",
+        "--release-screenshot-frame=2"
+      ],
+      "sha256": "d941f9998cad308a52e88ab67050f1fc92f6c389a67efcadaf3328ccf098c885"
+    }
+  ],
+  "scope": "Publication previews; bases, bonuses and settlement use staged showcases. No human QA result."
+}

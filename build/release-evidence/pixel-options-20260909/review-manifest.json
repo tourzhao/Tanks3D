@@ -1,0 +1,39 @@
+{
+  "baseline_commit": "73c0518aae3d7b63028e824b60c0a151666f4659",
+  "source_sha256": {
+    "src/main.cpp": "9a28dbfe53f81202050689ae90d80ebded85e2ddc5dfcd5d22ebb5d6959ed2e8",
+    "src/post_process.h": "a5adff353333b5c7c0cfa680c65eb0d38f715e4603f689404c471faadfb55540",
+    "tests/self_tests.inl": "42274283f15879967c70d1f16374e1b72bad75ce818624562e1045574f480faa"
+  },
+  "artifact_sha256": {
+    "gameplay-coop.png": "27baffb9e534ca024cbddcd37b79024bbf3f8a1095a4107c49c0b448327a6f1d",
+    "gameplay-pixel.png": "fa74cf699c476254da8d19d51fe0f54f2a7c4614fd613aa970ae4ed9a54bfd09",
+    "gameplay-solo.png": "075971c763dfc263b1601ed2ca06ea9c6d4de9893ce1b9bcc2dcda8debe4ea3c",
+    "advanced-settings.png": "3d052c88ebf3c50af39dfa3cbd217f3f0fbe2cde1b494820e448e3dfec96dd6d",
+    "sampling-qa.json": "3c9a41c51c012072519ddd197a11cf8a680dcd1c33b0875e20080ae2a8287d9e"
+  },
+  "make_test": {
+    "suites": 239,
+    "checks": 15261
+  },
+  "native_runtime_review": "passed",
+  "advanced_menu_sizes": [
+    [
+      1280,
+      720
+    ],
+    [
+      900,
+      600
+    ],
+    [
+      640,
+      900
+    ],
+    [
+      800,
+      500
+    ]
+  ],
+  "paired_scene_time_seconds": 12
+}
