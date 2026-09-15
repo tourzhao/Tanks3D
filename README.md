@@ -1,27 +1,26 @@
 # Tanks 3D
 
 Arcade tank combat on destructible 3D battlefields for macOS. Defend your
-headquarters, upgrade through three national tank lines, and play solo or
-local co-op across the 35 original Battle City battlefield layouts.
+headquarters, upgrade through three national tank lines, and play solo, with an
+AI teammate, or in local/LAN co-op across the 35 original Battle City layouts.
 
 ## Current development preview
 
-**These screenshots were exported from the latest Alpha 5 candidate.**
-Rebuilt tanks and terrain, layered battle effects, an optional crisp pixel
-finish, a wider adjustable camera and the original Battle City maps are newer
-than the downloadable Alpha 4 release.
-[Build the current version](#build-and-play-current-version) to play with
-the visuals shown here.
+**These images show the current development source.** The unified arcade tank
+roster, redesigned pickup badges, LAN play and native rule-based AI teammate
+are available when you [build the current version](#build-and-play-current-version).
+They are not included in the published Alpha 4 download.
 
-[Alpha 5 candidate notes and fresh screenshots](docs/releases/v0.1.0-alpha.5.md)
-are now available for review. Its automated build gates passed; controller,
-clean-Mac, long-session, audio-owner and final approval gates remain pending.
+![Human P1 and native AI P2 in the ordinary game](build/release-evidence/github-preview-20260915/ai-p2.png)
 
-![Alpha 5: forest, river, buildings and steel on original Battle City stage 26](build/release-evidence/github-preview-20260909/forest-solo.png)
+*Normal shared game camera. P2 moves and fires autonomously; the right HUD
+identifies the AI teammate. Original 1280×720 game content with the window title
+bar retained. Select PLAYERS → AI AS P2 to try it.*
 
-*Original stage 26 at 50° elevation and 25° left rotation, with Pixel Style OFF.
-The game's built-in forest-cover showcase places the player near the trees.
-[View the two-player spawn](build/release-evidence/github-preview-20260909/battlefield-coop.png).*
+Development tests and packaging checks pass; physical controller, human/AI,
+clean-Mac and long-session release acceptance remain pending. See the
+[development review](build/release-evidence/github-preview-20260915/README.md)
+and [historical Alpha 5 candidate notes](docs/releases/v0.1.0-alpha.5.md).
 
 ## Highlights
 
@@ -37,6 +36,8 @@ The game's built-in forest-cover showcase places the player near the trees.
   clearly marked steel barriers.
 - All 35 original Battle City maps in their original order, with full-map
   radar, nine pickups, upgrades, HP, streaks and shell cancellation.
+- Optional AI P2 uses tactical rules at 20 Hz without a model or Python runtime;
+  local and LAN modes also support two human players.
 - Optional crisp pixel edges on the 3D scene, with sharp HUD text; short shell tracers,
   layered orange fire and rolling smoke distinguish combat effects.
 - A 19% wider default view, with adjustable rotation (-45° to +45°) and
@@ -45,21 +46,18 @@ The game's built-in forest-cover showcase places the player near the trees.
   battle audio uses engine sounds and effects without looping background music
   ([audio sources](ASSET_LICENSES.md#runtime-audio)).
 
-![Alpha 5: T28/T95 and IS-2 tanks in the completed two-player battle report](build/release-evidence/github-preview-20260909/battle-report.png)
+![Fourteen distinct vehicles with a shared arcade casting and paint style](build/release-evidence/github-preview-20260915/roster.png)
 
-*Battle-report preview using the game's built-in showcase after the counters
-finish animating. Tank geometry is
-original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
+*Diagnostic close-ups with fixed crops and identical camera/light settings;
+this sheet is for comparing models, not their normal gameplay size. Geometry
+is original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-![Alpha 5: a German player tank faces American and Soviet enemy vehicles](build/release-evidence/github-preview-20260909/national-enemies.png)
+![Original and redesigned pickup badges, including the Boat tug](build/release-evidence/github-preview-20260915/pickups-before-after.png)
 
-*Germany selected: four enemy roles use American and Soviet vehicles.
-Captured in the game's built-in tank showcase arena, with staged positions.*
+*Top: previous badges. Bottom: redesigned badges at native 64 px and 35 px.
+Boat now uses a connected tug hull, wheelhouse, funnel and life ring.*
 
-[Screenshot sources and capture commands](build/release-evidence/github-preview-20260909/README.md)
-· [Pixel Style ON/OFF comparison](build/release-evidence/pixel-options-20260909/README.md)
-· [Battlefield art review](build/release-evidence/battlefield-art-20260909/README.md)
-· [Tank proportion comparison](build/release-evidence/main-showcase-20260909/tank-proportions.png)
+[Image sources, capture conditions and validation](build/release-evidence/github-preview-20260915/README.md)
 
 ## Build and play current version
 
@@ -75,6 +73,37 @@ make run-app
 The project uses C++17 and raylib 6.0. `make run-app` builds and opens
 `build/Tanks3D.app`; `make run` starts the executable in the terminal. See the
 [development guide](docs/DEVELOPMENT.md) for prerequisites, tests and project layout.
+
+## Play with an AI teammate
+
+In the main menu, use Left/Right on **PLAYERS** to select **AI AS P2**, then
+press Enter to start. You control P1 with the usual keyboard or controller;
+P2 moves and fires automatically. Its nation is selectable under **P2 NATION**.
+Choose **1 PLAYER** for solo play or **2 PLAYERS** for two human players.
+
+The teammate uses the selected tactical rules in native C++, with 20 decisions
+per second and no Python, model download or ML runtime. It uses the normal
+two-player rules, lives and upgrades. This source-build feature is not included
+in the published Alpha 4 download; human cooperation is still being evaluated.
+
+## Train an AI player
+
+The source tree includes optional tools for training a player with imitation
+learning and PPO on the real headless C++ game, comparing it with scripted and
+random baselines, and watching its actions in the normal 3D renderer.
+See [AI training and evaluation](docs/AI_TRAINING.md). This is a development
+workflow, not a trained opponent bundled in the published download.
+
+## Play over a local network
+
+Build the current source and use the same `Tanks3D.app` on both Macs. Choose
+**LOCAL NETWORK → CREATE ROOM** on one computer, then enter its displayed
+IPv4 address under **LOCAL NETWORK → HOST IP** on the other. Each computer
+controls one tank; the host is P1 and the guest is P2. The existing two-player
+co-op rules and shared battlefield remain in use.
+
+[LAN setup, controls and connection troubleshooting](docs/LAN_PLAY.md).
+This feature is not included in the published Alpha 4 build.
 
 ## Download Alpha 4
 
@@ -92,7 +121,9 @@ Alpha 4 is an early pre-release and is not Apple notarized.
 ## Controls in the current version
 
 - **P1:** Arrow keys; `Space`/Right Option/Right Control fires.
-- **P2:** `WASD`; `F`/Left Option/Left Control fires.
+- **P2 (human mode):** `WASD`; `F`/Left Option/Left Control fires.
+- **AI AS P2:** Only P1 needs input; either connected controller can control P1.
+  The right HUD identifies P2 as **AI TEAMMATE**.
 - **Controller:** In battle, the left stick follows the visible map lanes at
   the selected camera angle. The D-pad and keyboard retain one button per
   world-cardinal lane; menu input is unrotated. `B`/`Y`/`R`/`ZR` fires;

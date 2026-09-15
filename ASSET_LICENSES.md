@@ -17,9 +17,12 @@ shader work by the Tanks3D project contributors, under the same root license:
 
 | Source | In-game mapping |
 | --- | --- |
-| `src/wwii_tank_model.h` | Twelve national player vehicles and four enemy roles; cast armor, continuous tracks, running gear, attachments and wear |
+| `src/chaffee_sample_model.h` | Original M24 Chaffee study, now used by the USA level-zero player and USA Fast enemy; authored casting sections, hollow belts, service panels and short hollow cannon. Also supplies mesh helpers to the roster. No external mesh or texture. |
+| `src/arcade_tank_roster.h` | Original coherent roster castings, six-wheel tires, paired T95 belts, fitted visors, service covers and armor-only identity colors. Applies to all national player tiers and enemy roles through the vehicle profiles below. |
+| `src/wwii_tank_model.h` | Fourteen named vehicle profiles, twelve national player mappings and four roles per enemy nation; original geometry facade and unchanged muzzle attachments |
 | `src/environment_assets.h` | Residential blocks, shops, workshops, damage fragments, trees and backdrop architecture |
 | `src/base_model.h` | Three national field headquarters, their command cores, wall damage and steel-protection appearance |
+| `src/bonus_assets.h` | Nine original 64×64 pickup badges: Grenade, Helmet, Clock, Shovel, Tank (extra life), Star, Gun, Boat and Bandage. The Boat pickup uses an original connected tug hull, wheelhouse, funnel and life ring. Authored by the Tanks3D project contributors; generated from C++ at runtime, with no external image or mesh. |
 | `src/main.cpp`, `src/post_process.h` | Armored redoubts, water edges, contact shadows and the shared painted lighting treatment |
 
 SNK's *Metal Slug* is an art-direction reference for compact military
@@ -27,6 +30,15 @@ machinery and richly layered arcade scenery. No SNK sprites, textures, meshes,
 logos, sound or extracted game content were imported. Reference:
 [SNK's Metal Slug page](https://www.snk-corp.co.jp/official/akeaka/titles/metalslug/).
 See `docs/ART_DIRECTION.md` for the visual design and gameplay boundaries.
+
+The Chaffee study and its roster extension were authored by the Tanks3D project contributors under
+PolyForm Noncommercial 1.0.0. Its structural reference is WAVE's
+[SV-001/I model photography](https://www.hobby-wave.com/products/gm033/);
+color grouping references SNK's
+[official Metal Slug gameplay screenshots](https://www.snk-corp.co.jp/us/games/acaneogeo/metalslug/).
+Reference photographs/screenshots are research material only, with their original
+rights retained; they are not bundled or used as in-game textures. The editable
+source and reproducible geometry are the C++ header itself.
 
 The following neutral albedo textures were generated for this project with
 OpenAI image generation and no supplied reference image:
@@ -96,3 +108,20 @@ Source: <https://poly.pizza/bundle/Animated-Tank-Pack-0tfvbeAJkU>
 
 See `LICENSES/CC0-1.0.txt`. The model's CC0 terms permit commercial reuse
 independently of the non-commercial license on project-owned code.
+
+## Locally trained player policies (development artifacts)
+
+The optional AI workflow in `training/` generates demonstrations and model
+checkpoints exclusively from this project's own C++ gameplay simulation.
+Author/source: Tanks3D project contributors and the reproducible training scripts
+in this repository. Project-owned generated data and weights use the repository's
+PolyForm Noncommercial 1.0.0 terms. No external gameplay recording, pretrained
+model, SNK asset or third-party training dataset is used.
+
+Exact local mappings, seeds, training configuration, model hashes, evaluations
+and native-rendered recordings are recorded under
+`build/release-evidence/ai-20260912/`,
+`build/release-evidence/ai-20260912-round2/` and
+`build/release-evidence/ai-20260912-round3/`. These artifacts are not part of the game
+resource manifest or the `.app` bundle. Training software keeps its own upstream
+license; see `THIRD_PARTY_NOTICES.md`.

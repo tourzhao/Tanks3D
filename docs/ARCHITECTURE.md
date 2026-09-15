@@ -12,6 +12,26 @@ A large rewrite before release would put established collision, progression, and
 rendering behavior at unnecessary risk. New features should, however, stop
 expanding the existing `Game3D` class.
 
+## LAN co-op boundary
+
+`net/lan_protocol` owns bounded versioned wire messages and input encoding;
+`net/lan_channel` implements nonblocking single-peer TCP and address reporting.
+`app/lan_session` depends on an injected channel so handshake, input latching,
+authority, flow control, timeout and digest checks also run without sockets.
+`app/lan_game_bridge.h` applies one agreed frame to the existing game API.
+`lan_menu.h` owns the connection UI; main only wires it to input, rendering,
+audio and a newly seeded `Game3D`. No networking method or state is added to
+`Game3D`, and core/game modules have no network dependency.
+
+The host orders inputs at 60 Hz. Both peers simulate those exact frames, starting
+from the host's seed, stage, lives and advanced settings plus both selected
+nations. Every 120 ticks, the existing `SessionDigest` checks rule state and RNG.
+There is no state snapshot import or client prediction; incompatible executable
+fingerprints or divergent states stop the session. Transport buffers and tick
+queues are bounded, and a lagging peer stops host advancement before a timeout.
+Offline timing/input/rendering retains its prior path. See [LAN play](LAN_PLAY.md)
+for the first version's scope and real-socket test commands.
+
 ## Current Shape and Risks
 
 The forty-nine production source/header files contain 21,236 lines.
@@ -972,3 +992,32 @@ Every migration change must keep `make clean`, `make debug`,
 `make test-architecture`, and `make test` green. Visual
 changes also require a manual one-player and two-player smoke test, including
 pause, pickups, base destruction, stage completion, and the battle report.
+
+## Optional local AI teammate
+
+`src/app/ai_player.{h,cpp}` owns the selected native tactical policy, its route
+history and 20 Hz decision clock. It reads a const map/player/enemy snapshot
+and emits `PlayerControlFrame` commands. `Game3D` owns neither the policy nor
+its history and keeps the same rules and random stream. `main.cpp` selects
+the optional mode, replaces only offline P2 input, resets on a new game/restart
+and labels its HUD. The LAN branch remains independent of this controller.
+No Python or neural assets enter the application bundle.
+
+The observation and float32/tie-breaking conventions deliberately match the
+selected Python `TacticalDefender` v1 plus HQ guard. An optional test-only
+native probe compares both policies on identical production worlds; it is not
+linked into the ordinary executable.
+
+## Optional AI training seam
+
+`src/training/native.cpp` exposes a small C ABI around a separate, headless
+Game3D instance. It currently uses the same renamed-main translation-unit seam
+as the LAN integration test, so the original simulator remains the only rules
+implementation. This target is separate from the application; Game3D and the
+normal input/render/LAN paths gain no training state. Python `training/env.py`
+wraps the ABI as a Gymnasium environment, while `policy.py`, `imitate.py` and
+`train.py` own model learning. `play.py` uses the production renderer and can
+verify seeded action replays through the existing complete gameplay digest.
+See [AI training](AI_TRAINING.md) for observation visibility, reward and episode
+contracts. Extracting GameSession later can replace the temporary integration
+seam without redesigning that external training contract.

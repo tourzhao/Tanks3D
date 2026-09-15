@@ -58,6 +58,19 @@ For a quick two-player stage 10 preview after building:
 ./build/Tanks3D --stage=10 --camera-yaw=45 --camera-elevation=70 --quick-start-2p
 ```
 
+## LAN development
+
+The main menu's **LOCAL NETWORK** entry starts IPv4 two-computer co-op.
+`--lan-host[=port]` and `--lan-join=IPv4[:port]` expose the same connection flow
+from the command line. Both peers must use the same executable build.
+See [LAN play and verification](LAN_PLAY.md) for controls and limitations.
+
+The default suite includes socket-free LAN protocol/session checks. Run
+`make test-lan-sockets` for two real processes over loopback TCP and
+`make test-lan-sockets-sanitize` for its fully instrumented version. These
+focused targets require local socket permission but no graphics context.
+`NSLocalNetworkUsageDescription` is checked in the normal app-bundle gate.
+
 ## Test
 
 ```sh
@@ -121,3 +134,35 @@ Project-owned contributions must remain compatible with the
 license, and exact in-game mapping for every new asset; see
 [asset licenses](../ASSET_LICENSES.md) and
 [third-party notices](../THIRD_PARTY_NOTICES.md).
+
+## Local AI teammate
+
+`make run-app` opens setup. Cycle **PLAYERS** to **AI AS P2** and press Enter.
+P1 keeps the normal keyboard/controller controls, and P2 uses the native port
+of the selected `TacticalDefender` v1 rules with the headquarters firing guard.
+P2's nation, starting stage, lives and advanced rules use the existing menu.
+To skip setup for a local smoke test:
+
+```sh
+make all
+./build/Tanks3D --quick-start-ai
+```
+
+The controller lives in `src/app/ai_player.{h,cpp}`. It reads const game state,
+plans at 20 Hz and supplies only P2 command input to the existing elapsed-time
+simulation. Intro, pause, respawn and report screens suspend decisions; stage
+changes and restarts reset its history. LAN sessions remain human/human.
+
+`make test` includes native menu/controller and production-world regressions.
+`make test-ai` also checks observation/action parity against the Python rule
+reference on all 35 maps and complete seeded episodes. `make test-sanitize`
+includes the native AI controller. Physical controller and human cooperation
+acceptance still require interactive play; AI/AI clears are not that acceptance.
+
+## Training an AI player
+
+[AI_TRAINING.md](AI_TRAINING.md) documents the optional C++/Gymnasium adapter,
+scripted baseline, imitation initialization, PPO training, evaluation and native
+3D recordings. Use `make ai-setup`, `make ai-native`, then `make test-ai`.
+The app does not depend on Python or ship any ML library. Generated checkpoints,
+training datasets, traces and recordings stay under `build/`.

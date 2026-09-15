@@ -1,0 +1,27 @@
+{
+  "make clean": {
+    "exit_code": 0,
+    "log": "clean.log"
+  },
+  "make -j4 test test-ai": {
+    "exit_code": 0,
+    "log": "full-tests.log",
+    "python_tests": 59
+  },
+  "make -j4 test-sanitize test-ai-sanitize": {
+    "exit_code": 0,
+    "log": "sanitizer.log"
+  },
+  "make run-app": {
+    "exit_code": 0,
+    "log": "final-run-app.log"
+  },
+  "git diff --check": {
+    "exit_code": 0
+  },
+  "prior rule evidence": {
+    "unchanged": true,
+    "verified_files": 551
+  },
+  "completed_utc": "2026-09-14T20:42:07.357372+00:00"
+}

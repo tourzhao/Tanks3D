@@ -58,7 +58,11 @@ SHELL_CANCELLATION_PRESENTATION_SOURCE := \
 SHELL_MAP_CORE_PRESENTATION_SOURCE := \
 	src/app/shell_map_core_presentation.cpp
 SHELL_TANK_PRESENTATION_SOURCE := src/app/shell_tank_presentation.cpp
-APP_SOURCES := $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
+LAN_SOURCES := src/net/lan_protocol.cpp src/net/lan_channel.cpp
+LAN_HEADERS := src/net/lan_protocol.h src/net/lan_channel.h \
+	src/app/lan_session.h src/app/lan_game_bridge.h
+LAN_SESSION_SOURCE := src/app/lan_session.cpp
+APP_SOURCES := src/app/ai_player.cpp $(LAN_SESSION_SOURCE) $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
 	$(INPUT_ADAPTER_SOURCE) \
 	$(ATOMIC_OUTPUT_FILE_SOURCE) \
 	$(RELEASE_PERFORMANCE_CAPABILITY_SOURCE) \
@@ -77,7 +81,7 @@ STAGE_MAP_SOURCE := src/game/stage_map.cpp
 PLATFORM_SOURCES := src/platform/macos_gamepad_backend.mm
 PLATFORM_HEADERS := src/platform/gamepad_backend.h \
 	src/platform/gamepad_event_accumulator.h
-SOURCES := src/main.cpp $(APP_SOURCES) \
+SOURCES := src/main.cpp $(APP_SOURCES) $(LAN_SOURCES) \
 	$(BONUS_SYSTEM_SOURCE) $(COMBAT_SYSTEM_SOURCE) $(ENEMY_SYSTEM_SOURCE) \
 	$(PLAYER_SYSTEM_SOURCE) $(SETTLEMENT_SYSTEM_SOURCE) \
 	$(STAGE_GENERATOR_SOURCE) $(STAGE_MAP_SOURCE)
@@ -85,7 +89,7 @@ OBJECTS := $(patsubst src/%.cpp,$(OBJECT_DIR)/%.o,$(SOURCES)) \
 	$(patsubst src/%.mm,$(OBJECT_DIR)/%.o,$(PLATFORM_SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
 AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
-APP_HEADERS := src/app/command_side_effect_dispatch.h \
+APP_HEADERS := src/app/ai_player.h $(LAN_HEADERS) src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
 	src/app/input_adapter.h \
 	src/app/atomic_output_file.h \
@@ -111,7 +115,7 @@ PURE_SOURCES := $(BONUS_SYSTEM_SOURCE) $(COMBAT_SYSTEM_SOURCE) \
 	$(STAGE_GENERATOR_SOURCE) \
 	$(STAGE_MAP_SOURCE)
 PURE_HEADERS := $(CORE_HEADERS) $(GAME_HEADERS)
-PRODUCTION_HEADERS := src/wwii_tank_model.h src/tank_assets.h src/base_model.h src/battle_fx.h \
+PRODUCTION_HEADERS := src/lan_menu.h src/chaffee_sample_model.h src/arcade_tank_roster.h src/wwii_tank_model.h src/tank_assets.h src/base_model.h src/battle_fx.h \
 	src/bonus_assets.h $(AUDIO_HEADERS) $(APP_HEADERS) $(PURE_HEADERS) \
 	$(PLATFORM_HEADERS) src/environment_assets.h src/post_process.h
 TEST_FILES := tests/test_support.h tests/stage_layout_expectations.h \
@@ -166,6 +170,7 @@ CORE_TEST_TARGETS := $(patsubst tests/%.cpp,build/tests/%,$(CORE_TEST_SOURCES))
 TANK_DRAW_COMPATIBILITY_TEST_SOURCE := tests/tank_draw_compatibility_tests.cpp
 TANK_DRAW_COMPATIBILITY_TEST_TARGET := build/tests/tank_draw_compatibility_tests
 TANK_DRAW_COMPATIBILITY_HEADERS := src/tank_assets.h src/wwii_tank_model.h \
+	src/chaffee_sample_model.h src/arcade_tank_roster.h \
 	src/core/nation.h tests/test_support.h $(RAYLIB_HEADER) \
 	$(RAYLIB_PREFIX)/include/rlgl.h
 BONUS_SYSTEM_TEST_SOURCE := tests/bonus_system_tests.cpp
@@ -923,11 +928,11 @@ run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER) \
 		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
 		--output-dir "$(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)"
 
-test: all test-bundle test-rules test-app test-tank-drawing \
+test: all test-bundle test-rules test-app test-tank-drawing test-lan test-ai-native test-ai-player-native \
 		test-release-performance-capabilities
 	./$(TARGET) --self-test
 
-test-unit: $(TARGET) test-rules test-app test-tank-drawing
+test-unit: $(TARGET) test-rules test-app test-tank-drawing test-lan
 	./$(TARGET) --self-test=unit
 
 test-session: $(TARGET)
@@ -949,6 +954,8 @@ test-bundle: $(APP_EXECUTABLE) $(BUNDLE_RESOURCE_MANIFEST)
 	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
 		'Print :GCSupportedGameControllers:0:ProfileName' \
 		$(APP)/Contents/Info.plist)" = "ExtendedGamepad"
+	test -n "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
+		'Print :NSLocalNetworkUsageDescription' $(APP)/Contents/Info.plist)"
 	codesign --verify --deep --strict --verbose=4 $(APP)
 
 # This exact, no-window handshake proves that the built executable exposes the
@@ -1200,12 +1207,13 @@ $(SANITIZER_DIR)/tank_draw_compatibility_tests: \
 	$(CXX) $(CPPFLAGS) -Itests -std=c++17 -Wall -Wextra -Wpedantic -Werror \
 		$(SANITIZER_FLAGS) $< -o $@
 
-test-sanitize: $(SANITIZER_TARGET) $(RUNTIME_RESOURCES) \
+test-sanitize: $(SANITIZER_TARGET) $(RUNTIME_RESOURCES) test-ai-player-sanitize $(SANITIZER_DIR)/lan_session_tests \
 		$(SANITIZER_DIR)/core_nation_tests \
 		$(SANITIZER_DIR)/tank_draw_compatibility_tests
 	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
 		UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
 		./$(SANITIZER_TARGET) --self-test
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(SANITIZER_DIR)/lan_session_tests
 	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
 		UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
 		./$(SANITIZER_DIR)/core_nation_tests
@@ -1494,8 +1502,86 @@ clean:
 	$(RM) -r $(TARGET) $(APP) $(OBJECT_DIR) $(DEBUG_DIR) \
 		$(SANITIZER_DIR) $(COVERAGE_DIR) $(DIST_DIR) build/tests \
 		$(RELEASE_SCREENSHOT_SMOKE_DIR) \
-		$(RELEASE_PERFORMANCE_SMOKE_DIR) build/verifier-path-escape.*
+		$(RELEASE_PERFORMANCE_SMOKE_DIR) build/verifier-path-escape.* build/ai
 
 -include $(DEPFILES) $(DEBUG_DEPFILES) $(SANITIZER_DEPFILES) \
 	$(COVERAGE_DEPFILES) $(RULE_IMPL_DEPFILES) \
 	$(COMPILED_COVERAGE_TEST_DEPFILES) $(DIST_DEPFILES)
+
+.PHONY: test-lan
+build/tests/lan_session_tests: tests/lan_session_tests.cpp \
+		$(LAN_HEADERS) $(PURE_HEADERS) $(LAN_SESSION_SOURCE) \
+		src/net/lan_protocol.cpp tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic -Werror $< $(LAN_SESSION_SOURCE) src/net/lan_protocol.cpp -o $@
+
+test-lan: build/tests/lan_session_tests
+	./build/tests/lan_session_tests
+
+$(SANITIZER_DIR)/lan_session_tests: tests/lan_session_tests.cpp \
+		$(LAN_HEADERS) $(PURE_HEADERS) $(LAN_SESSION_SOURCE) \
+		src/net/lan_protocol.cpp tests/test_support.h
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc -Itests -std=c++17 -Wall -Wextra -Wpedantic -Werror $(SANITIZER_FLAGS) $< $(LAN_SESSION_SOURCE) src/net/lan_protocol.cpp -o $@
+
+.PHONY: test-lan-sockets
+build/tests/lan_game_tests: tests/lan_game_tests.cpp src/main.cpp $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+
+test-lan-sockets: build/tests/lan_game_tests $(RUNTIME_RESOURCES)
+	./build/tests/lan_game_tests resources
+
+.PHONY: test-lan-sockets-sanitize
+$(SANITIZER_DIR)/lan_game_tests: tests/lan_game_tests.cpp src/main.cpp $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror $(SANITIZER_FLAGS) $< $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+
+test-lan-sockets-sanitize: $(SANITIZER_DIR)/lan_game_tests $(RUNTIME_RESOURCES)
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(SANITIZER_DIR)/lan_game_tests resources
+
+# AI tools are optional development outputs; Python/ML is never bundled in the app.
+AI_NATIVE := build/ai/libtanks3d_training.dylib
+AI_PYTHON ?= build/ai-venv/bin/python
+.PHONY: ai-native ai-setup test-ai
+$(AI_NATIVE): src/training/native.cpp src/training/coop.inl src/main.cpp $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror -dynamiclib $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+ai-native: $(AI_NATIVE)
+ai-setup:
+	python3 -m venv build/ai-venv
+	$(AI_PYTHON) -m pip install -r training/requirements.txt
+test-ai: ai-native build/tests/ai_player_probe.dylib
+	PYTHONDONTWRITEBYTECODE=1 $(AI_PYTHON) -m unittest tests.test_training tests.test_coop_training tests.test_ai_player
+
+build/tests/training_native_tests: tests/training_native_tests.cpp tests/coop_training_native_tests.inl src/training/native.cpp src/training/coop.inl src/main.cpp $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+.PHONY: test-ai-native
+test-ai-native: build/tests/training_native_tests
+	./build/tests/training_native_tests
+
+$(SANITIZER_DIR)/training_native_tests: tests/training_native_tests.cpp tests/coop_training_native_tests.inl src/training/native.cpp src/training/coop.inl src/main.cpp $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic -Werror $(SANITIZER_FLAGS) $< $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+.PHONY: test-ai-sanitize
+test-ai-sanitize: $(SANITIZER_DIR)/training_native_tests
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(SANITIZER_DIR)/training_native_tests
+
+# Production AI has no Python dependency. This optional probe compares the
+# bundled C++ policy/observation against the retained Python reference.
+AI_PLAYER_TEST_DEPS := tests/ai_player_tests.cpp src/training/native.cpp src/training/coop.inl src/main.cpp $(PRODUCTION_HEADERS) $(TEST_FILES)
+build/tests/ai_player_tests: $(AI_PLAYER_TEST_DEPS) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+build/tests/ai_player_probe.dylib: $(AI_PLAYER_TEST_DEPS) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror -DTANKS3D_AI_PLAYER_PROBE_ONLY -dynamiclib $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+$(SANITIZER_DIR)/ai_player_tests: $(AI_PLAYER_TEST_DEPS) $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic -Werror $(SANITIZER_FLAGS) $< $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+.PHONY: test-ai-player-native test-ai-player-sanitize
+test-ai-player-native: build/tests/ai_player_tests $(RUNTIME_RESOURCES)
+	./build/tests/ai_player_tests
+test-ai-player-sanitize: $(SANITIZER_DIR)/ai_player_tests $(RUNTIME_RESOURCES)
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(SANITIZER_DIR)/ai_player_tests

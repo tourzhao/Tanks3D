@@ -333,38 +333,188 @@ inline void drawGunModel(Vector3 center, float yaw, Color glow)
                    0.035f, 0.035f, 7, Color{222, 203, 116, 255});
 }
 
+inline Vector3 boatNormal(Vector3 a, Vector3 b, Vector3 c)
+{
+    const Vector3 u{b.x - a.x, b.y - a.y, b.z - a.z},
+        v{c.x - a.x, c.y - a.y, c.z - a.z};
+    const Vector3 n{u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z,
+                    u.x * v.y - u.y * v.x};
+    const float length = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+    return length > 0.000001f ? Vector3{n.x / length, n.y / length, n.z / length}
+                             : Vector3{0, 1, 0};
+}
+
+inline void boatTriangle(Vector3 a, Vector3 b, Vector3 c, Color color)
+{
+    const Vector3 n = boatNormal(a, b, c);
+    rlColor4ub(color.r, color.g, color.b, color.a);
+    rlNormal3f(n.x, n.y, n.z);
+    rlVertex3f(a.x, a.y, a.z);
+    rlVertex3f(b.x, b.y, b.z);
+    rlVertex3f(c.x, c.y, c.z);
+}
+
+template <std::size_t Rings, std::size_t Points>
+inline void drawBoatCasting(Vector3 center, float yaw,
+                            const std::array<std::array<Vector3, Points>, Rings> &rings,
+                            const std::array<Color, Rings - 1> &paints, Color topPaint)
+{
+    // Pickups are intentionally unlit in the game. Author the broad warm top,
+    // blue side and deep keel colors into the connected hull panels themselves.
+    rlBegin(RL_TRIANGLES);
+    for (std::size_t level = 0; level + 1 < Rings; ++level)
+        for (std::size_t i = 0; i < Points; ++i)
+        {
+            const std::size_t j = (i + 1) % Points;
+            const Vector3 n =
+                boatNormal(rings[level][j], rings[level][i], rings[level + 1][i]);
+            const Color paint = shade(paints[level], n.x > 0.1f   ? 0.83f
+                                                     : n.z > 0.1f ? 0.91f
+                                                                 : 1.0f);
+            const auto a = yawPoint(center, rings[level][j], yaw),
+                       b = yawPoint(center, rings[level][i], yaw);
+            const auto c = yawPoint(center, rings[level + 1][i], yaw),
+                       d = yawPoint(center, rings[level + 1][j], yaw);
+            boatTriangle(a, b, c, paint);
+            boatTriangle(a, c, d, paint);
+        }
+    for (std::size_t i = 1; i + 1 < Points; ++i)
+    {
+        boatTriangle(yawPoint(center, rings.back()[0], yaw),
+                     yawPoint(center, rings.back()[i + 1], yaw),
+                     yawPoint(center, rings.back()[i], yaw), topPaint);
+        boatTriangle(yawPoint(center, rings.front()[0], yaw),
+                     yawPoint(center, rings.front()[i], yaw),
+                     yawPoint(center, rings.front()[i + 1], yaw),
+                     Color{25, 49, 61, 255});
+    }
+    rlEnd();
+}
+
 inline void drawBoatModel(Vector3 center, float yaw, Color glow)
 {
-    drawEllipsoid(yawPoint(center, {0.0f, -0.13f, 0.0f}, yaw),
-                  {0.30f, 0.15f, 0.43f}, Color{34, 105, 153, 255}, yaw);
-    drawYawBox(yawPoint(center, {0.0f, -0.06f, 0.06f}, yaw),
-               {0.47f, 0.11f, 0.52f}, yaw, Color{65, 165, 205, 255});
-    drawYawBox(yawPoint(center, {-0.255f, 0.0f, 0.065f}, yaw),
-               {0.035f, 0.14f, 0.54f}, yaw, Color{225, 237, 224, 255});
-    drawYawBox(yawPoint(center, {0.255f, 0.0f, 0.065f}, yaw),
-               {0.035f, 0.14f, 0.54f}, yaw, Color{225, 237, 224, 255});
-    DrawCylinderEx(yawPoint(center, {0.0f, -0.04f, -0.20f}, yaw),
-                   yawPoint(center, {0.0f, -0.04f, -0.48f}, yaw),
-                   0.20f, 0.025f, 8, Color{71, 183, 219, 255});
-    drawYawBox(yawPoint(center, {0.0f, 0.08f, 0.07f}, yaw),
-               {0.27f, 0.18f, 0.23f}, yaw, Color{223, 231, 218, 255});
-    drawYawBox(yawPoint(center, {0.0f, 0.10f, -0.06f}, yaw),
-               {0.21f, 0.10f, 0.025f}, yaw, Color{27, 71, 92, 255});
-    drawYawBox(yawPoint(center, {0.0f, 0.20f, 0.08f}, yaw),
-               {0.20f, 0.035f, 0.20f}, yaw, Color{31, 93, 126, 255});
-    DrawCylinderEx(yawPoint(center, {0.0f, 0.17f, 0.06f}, yaw),
-                   yawPoint(center, {0.0f, 0.42f, 0.06f}, yaw),
-                   0.014f, 0.010f, 6, Color{218, 222, 203, 255});
-    DrawCylinderEx(yawPoint(center, {-0.20f, 0.09f, 0.14f}, yaw),
-                   yawPoint(center, {-0.20f, 0.24f, 0.14f}, yaw),
-                   0.009f, 0.009f, 5, Color{225, 231, 207, 255});
-    DrawCylinderEx(yawPoint(center, {0.20f, 0.09f, 0.14f}, yaw),
-                   yawPoint(center, {0.20f, 0.24f, 0.14f}, yaw),
-                   0.009f, 0.009f, 5, Color{225, 231, 207, 255});
-    DrawCylinderEx(yawPoint(center, {-0.20f, 0.24f, 0.14f}, yaw),
-                   yawPoint(center, {0.20f, 0.24f, 0.14f}, yaw),
-                   0.009f, 0.009f, 5, glow);
-    DrawSphere(yawPoint(center, {0.0f, 0.43f, 0.06f}, yaw), 0.022f, glow);
+    const Color cream{227, 224, 192, 255}, ink{24, 56, 73, 255};
+    // A full displacement hull, with a narrow keel, curved shoulders, raised
+    // bow and one continuous cream gunwale. No intersecting ellipsoid/cone nose.
+    constexpr std::array<Vector2, 10> plan{{{-0.05f, -0.47f},
+                                            {0.05f, -0.47f},
+                                            {0.20f, -0.34f},
+                                            {0.29f, -0.13f},
+                                            {0.27f, 0.31f},
+                                            {0.19f, 0.40f},
+                                            {-0.19f, 0.40f},
+                                            {-0.27f, 0.31f},
+                                            {-0.29f, -0.13f},
+                                            {-0.20f, -0.34f}}};
+    std::array<std::array<Vector3, 10>, 5> hull{};
+    constexpr std::array<float, 5> heights{{-0.25f, -0.19f, -0.07f, 0.015f, 0.045f}};
+    constexpr std::array<float, 5> widths{{0.45f, 0.75f, 1.0f, 0.96f, 1.0f}};
+    constexpr std::array<float, 5> lengths{{0.72f, 0.91f, 1.0f, 0.985f, 1.0f}};
+    for (std::size_t ring = 0; ring < hull.size(); ++ring)
+        for (std::size_t i = 0; i < plan.size(); ++i)
+        {
+            const float bowRise =
+                ring >= 2 ? std::max(0.0f, -plan[i].y - 0.20f) * 0.11f : 0.0f;
+            hull[ring][i] = {plan[i].x * widths[ring], heights[ring] + bowRise,
+                             plan[i].y * lengths[ring]};
+        }
+    drawBoatCasting(
+        center, yaw, hull,
+        std::array<Color, 4>{
+            {{27, 63, 86, 255}, {33, 100, 139, 255}, {59, 143, 175, 255}, cream}},
+        Color{95, 164, 177, 255});
+    const auto section = [](float y, float w, float front, float rear, float bevel)
+    {
+        return std::array<Vector3, 8>{{{-w + bevel, y, front},
+                                       {w - bevel, y, front},
+                                       {w, y, front + bevel},
+                                       {w, y, rear - bevel},
+                                       {w - bevel, y, rear},
+                                       {-w + bevel, y, rear},
+                                       {-w, y, rear - bevel},
+                                       {-w, y, front + bevel}}};
+    };
+    const std::array<std::array<Vector3, 8>, 4> cabin{
+        {section(0.045f, 0.18f, -0.12f, 0.23f, 0.045f),
+         section(0.24f, 0.155f, -0.025f, 0.215f, 0.04f),
+         section(0.275f, 0.13f, 0.0f, 0.20f, 0.035f),
+         section(0.305f, 0.145f, -0.022f, 0.225f, 0.035f)}};
+    drawBoatCasting(
+        center, yaw, cabin,
+        std::array<Color, 3>{{cream, {247, 235, 197, 255}, {61, 108, 123, 255}}},
+        Color{250, 237, 199, 255});
+    const auto face = [&](Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color color)
+    {
+        a = yawPoint(center, a, yaw);
+        b = yawPoint(center, b, yaw);
+        c = yawPoint(center, c, yaw);
+        d = yawPoint(center, d, yaw);
+        boatTriangle(a, b, c, color);
+        boatTriangle(a, c, d, color);
+    };
+    const auto frontZ = [](float y)
+    { return -0.12f + (y - 0.045f) / 0.195f * 0.095f - 0.004f; };
+    rlBegin(RL_TRIANGLES);
+    for (float side : {-1.0f, 1.0f})
+    {
+        const float left = side < 0 ? -0.11f : 0.015f, right = side < 0 ? -0.015f : 0.11f;
+        face({left, 0.12f, frontZ(0.12f)}, {left, 0.205f, frontZ(0.205f)},
+             {right, 0.205f, frontZ(0.205f)}, {right, 0.12f, frontZ(0.12f)}, ink);
+        face({left + 0.01f, 0.188f, frontZ(0.188f) - 0.002f},
+             {left + 0.01f, 0.20f, frontZ(0.20f) - 0.002f},
+             {right - 0.01f, 0.20f, frontZ(0.20f) - 0.002f},
+             {right - 0.01f, 0.188f, frontZ(0.188f) - 0.002f}, Color{126, 203, 211, 255});
+        const auto sideX = [&](float y)
+        { return side * (0.18f - (y - 0.045f) / 0.195f * 0.025f + 0.004f); };
+        const Vector3 a{sideX(0.12f), 0.12f, -0.015f}, b{sideX(0.205f), 0.205f, -0.015f};
+        const Vector3 c{sideX(0.205f), 0.205f, 0.145f}, d{sideX(0.12f), 0.12f, 0.145f};
+        if (side > 0)
+            face(a, b, c, d, ink);
+        else
+            face(d, c, b, a, ink);
+        const Vector3 e{sideX(0.185f) + side * 0.002f, 0.185f, 0.01f};
+        const Vector3 f{sideX(0.20f) + side * 0.002f, 0.20f, 0.01f};
+        const Vector3 g{sideX(0.20f) + side * 0.002f, 0.20f, 0.12f};
+        const Vector3 h{sideX(0.185f) + side * 0.002f, 0.185f, 0.12f};
+        const Color glassLight{126, 203, 211, 255};
+        if (side > 0)
+            face(e, f, g, h, glassLight);
+        else
+            face(h, g, f, e, glassLight);
+    }
+    rlEnd();
+    // One enlarged funnel replaces the old hair-thin mast and rail framework.
+    const std::array<std::array<Vector3, 8>, 4> funnel{
+        {section(0.046f, 0.056f, 0.265f, 0.375f, 0.018f),
+         section(0.31f, 0.060f, 0.265f, 0.375f, 0.018f),
+         section(0.35f, 0.073f, 0.253f, 0.387f, 0.025f),
+         section(0.405f, 0.068f, 0.257f, 0.383f, 0.025f)}};
+    drawBoatCasting(center, yaw, funnel,
+                    std::array<Color, 3>{
+                        {{205, 116, 64, 255}, {236, 172, 105, 255}, {52, 78, 87, 255}}},
+                    ink);
+    // A small open life ring is attached to the port hull, not painted over the
+    // wheelhouse. The dark hole and four cream segments remain clear while rotating.
+    rlBegin(RL_TRIANGLES);
+    constexpr float pi = 3.14159265358979323846f;
+    for (int i = 0; i < 12; ++i)
+    {
+        const float a = i * pi / 6, b = (i + 1) * pi / 6;
+        const auto point = [](float angle, float radius)
+        {
+            return Vector3{-0.297f, -0.035f + std::cos(angle) * radius,
+                           -0.035f + std::sin(angle) * radius};
+        };
+        const Color paint = i % 3 == 0 ? cream : Color{229, 139, 68, 255};
+        face(point(b, 0.080f), point(a, 0.080f), point(a, 0.042f), point(b, 0.042f), paint);
+    }
+    rlEnd();
+    // A restrained blue deck fitting carries the existing Boat accent.
+    const std::array<std::array<Vector3, 8>, 2> deckFitting{
+        {section(0.06f, 0.045f, -0.355f, -0.245f, 0.014f),
+         section(0.095f, 0.045f, -0.355f, -0.245f, 0.014f)}};
+    drawBoatCasting(center, yaw, deckFitting, std::array<Color, 1>{{shade(glow, 0.50f)}},
+                    shade(glow, 0.66f));
 }
 
 inline void drawBandageModel(Vector3 center, float yaw, Color glow)
@@ -509,196 +659,255 @@ inline void drawIconPolygon(Image &image,
     }
 }
 
+// A common enamel frame and deliberately broad, pixel-aligned color regions.
+// The symbols use the same ink, warm highlights and cool recesses; the rim
+// retains the established pickup accent without tinting the whole pictogram.
 inline void drawIconPanel(Image &image, Color glow)
 {
-    const Color frame{5, 11, 16, 242};
-    const Color panel{18, 29, 37, 250};
-    ImageDrawRectangle(&image, 2, 3, 60, 59, Color{0, 0, 0, 100});
-    ImageDrawRectangle(&image, 2, 1, 60, 59, frame);
-    ImageDrawRectangle(&image, 4, 3, 56, 55, shade(glow, 0.54f));
-    ImageDrawRectangle(&image, 7, 6, 50, 49, panel);
-    ImageDrawRectangle(&image, 9, 8, 46, 3, Fade(glow, 0.72f));
-    ImageDrawRectangle(&image, 9, 52, 46, 2, shade(glow, 0.34f));
+    const std::array<Vector2, 8> frame{
+        {{8, 2}, {55, 2}, {61, 8}, {61, 55}, {55, 61}, {8, 61}, {2, 55}, {2, 8}}};
+    const std::array<Vector2, 8> inset{
+        {{10, 6}, {53, 6}, {57, 10}, {57, 53}, {53, 57}, {10, 57}, {6, 53}, {6, 10}}};
+    drawIconPolygon(image, frame, Color{46, 67, 72, 255}, Color{10, 20, 26, 255});
+    drawIconPolygon(image, inset, Color{21, 35, 43, 255}, shade(glow, 0.52f));
+    ImageDrawRectangle(&image, 11, 4, 38, 2,
+                       ColorLerp(glow, Color{216, 224, 203, 255}, 0.55f));
+    ImageDrawRectangle(&image, 4, 11, 2, 34, Color{119, 154, 154, 255});
+    ImageDrawRectangle(&image, 13, 59, 38, 2, Color{12, 26, 33, 255});
 }
 
 inline void drawGrenadeIcon(Image &image)
 {
-    const Color edge{25, 32, 25, 255};
-    const Color shell{103, 135, 70, 255};
-    ImageDrawCircle(&image, 30, 37, 17, edge);
-    ImageDrawCircle(&image, 30, 37, 14, shell);
-    ImageDrawRectangle(&image, 24, 17, 13, 9, edge);
-    ImageDrawRectangle(&image, 27, 18, 10, 7, Color{151, 160, 111, 255});
-    for (int offset : {-8, 0, 8})
-        drawIconThickLine(image, 17, 37 + offset, 43, 37 + offset, 2, edge);
-    for (int offset : {-7, 0, 7})
-        drawIconThickLine(image, 30 + offset, 24, 30 + offset, 50, 2, edge);
-    drawIconThickLine(image, 37, 20, 45, 15, 4,
-                      Color{205, 179, 91, 255});
-    ImageDrawCircle(&image, 49, 16, 6, Color{205, 179, 91, 255});
-    ImageDrawCircle(&image, 49, 16, 3, Color{18, 29, 37, 255});
-    ImageDrawCircle(&image, 23, 29, 3, Color{184, 201, 125, 255});
+    const Color ink{19, 31, 33, 255}, olive{112, 139, 69, 255};
+    const std::array<Vector2, 8> shell{{{25, 23},
+                                        {37, 23},
+                                        {43, 30},
+                                        {44, 42},
+                                        {37, 52},
+                                        {24, 52},
+                                        {17, 44},
+                                        {18, 31}}};
+    drawIconPolygon(image, shell, olive, ink);
+    drawIconPolygon(
+        image,
+        std::array<Vector2, 5>{{{24, 26}, {30, 25}, {29, 47}, {24, 48}, {21, 41}}},
+        Color{163, 185, 98, 255}, Color{163, 185, 98, 255});
+    ImageDrawRectangle(&image, 20, 33, 22, 3, Color{56, 81, 47, 255});
+    ImageDrawRectangle(&image, 20, 42, 21, 3, Color{56, 81, 47, 255});
+    ImageDrawRectangle(&image, 32, 26, 3, 23, Color{56, 81, 47, 255});
+    ImageDrawRectangle(&image, 26, 17, 12, 8, ink);
+    ImageDrawRectangle(&image, 28, 18, 9, 5, Color{192, 190, 127, 255});
+    drawIconThickLine(image, 35, 18, 43, 27, 4, Color{208, 156, 74, 255});
+    drawIconThickLine(image, 43, 27, 45, 38, 4, Color{208, 156, 74, 255});
+    ImageDrawCircle(&image, 44, 16, 7, ink);
+    ImageDrawCircle(&image, 44, 16, 5, Color{229, 197, 114, 255});
+    ImageDrawCircle(&image, 44, 16, 2, Color{21, 35, 43, 255});
 }
 
 inline void drawHelmetIcon(Image &image)
 {
-    const Color edge{20, 37, 48, 255};
-    const Color shell{68, 157, 205, 255};
-    ImageDrawCircle(&image, 32, 33, 20, edge);
-    ImageDrawCircle(&image, 32, 33, 16, shell);
-    ImageDrawRectangle(&image, 12, 34, 40, 13, edge);
-    ImageDrawRectangle(&image, 15, 34, 34, 9, shell);
-    ImageDrawRectangle(&image, 9, 43, 46, 6, edge);
-    ImageDrawRectangle(&image, 13, 43, 38, 3,
-                       Color{112, 204, 233, 255});
-    ImageDrawRectangle(&image, 28, 17, 5, 25,
-                       Color{42, 116, 157, 255});
-    drawIconThickLine(image, 19, 26, 26, 20, 3,
-                      Color{155, 226, 244, 255});
+    const Color ink{19, 31, 38, 255}, shell{65, 135, 163, 255};
+    const std::array<Vector2, 10> dome{{{13, 38},
+                                        {15, 26},
+                                        {21, 19},
+                                        {28, 15},
+                                        {36, 15},
+                                        {45, 20},
+                                        {50, 28},
+                                        {51, 39},
+                                        {44, 44},
+                                        {20, 44}}};
+    drawIconPolygon(image, dome, shell, ink);
+    drawIconPolygon(
+        image,
+        std::array<Vector2, 5>{{{18, 28}, {23, 21}, {31, 18}, {35, 18}, {25, 29}}},
+        Color{160, 211, 211, 255}, Color{160, 211, 211, 255});
+    drawIconPolygon(image,
+                    std::array<Vector2, 4>{{{43, 24}, {48, 30}, {48, 38}, {41, 39}}},
+                    Color{36, 84, 113, 255}, Color{36, 84, 113, 255});
+    ImageDrawRectangle(&image, 14, 36, 37, 7, ink);
+    drawIconPolygon(image,
+                    std::array<Vector2, 6>{
+                        {{10, 40}, {52, 40}, {55, 45}, {49, 49}, {15, 49}, {9, 45}}},
+                    Color{85, 166, 187, 255}, ink);
+    ImageDrawRectangle(&image, 15, 42, 33, 3, Color{178, 220, 215, 255});
+    ImageDrawRectangle(&image, 24, 49, 17, 3, Color{142, 111, 66, 255});
 }
 
 inline void drawClockIcon(Image &image)
 {
-    const Color edge{73, 49, 20, 255};
-    const Color gold{226, 165, 47, 255};
-    ImageDrawCircle(&image, 32, 33, 23, edge);
-    ImageDrawCircle(&image, 32, 33, 19, gold);
-    ImageDrawCircle(&image, 32, 33, 15, Color{246, 235, 190, 255});
-    for (int marker = 0; marker < 12; ++marker)
-    {
-        const float angle = marker * 2.0f * 3.14159265358979323846f / 12.0f;
-        const int x = static_cast<int>(std::lround(32.0f + std::sin(angle) * 12.0f));
-        const int y = static_cast<int>(std::lround(33.0f - std::cos(angle) * 12.0f));
-        ImageDrawCircle(&image, x, y, marker % 3 == 0 ? 2 : 1, edge);
-    }
-    drawIconThickLine(image, 32, 33, 32, 23, 3, edge);
-    drawIconThickLine(image, 32, 33, 42, 38, 3, edge);
-    ImageDrawCircle(&image, 32, 33, 3, Color{237, 105, 45, 255});
-    ImageDrawRectangle(&image, 27, 8, 10, 5, edge);
-    ImageDrawRectangle(&image, 29, 9, 6, 4, gold);
+    const Color ink{32, 37, 38, 255}, gold{207, 145, 54, 255};
+    ImageDrawRectangle(&image, 27, 8, 11, 8, ink);
+    ImageDrawRectangle(&image, 29, 10, 7, 5, Color{250, 216, 125, 255});
+    ImageDrawCircle(&image, 32, 34, 22, ink);
+    ImageDrawCircle(&image, 32, 34, 19, gold);
+    ImageDrawCircle(&image, 31, 33, 16, Color{252, 237, 190, 255});
+    drawIconThickLine(image, 20, 23, 25, 19, 2, Color{255, 248, 213, 255});
+    for (int x : {19, 42})
+        ImageDrawRectangle(&image, x, 32, 3, 4, ink);
+    for (int y : {20, 44})
+        ImageDrawRectangle(&image, 30, y, 4, 3, ink);
+    drawIconThickLine(image, 32, 34, 32, 25, 3, ink);
+    drawIconThickLine(image, 32, 34, 40, 38, 3, ink);
+    ImageDrawRectangle(&image, 30, 32, 5, 5, Color{204, 102, 51, 255});
 }
 
 inline void drawShovelIcon(Image &image)
 {
-    const Color edge{38, 42, 42, 255};
-    drawIconThickLine(image, 40, 16, 24, 45, 8, edge);
-    drawIconThickLine(image, 40, 16, 24, 45, 4,
-                      Color{145, 86, 42, 255});
-    drawIconThickLine(image, 35, 15, 43, 11, 4,
-                      Color{145, 86, 42, 255});
-    drawIconThickLine(image, 43, 11, 48, 17, 4,
-                      Color{145, 86, 42, 255});
-    const std::array<Vector2, 4> blade{{
-        {21.0f, 40.0f}, {31.0f, 46.0f}, {27.0f, 57.0f}, {13.0f, 51.0f}}};
-    drawIconPolygon(image, blade, Color{172, 201, 214, 255}, edge);
-    drawIconThickLine(image, 18, 48, 27, 52, 2,
-                      Color{232, 246, 247, 255});
+    const Color ink{22, 34, 39, 255};
+    drawIconThickLine(image, 40, 24, 24, 44, 9, ink);
+    drawIconThickLine(image, 40, 24, 24, 44, 6, Color{174, 115, 64, 255});
+    drawIconThickLine(image, 38, 25, 26, 40, 2, Color{225, 173, 105, 255});
+    const std::array<Vector2, 6> handle{
+        {{37, 10}, {47, 11}, {53, 18}, {44, 29}, {36, 26}, {31, 18}}};
+    drawIconPolygon(image, handle, Color{211, 160, 94, 255}, ink);
+    drawIconPolygon(image,
+                    std::array<Vector2, 4>{{{39, 16}, {44, 16}, {47, 19}, {42, 24}}},
+                    Color{21, 35, 43, 255}, Color{21, 35, 43, 255});
+    const std::array<Vector2, 6> blade{
+        {{20, 32}, {35, 42}, {32, 49}, {23, 54}, {12, 50}, {11, 40}}};
+    drawIconPolygon(image, blade, Color{118, 160, 176, 255}, ink);
+    drawIconPolygon(image,
+                    std::array<Vector2, 4>{{{20, 36}, {27, 40}, {21, 50}, {15, 47}}},
+                    Color{224, 232, 211, 255}, Color{224, 232, 211, 255});
 }
 
 inline void drawTankIcon(Image &image)
 {
-    const Color edge{19, 31, 27, 255};
-    const Color track{53, 62, 58, 255};
-    ImageDrawCircle(&image, 18, 43, 11, edge);
-    ImageDrawCircle(&image, 46, 43, 11, edge);
-    ImageDrawRectangle(&image, 18, 32, 28, 22, edge);
-    ImageDrawCircle(&image, 18, 43, 7, track);
-    ImageDrawCircle(&image, 46, 43, 7, track);
-    ImageDrawRectangle(&image, 18, 36, 28, 14, track);
-    for (int x : {18, 27, 37, 46})
+    const Color ink{19, 31, 33, 255};
+    ImageDrawCircle(&image, 18, 44, 10, ink);
+    ImageDrawCircle(&image, 46, 44, 10, ink);
+    ImageDrawRectangle(&image, 18, 34, 28, 20, ink);
+    ImageDrawCircle(&image, 18, 44, 7, Color{76, 91, 81, 255});
+    ImageDrawCircle(&image, 46, 44, 7, Color{76, 91, 81, 255});
+    ImageDrawRectangle(&image, 18, 37, 28, 14, Color{76, 91, 81, 255});
+    for (int x : {18, 32, 46})
     {
-        ImageDrawCircle(&image, x, 43, 4, Color{158, 170, 132, 255});
-        ImageDrawCircle(&image, x, 43, 2, edge);
+        ImageDrawCircle(&image, x, 44, 4, Color{170, 189, 140, 255});
+        ImageDrawRectangle(&image, x - 1, 43, 3, 3, ink);
     }
-    const std::array<Vector2, 4> hull{{
-        {13.0f, 32.0f}, {48.0f, 30.0f}, {53.0f, 39.0f}, {11.0f, 39.0f}}};
-    drawIconPolygon(image, hull, Color{64, 166, 89, 255}, edge);
-    ImageDrawCircle(&image, 31, 26, 10, edge);
-    ImageDrawCircle(&image, 31, 26, 7, Color{80, 195, 105, 255});
-    drawIconThickLine(image, 36, 25, 55, 22, 7, edge);
-    drawIconThickLine(image, 36, 25, 55, 22, 3,
-                      Color{96, 208, 115, 255});
-    ImageDrawCircle(&image, 27, 23, 2, Color{190, 247, 173, 255});
+    drawIconPolygon(image,
+                    std::array<Vector2, 6>{
+                        {{16, 32}, {43, 31}, {50, 36}, {48, 40}, {13, 40}, {11, 37}}},
+                    Color{82, 157, 83, 255}, ink);
+    drawIconPolygon(image,
+                    std::array<Vector2, 8>{{{21, 17},
+                                            {34, 15},
+                                            {41, 20},
+                                            {42, 30},
+                                            {38, 34},
+                                            {22, 34},
+                                            {17, 29},
+                                            {17, 22}}},
+                    Color{103, 178, 92, 255}, ink);
+    drawIconThickLine(image, 38, 24, 52, 22, 7, ink);
+    drawIconThickLine(image, 39, 24, 51, 22, 3, Color{174, 202, 143, 255});
+    ImageDrawRectangle(&image, 50, 19, 5, 7, Color{79, 98, 90, 255});
+    ImageDrawRectangle(&image, 52, 21, 3, 3, ink);
+    ImageDrawRectangle(&image, 23, 17, 10, 3, Color{201, 228, 153, 255});
+    ImageDrawRectangle(&image, 23, 25, 9, 3, Color{30, 72, 62, 255});
 }
 
 inline void drawStarIcon(Image &image)
 {
     constexpr float pi = 3.14159265358979323846f;
     std::array<Vector2, 10> points{};
-    for (int point = 0; point < 10; ++point)
+    for (int i = 0; i < 10; ++i)
     {
-        const float radius = point % 2 == 0 ? 24.0f : 10.0f;
-        const float angle = -pi * 0.5f + point * pi / 5.0f;
-        points[point] = {32.0f + std::cos(angle) * radius,
-                         33.0f + std::sin(angle) * radius};
+        const float a = -pi * 0.5f + i * pi / 5;
+        const float r = i % 2 == 0 ? 23.0f : 10.0f;
+        points[i] = {32 + std::cos(a) * r, 33 + std::sin(a) * r};
     }
-    drawIconPolygon(image, points, Color{255, 222, 54, 255},
-                    Color{126, 70, 19, 255});
-    ImageDrawCircle(&image, 26, 25, 4, Color{255, 250, 177, 255});
+    drawIconPolygon(image, points, Color{238, 181, 53, 255}, Color{49, 43, 32, 255});
+    for (int i = 0; i < 10; ++i)
+    {
+        const Vector2 a{32 + (points[i].x - 32) * 0.84f, 33 + (points[i].y - 33) * 0.84f};
+        const auto p = points[(i + 1) % 10];
+        const Vector2 b{32 + (p.x - 32) * 0.84f, 33 + (p.y - 33) * 0.84f};
+        const Color face = i < 4 ? Color{255, 229, 123, 255} : Color{194, 122, 42, 255};
+        drawIconPolygon(image, std::array<Vector2, 3>{{{32, 33}, a, b}}, face, face);
+    }
+    ImageDrawRectangle(&image, 28, 24, 4, 5, Color{255, 248, 185, 255});
 }
 
 inline void drawGunIcon(Image &image)
 {
-    const Color edge{35, 38, 40, 255};
-    ImageDrawRectangle(&image, 12, 24, 33, 18, edge);
-    ImageDrawRectangle(&image, 16, 27, 28, 12,
-                       Color{113, 133, 141, 255});
-    drawIconThickLine(image, 41, 30, 57, 27, 9, edge);
-    drawIconThickLine(image, 42, 30, 57, 27, 4,
-                      Color{224, 139, 52, 255});
-    ImageDrawRectangle(&image, 54, 22, 5, 12, edge);
-    ImageDrawCircle(&image, 22, 41, 10, edge);
-    ImageDrawCircle(&image, 22, 41, 6, Color{211, 126, 43, 255});
-    const std::array<Vector2, 4> grip{{
-        {31.0f, 39.0f}, {42.0f, 39.0f}, {38.0f, 56.0f}, {28.0f, 54.0f}}};
-    drawIconPolygon(image, grip, Color{120, 69, 38, 255}, edge);
-    ImageDrawRectangle(&image, 19, 28, 15, 3,
-                       Color{192, 211, 211, 255});
+    const Color ink{21, 32, 38, 255};
+    drawIconPolygon(image,
+                    std::array<Vector2, 6>{
+                        {{12, 23}, {34, 20}, {40, 25}, {39, 39}, {16, 39}, {11, 34}}},
+                    Color{106, 137, 145, 255}, ink);
+    drawIconPolygon(image,
+                    std::array<Vector2, 4>{{{34, 35}, {43, 37}, {38, 53}, {28, 51}}},
+                    Color{161, 98, 52, 255}, ink);
+    ImageDrawRectangle(&image, 16, 24, 17, 4, Color{204, 221, 207, 255});
+    drawIconThickLine(image, 36, 28, 53, 24, 9, ink);
+    drawIconThickLine(image, 38, 28, 51, 25, 5, Color{210, 150, 66, 255});
+    ImageDrawRectangle(&image, 49, 19, 8, 13, ink);
+    ImageDrawRectangle(&image, 49, 21, 4, 8, Color{136, 159, 157, 255});
+    ImageDrawCircle(&image, 22, 40, 10, ink);
+    ImageDrawCircle(&image, 22, 40, 7, Color{191, 124, 54, 255});
+    ImageDrawCircle(&image, 22, 40, 3, Color{58, 67, 64, 255});
+    ImageDrawRectangle(&image, 17, 17, 13, 5, ink);
+    ImageDrawRectangle(&image, 20, 17, 8, 3, Color{234, 201, 127, 255});
 }
 
 inline void drawBoatIcon(Image &image)
 {
-    const Color edge{18, 55, 72, 255};
-    const std::array<Vector2, 5> hull{{
-        {8.0f, 36.0f}, {55.0f, 36.0f}, {48.0f, 51.0f},
-        {20.0f, 54.0f}, {12.0f, 47.0f}}};
-    drawIconPolygon(image, hull, Color{48, 161, 210, 255}, edge);
-    ImageDrawRectangle(&image, 21, 24, 25, 13, edge);
-    ImageDrawRectangle(&image, 24, 26, 19, 10,
-                       Color{225, 237, 221, 255});
-    ImageDrawRectangle(&image, 28, 28, 11, 7,
-                       Color{46, 103, 130, 255});
-    drawIconThickLine(image, 34, 24, 34, 12, 3,
-                      Color{218, 224, 204, 255});
-    drawIconThickLine(image, 34, 13, 46, 19, 2,
-                      Color{255, 209, 60, 255});
-    drawIconThickLine(image, 14, 57, 28, 57, 2,
-                      Color{133, 221, 244, 255});
-    drawIconThickLine(image, 36, 55, 52, 53, 2,
-                      Color{133, 221, 244, 255});
+    const Color ink{19, 34, 42, 255}, cream{231, 226, 194, 255};
+    // A compact river tug: raised bow, full hull, slanted wheelhouse and a
+    // chunky funnel. The two water strokes make the water-travel meaning clear.
+    ImageDrawRectangle(&image, 16, 12, 12, 19, ink);
+    ImageDrawRectangle(&image, 19, 16, 6, 15, Color{203, 110, 57, 255});
+    ImageDrawRectangle(&image, 17, 12, 10, 5, Color{82, 107, 112, 255});
+    drawIconPolygon(
+        image,
+        std::array<Vector2, 5>{{{28, 20}, {40, 20}, {46, 30}, {45, 35}, {24, 35}}},
+        cream, ink);
+    ImageDrawRectangle(&image, 28, 24, 5, 7, Color{36, 89, 113, 255});
+    drawIconPolygon(image,
+                    std::array<Vector2, 4>{{{36, 24}, {39, 24}, {42, 30}, {36, 30}}},
+                    Color{36, 89, 113, 255}, Color{36, 89, 113, 255});
+    ImageDrawRectangle(&image, 27, 19, 14, 3, Color{255, 243, 207, 255});
+    drawIconPolygon(image,
+                    std::array<Vector2, 6>{
+                        {{9, 34}, {55, 34}, {51, 44}, {43, 50}, {20, 50}, {13, 44}}},
+                    Color{48, 130, 166, 255}, ink);
+    drawIconPolygon(image,
+                    std::array<Vector2, 4>{{{13, 40}, {49, 40}, {42, 47}, {20, 47}}},
+                    Color{31, 85, 122, 255}, Color{31, 85, 122, 255});
+    ImageDrawRectangle(&image, 12, 35, 40, 3, cream);
+    ImageDrawCircle(&image, 23, 41, 6, ink);
+    ImageDrawCircle(&image, 23, 41, 4, Color{228, 144, 73, 255});
+    ImageDrawRectangle(&image, 21, 39, 4, 4, cream);
+    ImageDrawRectangle(&image, 22, 40, 2, 2, Color{31, 85, 122, 255});
+    ImageDrawRectangle(&image, 14, 53, 13, 3, Color{97, 188, 208, 255});
+    ImageDrawRectangle(&image, 34, 53, 15, 3, Color{156, 221, 224, 255});
 }
 
 inline void drawBandageIcon(Image &image)
 {
-    const Color edge{23, 54, 59, 255};
-    const Color cloth{229, 218, 183, 255};
-    const Color teal{38, 218, 190, 255};
-    ImageDrawCircle(&image, 18, 34, 12, edge);
-    ImageDrawCircle(&image, 46, 34, 12, edge);
-    ImageDrawRectangle(&image, 18, 22, 28, 24, edge);
-    ImageDrawCircle(&image, 18, 34, 9, cloth);
-    ImageDrawCircle(&image, 46, 34, 9, cloth);
-    ImageDrawRectangle(&image, 18, 25, 28, 18, cloth);
-    ImageDrawRectangle(&image, 27, 25, 10, 18, Color{32, 99, 99, 255});
-    ImageDrawRectangle(&image, 29, 27, 6, 14, teal);
-    ImageDrawRectangle(&image, 25, 31, 14, 6, teal);
-    for (int x : {14, 20, 44, 50})
-    {
-        ImageDrawCircle(&image, x, 31, 1, Color{153, 141, 112, 255});
-        ImageDrawCircle(&image, x, 37, 1, Color{153, 141, 112, 255});
-    }
-    ImageDrawRectangle(&image, 13, 26, 10, 2,
-                       Color{255, 245, 208, 255});
+    const Color ink{23, 40, 44, 255}, cloth{220, 211, 176, 255},
+        teal{56, 185, 164, 255};
+    drawIconPolygon(image,
+                    std::array<Vector2, 8>{{{13, 22},
+                                            {49, 22},
+                                            {55, 28},
+                                            {55, 40},
+                                            {49, 47},
+                                            {13, 47},
+                                            {8, 40},
+                                            {8, 28}}},
+                    cloth, ink);
+    ImageDrawRectangle(&image, 14, 25, 34, 4, Color{255, 240, 201, 255});
+    ImageDrawRectangle(&image, 13, 41, 37, 3, Color{169, 157, 125, 255});
+    ImageDrawRectangle(&image, 28, 25, 8, 20, Color{37, 110, 105, 255});
+    ImageDrawRectangle(&image, 23, 31, 18, 8, Color{37, 110, 105, 255});
+    ImageDrawRectangle(&image, 29, 26, 6, 17, teal);
+    ImageDrawRectangle(&image, 24, 32, 16, 5, teal);
+    for (int x : {15, 46})
+        for (int y : {33, 38})
+            ImageDrawRectangle(&image, x, y, 3, 3, Color{127, 120, 100, 255});
 }
 
 inline Texture2D loadGeneratedIconTexture(Type type)

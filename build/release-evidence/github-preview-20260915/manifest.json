@@ -1,0 +1,42 @@
+{
+  "ai-p2.png": {
+    "original_local_source": "build/release-evidence/ai-p2-app-20260914-round1/final-ai-match.png",
+    "sha256": "ac03933cc3bf72412fd34b998c42ccc5022a4e9a77d4df241773adb6155b8b70",
+    "bytes": 211111
+  },
+  "roster.png": {
+    "original_local_source": "build/release-evidence/roster-art-20260912/final-roster.png",
+    "sha256": "fd27d5c42f84c10e94dfcafbfed3f63c8ca418148bf4a68a8ce98514a34a16dc",
+    "bytes": 351780
+  },
+  "pickups-before-after.png": {
+    "original_local_source": "build/release-evidence/pickup-art-20260912/icons-before-after.png",
+    "sha256": "436a7c8685763dc45cbf7801de4677396577de0604db37d647b1f00d8aab0f33",
+    "bytes": 32987
+  },
+  "ai-release-review.md": {
+    "original_local_source": "build/release-evidence/ai-p2-release-review-20260914/REVIEW.md",
+    "sha256": "631a0e4aed6118f15666edd8f0e2b6aea05c7d7044c5dc84e6639a4e330d9efd",
+    "bytes": 5715
+  },
+  "ai-validation.json": {
+    "original_local_source": "build/release-evidence/ai-p2-app-20260914-round1/validation.json",
+    "sha256": "25b14cdad0a19539e59edb5016fa6b8b05aea3453226d75bb459d94bd9880800",
+    "bytes": 534
+  },
+  "ai-review-results.json": {
+    "original_local_source": "build/release-evidence/ai-p2-release-review-20260914/results.json",
+    "sha256": "04398bbdb6d8d3060a289dbd9e60bb79d4e9d1b8747191e12b0cbda4872648c4",
+    "bytes": 1635
+  },
+  "runtime_probe.cpp": {
+    "original_local_source": "build/release-evidence/ai-p2-release-review-20260914/runtime_probe.cpp",
+    "sha256": "14bc12c301b90370691d3052ded478c3b61c7ed5c6bed4993c2c13d2ad5c2417",
+    "bytes": 3605
+  },
+  "runtime-probe.log": {
+    "original_local_source": "build/release-evidence/ai-p2-release-review-20260914/runtime-probe.log",
+    "sha256": "23a776969cb097fded252a8155ab8a89cba55bc1e472460b5b499a89cdcc860b",
+    "bytes": 1557
+  }
+}
