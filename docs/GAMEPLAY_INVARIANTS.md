@@ -42,6 +42,39 @@ Reload time is 0.120 seconds. An attempted shot resets this cooldown even when
 the active-shell cap rejects it. Simulation shells spawn 0.625 tile in front of
 the tank center; visual muzzle length must not change gameplay spawn position.
 
+## Optional local AI P2
+
+- The main menu cycles solo, two human players and **AI AS P2**. AI mode starts
+  the normal two-player game, with human P1 and the selected nation for P2.
+- Only P2's command input is replaced. Either assigned controller may drive
+  the sole human P1; human/human mode retains separate controller assignments.
+- The tactical controller reads current state without writing game state or
+  consuming gameplay randomness. It makes 20 decisions per simulated second
+  and holds commands across the existing variable-time updates.
+- Intro, pause, death/respawn and settlement suspend decisions and clear held
+  input. The stage-clear buffer still uses normal input. New games, restart
+  and stage changes reset policy history. AI does not auto-confirm reports.
+- P2 receives no special health, movement, weapons, pickups or collision rules.
+  This local option does not run in LAN sessions.
+
+## Optional LAN co-op
+
+- LAN uses the same two-player rules and player iteration order. The host owns
+  slot 0 and the guest owns slot 1; each machine's local keyboard/controller
+  input is mapped only to its assigned slot. Both selected nations are shared.
+- The LAN session starts a fresh seeded game on both machines. Host-selected
+  stage, lives and advanced rules are validated before either starts simulation.
+  LAN alone uses fixed 1/60-second steps; offline elapsed-time behavior is unchanged.
+- Pause, report confirmation and host-only restart travel with the ordered
+  input frames. The existing eligibility rules still apply to those commands.
+  N/B stage-skip keys do not mutate a LAN game outside the agreed frame stream.
+- Network loss, malformed input, incompatible builds or differing full-state
+  digests cannot silently leave one machine advancing a separate battle.
+  A disconnected session ends; it does not become an offline co-op game.
+- Camera, pixel treatment, wall-clock art animation and physical input devices
+  remain local presentation. Network code does not change movement, shells,
+  pickup rules, random draw order, original layouts or golden signatures.
+
 ## Player Input
 
 - The application merges keyboard and assigned gamepad adapters into one
@@ -672,6 +705,11 @@ players -> enemies -> shells -> pickups -> enemy spawn
 - Enemy AI, enemy metadata, bonus-carrier rolls, and pickup type/position share
   that stream. Stage layout hashes, procedural environment variation, particle
   randomness, camera time, and audio are deliberately outside it.
+- The float-distribution adapter preserves every value inside `[a,b)` and
+  consumes the same engine draws as the standard distribution. If float
+  rounding produces its excluded upper endpoint `b`, it returns the adjacent
+  representable value toward `a` without resampling. This prevents a valid
+  seeded draw from being rejected by the unit-roll fire/spawn contracts.
 - After an open point is accepted and its ID is reserved, enemy creation consumes
   a `[0,1)` type roll, consumes a `[0,2]` integer only for a regular tank, then
   consumes carrier and armor `[0,1)` rolls. Armor-tank chance is

@@ -32,6 +32,8 @@
             <string>ExtendedGamepad</string>
         </dict>
     </array>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Tanks 3D connects two computers on your local network for cooperative play.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

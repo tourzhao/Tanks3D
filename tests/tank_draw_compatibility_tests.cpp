@@ -1,8 +1,10 @@
 #include "tank_assets.h"
 #include "test_support.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 namespace
@@ -74,6 +76,37 @@ Stream capture(Draw draw)
     commands.clear();
     draw();
     return commands;
+}
+
+Stream geometryOnly(const Stream &stream)
+{
+    constexpr std::array<std::size_t, 16> arguments{
+        0, 0, 3, 3, 4, 1, 0, 1, 3, 3, 7, 7, 8, 10, 5, 7};
+    Stream geometry;
+    int matrixDepth = 0, beginDepth = 0;
+    for (std::size_t offset = 0; offset < stream.size();)
+    {
+        const auto command = stream[offset];
+        if (command >= arguments.size() || offset + arguments[command] >= stream.size())
+            throw std::runtime_error("invalid render command framing");
+        if (command == static_cast<unsigned>(Command::PushMatrix)) ++matrixDepth;
+        if (command == static_cast<unsigned>(Command::PopMatrix)) --matrixDepth;
+        if (command == static_cast<unsigned>(Command::Begin)) ++beginDepth;
+        if (command == static_cast<unsigned>(Command::End)) --beginDepth;
+        if (matrixDepth < 0 || beginDepth < 0 || beginDepth > 1)
+            throw std::runtime_error("unbalanced render state");
+        if (command != static_cast<unsigned>(Command::Color))
+        {
+            geometry.insert(geometry.end(), stream.begin() + offset,
+                            stream.begin() + offset + 1 + arguments[command]);
+            // raylib primitives embed their color as the final argument.
+            if (command >= static_cast<unsigned>(Command::Cube)) geometry.back() = 0U;
+        }
+        offset += 1 + arguments[command];
+    }
+    if (matrixDepth != 0 || beginDepth != 0)
+        throw std::runtime_error("leaked render state");
+    return geometry;
 }
 } // namespace
 
@@ -237,6 +270,65 @@ int main()
                        "explicit opposing nation incorrectly drew the German model");
             }
         }
+    }
+
+    reporter.beginSuite("arcade-roster-visible-shadow-identity");
+    std::vector<Stream> playerShapes;
+    for (Nation nation : tanks3d::core::kSelectableNations)
+    for (int level = 0; level < 4; ++level)
+    for (bool moving : {false, true})
+    {
+        Stream firstPlayer;
+        for (int identity : {0, 1})
+        {
+            const Stream visible = capture([&]
+            {
+                assets.draw(x, z, yaw, paint, false, level, 0.0f,
+                            identity, moving, nation, false);
+            });
+            expect(!visible.empty(), "roster player produced no geometry");
+            expect(capture([&]
+                   {
+                       assets.draw(x, z, yaw, paint, false, level, 0.0f,
+                                   identity, moving, nation, true);
+                   }) == visible,
+                   "roster visible and shadow geometry or transforms diverged");
+            if (identity == 0)
+                firstPlayer = visible;
+            else
+            {
+                expect(firstPlayer != visible, "roster lost the second player's identity paint");
+                // The existing moving transform has an identity-dependent phase.
+                if (!moving)
+                    expect(geometryOnly(firstPlayer) == geometryOnly(visible),
+                           "identity recoloring changed the neutral tank geometry");
+            }
+        }
+        if (!moving) playerShapes.push_back(geometryOnly(firstPlayer));
+    }
+
+    for (std::size_t i = 0; i < playerShapes.size(); ++i)
+        for (std::size_t j = i + 1; j < playerShapes.size(); ++j)
+            expect(playerShapes[i] != playerShapes[j],
+                   "distinct player vehicles collapsed to one geometry");
+
+    reporter.beginSuite("arcade-enemy-armor-paint-preserves-shape");
+    for (Nation nation : tanks3d::core::kSelectableNations)
+    for (int role = 0; role < 4; ++role)
+    {
+        const auto drawArmor = [&](Color color, int armor, bool shadow) {
+            return capture([&] {
+                assets.draw(x, z, yaw, color, true, armor, 0.0f, role,
+                            false, nation, shadow);
+            });
+        };
+        const Stream blue = drawArmor({161, 194, 207, 255}, 1, false);
+        const Stream teal = drawArmor({39, 151, 112, 255}, 4, false);
+        expect(blue != teal, "enemy armor lost its visual color cue");
+        expect(geometryOnly(blue) == geometryOnly(teal),
+               "enemy damage changed the selected model or pose");
+        expect(teal == drawArmor({39, 151, 112, 255}, 4, true),
+               "enemy shadow geometry diverged from visible geometry");
     }
 
     if (!passed)

@@ -11,6 +11,63 @@ This artwork is available in the current development source. The published
 See the [development preview](../README.md#current-development-preview) for rendered
 examples and the [development guide](DEVELOPMENT.md) to build and run it.
 
+
+## Chaffee study and coherent tank roster (September 2026)
+
+The USA level-zero player (`Vehicle::M24Chaffee`, HUD `M24 CHAFFEE`) now uses
+`src/chaffee_sample_model.h`. Following the single-tank review, the requested
+roster expansion applies that casting and material language to all 14 distinct
+vehicles, including every national enemy role. The USA Fast enemy now shares
+the Chaffee geometry with enemy armor colors; the accepted player rendering is
+preserved. `src/arcade_tank_roster.h` reuses the study's section lofts, continuous
+belts and beveled wheel faces. `rosterDesign()` in `src/wwii_tank_model.h` assigns
+each vehicle its own proportions without changing selection or attachments.
+
+| Family | Level 0 | Level 1 | Level 2 | Level 3 | Shape landmarks |
+| --- | --- | --- | --- | --- | --- |
+| USA | M24 Chaffee | M4A3 Sherman | M26 Pershing | T28/T95 | Rounded shoulders; broad, low T95 casemate and paired belts |
+| USSR | T-70 | T-34/85 | IS-2 | KV-5 | Offset light cabin, rearward crown lean, tall KV-5 and auxiliary turret |
+| Germany | Panzer II F | Panzer IV H | Tiger I E | Maus | Squarer cheeks, stronger cupolas, skirts, wide Maus and secondary cannon |
+
+The German Fast enemy retains six road tires (`Sdkfz231SixRad`), and its
+Power enemy retains the separate `PanzerIIIL` casting. Existing enemy role to
+vehicle mappings remain intact. Armor damage and bonus-carrier pulses still
+color the large armor panels; rubber, steel and optics keep independent colors.
+P1 gold and P2 green appear on roof and side markings in all player tiers.
+
+The chosen round-shouldered cabin has a narrower base and roof, a broad cheek,
+a backward-sloping brow, a recessed visor and a short hollow cannon. A hatch,
+service door and one rear exhaust provide a small number of mechanical landmarks.
+The track footprint remains centered at X ±0.375 with width 0.29 and length 1.42;
+shoe relief touches Y=0. The neutral muzzle remains `(0, 0.77, -0.5624)`, and
+no attachment helpers, collision, upgrade rules, camera or gameplay RNG changed.
+
+These models use local material tags 14–17, mapped to the established armor,
+steel, rubber and optic responses. Only these tags skip the old screen-space
+checker grain, palette rounding and armor highlight patch; their shadow receiver
+bias is doubled to avoid dotted self-shadow artifacts on the new casting.
+Other materials retain the previous shader path. Pixel Style remains the existing
+optional post-process pass, with HUD drawn afterward. No new texture, mesh loader,
+resource file, dependency or global model override is introduced.
+
+The original source snapshot, same-camera gray studies, visual iterations,
+full native screenshots, 1:1 crops, masks, scripted motion frames and validation
+logs are under `build/release-evidence/sample-tank-20260910/`. Normal comparisons
+use a 1280×720 window, stage 1 spawn, seed 2048, clock 12, yaw 0°, elevation 50°
+and the original 18.5-unit orthographic span. Diagnostic closeups are labeled
+separately; they do not alter the gameplay camera. Reference images are documented
+in that evidence directory and are excluded from the distributable game.
+
+Build with `make all`. Run the basic sample directly with
+`./build/Tanks3D --quick-start`, or use `make run-app` and start solo as USA.
+The two alternate gray proportions remain review artifacts, not selectable
+production skins. The roster expansion's baseline snapshot, same-camera sheets,
+native game crops, all-tier motion sequences and test logs are under
+`build/release-evidence/roster-art-20260912/`. Its review cameras are diagnostics;
+the default game camera, physical footprint, muzzle helpers and gameplay random
+stream remain unchanged. All geometry is compiled into the game; no extra runtime
+mesh, texture, asset-loader path or resource manifest entry is required.
+
 ## Shape and material language
 
 Vehicles take their visual reference from the compact crew cabin, curved nose
@@ -35,8 +92,8 @@ belts on each side. The KV-5 keeps its auxiliary turret, the Maus its secondary
 cannon, and the fast armored car its three axles. Offset hatches, viewing slits,
 roof equipment, exhausts and stowage follow the new body surfaces. Moving
 vehicles use restrained suspension motion without stretching the entire model.
-Smooth cabin normals preserve the curved shoulders; tread shoes and wheel
-faces provide their own normals. Contact shadows follow each vehicle's actual
+Authored panel normals preserve the shoulder sections without diagonal lighting
+seams; tread shoes and wheel faces provide their own normals. Contact shadows follow each vehicle's actual
 track or wheel footprint.
 
 Architecture uses warm plaster, exposed brick, oxidized green metal, terracotta
@@ -113,6 +170,30 @@ Warm frames replay these shapes instead of reconstructing them. This reduces
 CPU work in dense views while retaining the original colors, silhouettes,
 transparent ordering and shadow geometry. Forest caches clear on asset unload
 or stage changes; the steel cache releases its retained data at application exit.
+
+## Pickup badges and Boat
+
+The nine procedural 64×64 pickup badges share a chamfered enamel frame, dark
+ink, warm highlights and broad cool shadows. Their established accent colors
+remain on the rims; rubber, cloth, steel and glass retain distinct colors.
+The pictograms prioritize their silhouette at the roughly 35-pixel badge size
+in a 1280×720 solo view. Point sampling keeps the authored pixels crisp with
+Pixel Style both off and on; no HUD or global post-process change is required.
+
+Boat is a compact original river tug in both the badge and the rotating 3D
+pickup: a deep blue displacement hull, cream slanted wheelhouse, orange funnel
+and open life ring. Connected hull sections provide a narrow keel, full
+shoulders and a raised bow. All of its vertices share the same yaw transform,
+including the deck fitting; the old crossing rail/box construction is removed.
+Since pickups render after scene lighting, broad face colors supply the visual
+depth. There is no new shader or external asset. The other eight 3D pickup
+models retain their existing geometry.
+
+The 1.53 model scale, 0.90 badge size, contact shadow, float, rotation, blink,
+pickup lifetime, effects and probability are unchanged. Review both the
+generated icons and actual `--quick-start --bonus-showcase` rendering. Include
+all four Boat orientations, normal map occlusion, Pixel Style and co-op.
+Evidence and comparison harnesses belong under `build/release-evidence/`.
 
 ## Implementation boundaries
 

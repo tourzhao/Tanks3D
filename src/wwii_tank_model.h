@@ -2,6 +2,8 @@
 #define TANKS3D_WWII_TANK_MODEL_H
 
 #include "core/nation.h"
+#include "chaffee_sample_model.h"
+#include "arcade_tank_roster.h"
 
 #include <raylib.h>
 #include <rlgl.h>
@@ -1842,6 +1844,105 @@ inline ArcadeVisualProfile arcadeVisualProfile(const ArcadeVehicleSpec &spec)
     return art;
 }
 
+inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
+{
+    using arcade_tank_roster::Family;
+    const ArcadeVehicleSpec spec = arcadeVehicleSpec(vehicle);
+    const ArcadeVisualProfile art = arcadeVisualProfile(spec);
+    arcade_tank_roster::Design d;
+    d.shape = {art.trackLength, art.trackHeight, art.trackHalfWidth,
+               art.trackWidth, .88f, .73f, .58f, .085f, .095f};
+    d.muzzleY = spec.headY;
+    d.muzzleZ = -arcadeMuzzleDistance(spec);
+    d.brake = spec.muzzleBrake;
+    d.skirts = spec.skirts;
+    d.wheeled = spec.wheeled;
+    d.auxiliary = spec.auxiliaryTurret;
+    // Dimensions below are visual profiles only. The attachment and original
+    // running-gear footprint above remain independent of these cabin studies.
+    switch (vehicle)
+    {
+    case Vehicle::M24Chaffee:
+        d.shape = chaffee_sample_model::detail::kShape;
+        d.chaffee = true;
+        break;
+    case Vehicle::M4A3Sherman:
+        d.wheels = 6;
+        break;
+    case Vehicle::M26Pershing:
+        d.shape.cabinWidth = .97f; d.shape.cabinLength = .77f;
+        d.shape.cabinHeight = .64f; d.shape.gunRadius = .102f;
+        d.base = .57f; d.wheels = 6;
+        break;
+    case Vehicle::T28T95:
+        d.shape.cabinWidth = 1.00f; d.shape.cabinLength = 1.00f;
+        d.shape.cabinHeight = .39f; d.shape.cabinZ = .015f;
+        d.shape.gunRadius = .108f; d.base = .58f;
+        d.corner = .13f; d.roofWidth = .76f; d.roofShift = .05f;
+        d.wheels = 7; d.casemate = true;
+        break;
+    case Vehicle::T70:
+        d.shape.cabinWidth = .72f; d.shape.cabinLength = .66f;
+        d.shape.cabinHeight = .49f; d.shape.gunRadius = .085f;
+        d.base = .53f; d.cabinX = -.035f;
+        break;
+    case Vehicle::T3485:
+        d.shape.cabinWidth = .86f; d.shape.cabinLength = .76f;
+        d.shape.cabinHeight = .55f; d.wheels = 5;
+        break;
+    case Vehicle::IS2:
+        d.shape.cabinWidth = .94f; d.shape.cabinLength = .82f;
+        d.shape.cabinHeight = .61f; d.shape.gunRadius = .105f;
+        d.base = .57f; d.wheels = 6;
+        break;
+    case Vehicle::KV5Project:
+        d.shape.cabinWidth = 1.03f; d.shape.cabinLength = .85f;
+        d.shape.cabinHeight = .72f; d.shape.gunRadius = .11f;
+        d.base = .59f; d.wheels = 7;
+        break;
+    case Vehicle::PanzerIIF:
+        d.shape.cabinWidth = .76f; d.shape.cabinLength = .65f;
+        d.shape.cabinHeight = .52f; d.shape.gunRadius = .086f;
+        d.base = .54f;
+        break;
+    case Vehicle::PanzerIVH:
+        d.shape.cabinWidth = .85f; d.shape.cabinLength = .73f;
+        d.shape.cabinHeight = .57f; d.wheels = 6;
+        break;
+    case Vehicle::TigerIE:
+        d.shape.cabinWidth = .99f; d.shape.cabinLength = .78f;
+        d.shape.cabinHeight = .61f; d.shape.gunRadius = .105f;
+        d.base = .57f; d.wheels = 7;
+        break;
+    case Vehicle::Maus:
+        d.shape.cabinWidth = 1.07f; d.shape.cabinLength = .86f;
+        d.shape.cabinHeight = .65f; d.shape.cabinZ = .09f;
+        d.shape.gunRadius = .11f; d.base = .59f;
+        d.wheels = 7; d.coaxial = true;
+        break;
+    case Vehicle::Sdkfz231SixRad:
+        d.shape.cabinWidth = .65f; d.shape.cabinLength = .60f;
+        d.shape.cabinHeight = .43f; d.shape.gunRadius = .082f;
+        d.base = .50f;
+        break;
+    case Vehicle::PanzerIIIL:
+        d.shape.cabinWidth = .83f; d.shape.cabinLength = .72f;
+        d.shape.cabinHeight = .56f; d.wheels = 6;
+        break;
+    }
+    if (spec.nationStyle == ArcadeNationStyle::Soviet)
+    {
+        d.family = Family::Soviet;
+        d.corner = .15f; d.roofShift = .14f;
+    }
+    if (spec.nationStyle == ArcadeNationStyle::German)
+    {
+        d.family = Family::German;
+        d.corner = .105f; d.roofWidth = .80f; d.roofShift = .055f;
+    }
+    return d;
+}
+
 inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
                                   const Palette &p, bool moving, bool enemy)
 {
@@ -2626,7 +2727,6 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
                                  ? bodyColor
                                  : detail::nationalPlayerPaint(bodyColor,
                                                                nation);
-    const detail::Palette colors = detail::palette(armorColor, enemy);
     const Color identityColor = enemy
                                     ? detail::mix(bodyColor, WHITE, 0.22f)
                                     : (identity & 1) == 0
@@ -2649,7 +2749,11 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
         rlRotatef(std::sin(phase + 0.95f) * 0.65f, 1.0f, 0.0f, 0.0f);
     }
 
-    detail::drawArcadeVehicle(vehicle, colors, identityColor, moving, enemy);
+    if (!enemy && vehicle == Vehicle::M24Chaffee)
+        chaffee_sample_model::draw(identityColor, moving);
+    else
+        arcade_tank_roster::draw(detail::rosterDesign(vehicle), armorColor,
+                                 identityColor, moving, enemy);
 
     rlPopMatrix();
     detail::drawShield(shield, identity);

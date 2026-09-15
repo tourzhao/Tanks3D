@@ -1,0 +1,46 @@
+{
+  "completed_utc": "2026-09-14T23:00:05.502808+00:00",
+  "scope": "AI as P2 increment and its application/build/test/release integration; not a fresh review of all earlier art/LAN/training changes",
+  "production_files_modified": [],
+  "validated_source_files_unchanged": 201,
+  "reused_validation": "../ai-p2-app-20260914-round1/validation.json",
+  "runtime_probe": {
+    "exit_code": 0,
+    "summary": "SUMMARY rounds=70 decisions=73377 shots=8281 base_hits=0 clear=3 lost=4 mean_us=13.057 p50_us=6.667 p95_us=70.209 p99_us=98.958 max_us=398.375",
+    "partner": "P1 neutral; P2 native AI",
+    "stages": 35,
+    "clock_variants": 2,
+    "limit_seconds_per_run": 60,
+    "graphics": false,
+    "human_cooperation_acceptance": false
+  },
+  "distribution_check": {
+    "command": "make -j4 test-dist DIST_CHANNEL=alpha.5",
+    "exit_code": 0,
+    "negative_cases": 16,
+    "candidate": false
+  },
+  "release_gate": {
+    "command": "make verify-alpha-release-ready DIST_CHANNEL=alpha.5",
+    "exit_code": 2,
+    "contract_test_counts": [
+      12,
+      75,
+      18,
+      24,
+      10,
+      13,
+      11,
+      46
+    ],
+    "strict_verifier_exit_code": 1,
+    "reason": "current Git worktree is not clean",
+    "covers_current_ai_increment": false
+  },
+  "findings": [
+    "Required AI-mode physical input / human cooperation QA incomplete",
+    "Python/native parity tests not run by current CI; native AI tests omitted from coverage target list",
+    "No clean, identity-bound release candidate and candidate-bound human/performance/clean-Mac evidence for this increment"
+  ],
+  "no_blocking_runtime_defect_reproduced": true
+}

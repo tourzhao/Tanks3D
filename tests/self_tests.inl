@@ -3145,15 +3145,17 @@ int runSettingsProgressionAndSettlementSelfTests(
         return 1;
     MenuSettings menuDefaults;
     const bool onePlayerAdvancedRow =
-        menuRowCount(menuDefaults) == 5 &&
-        advancedMenuRow(menuDefaults) == 4;
+        menuRowCount(menuDefaults) == 6 &&
+        lanMenuRow(menuDefaults) == 4 &&
+        advancedMenuRow(menuDefaults) == 5;
     menuDefaults.playerCount = 2;
     if (!checkTest(onePlayerAdvancedRow &&
                        kAdvancedMenuRowCount == 8 &&
                        kAdvancedMenuPixelStyleRow == 6 &&
                        kAdvancedMenuBackRow == 7 &&
-                       menuRowCount(menuDefaults) == 6 &&
-                       advancedMenuRow(menuDefaults) == 5 &&
+                       menuRowCount(menuDefaults) == 7 &&
+                       lanMenuRow(menuDefaults) == 5 &&
+                       advancedMenuRow(menuDefaults) == 6 &&
                        advancedSettingsAreDefault(menuDefaults) &&
                        !menuDefaults.pixelStyleEnabled &&
                        percentageLabel(-30) == "-30%" &&
@@ -3166,6 +3168,15 @@ int runSettingsProgressionAndSettlementSelfTests(
                        cameraElevationLabel(50) == "50 DEG  DEFAULT" &&
                        cameraElevationLabel(70) == "70 DEG",
                    "advanced menu rows, defaults, or percentage labels are incorrect"))
+        return 1;
+    MenuSettings lanSelection;
+    lanSelection.selected = lanMenuRow(lanSelection);
+    UiInputFrame chooseCoop;
+    chooseCoop.selectTwoPlayerPressed = true;
+    updateMenu(lanSelection, chooseCoop);
+    if (!checkTest(lanSelection.playerCount == 2 &&
+                       lanSelection.selected == lanMenuRow(lanSelection),
+                   "LAN row must remain selected when player count changes"))
         return 1;
     MenuSettings cameraMenu;
     cameraMenu.advancedSelected = 4;
@@ -6935,6 +6946,58 @@ int runRandomProbabilityBoundarySelfTests(const fs::path &resourceRoot)
     if (!checkTest(adapterParity,
                    "Mt19937RandomSource changed mixed distribution output "
                    "for seed " + randomSeedLabel(kAdapterSeed)))
+        return 1;
+
+    // On the supported libc++ toolchain this seed rounds draw 1670 to 1.0f.
+    // Exercise the production adapter rather than supplying an invalid test
+    // roll directly, and require identical engine consumption after correction.
+    constexpr std::uint32_t kRoundedEndpointSeed = 43517U;
+    Mt19937RandomSource endpointAdapter(kRoundedEndpointSeed);
+    std::mt19937 endpointReference(kRoundedEndpointSeed);
+    std::uniform_real_distribution<float> endpointReal(0.0f, 1.0f);
+    bool endpointRange = true;
+    bool ordinaryOutputParity = true;
+    for (int draw = 0; draw < 2000; ++draw)
+    {
+        const float expected = endpointReal(endpointReference);
+        const float actual = endpointAdapter.draw(endpointReal);
+        endpointRange = endpointRange && actual >= 0.0f && actual < 1.0f;
+        if (expected < 1.0f)
+            ordinaryOutputParity = ordinaryOutputParity && actual == expected;
+    }
+    std::ostringstream adapterEngineState;
+    std::ostringstream referenceEngineState;
+    endpointAdapter.appendState(adapterEngineState);
+    referenceEngineState << endpointReference;
+    if (!checkTest(endpointRange && ordinaryOutputParity &&
+                       adapterEngineState.str() == referenceEngineState.str(),
+                   "uniform real endpoint escaped [0,1), changed valid "
+                   "outputs, or consumed additional engine draws"))
+        return 1;
+
+    Mt19937RandomSource fireEndpointAdapter(kRoundedEndpointSeed);
+    for (int draw = 0; draw < 1670; ++draw)
+        fireEndpointAdapter.draw(endpointReal);
+    Enemy endpointEnemy;
+    endpointEnemy.id = 8;
+    endpointEnemy.type = tanks3d::game::kBasicEnemyType;
+    endpointEnemy.driveDirection = CardinalDirection::North;
+    endpointEnemy.fireCooldown = 0.0f;
+    EnemyFireConfiguration endpointConfiguration;
+    endpointConfiguration.shellSpawnDistance = kShellSpawnDistance;
+    int endpointLaunches = 0;
+    const EnemyFireOutcome endpointFire = advanceEnemyFireTransaction(
+        endpointEnemy, false, endpointConfiguration,
+        EnemyFireRandom{[&]() {
+            return fireEndpointAdapter.draw(endpointReal);
+        }},
+        [](int) { return false; },
+        [&](const auto &) { ++endpointLaunches; });
+    if (!checkTest(endpointFire == EnemyFireOutcome::Fired &&
+                       endpointLaunches == 1 &&
+                       endpointEnemy.fireCooldown >= 0.0f &&
+                       endpointEnemy.fireCooldown < 1.0f,
+                   "rounded production RNG endpoint rejected a due enemy shot"))
         return 1;
 
     constexpr int kBoundaryStage = 17;

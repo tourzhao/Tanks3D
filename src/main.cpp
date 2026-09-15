@@ -17,6 +17,7 @@
 #include <rlgl.h>
 
 #include "app/command_side_effect_dispatch.h"
+#include "app/ai_player.h"
 #include "app/input_adapter.h"
 #include "app/release_performance_capabilities.h"
 #include "app/release_performance_log.h"
@@ -45,6 +46,9 @@
 #include "game/stage_map.h"
 #include "platform/gamepad_backend.h"
 #include "post_process.h"
+#include "app/lan_game_bridge.h"
+#include "app/lan_session.h"
+#include "lan_menu.h"
 #include "tank_assets.h"
 #include "../tests/test_support.h"
 #include "../tests/stage_map_expectations.h"
@@ -937,7 +941,7 @@ vec3 analyticSky(vec3 direction)
     return mix(ground, sky, upper);
 }
 
-float shadowVisibility(vec3 normal, vec3 toLight)
+float shadowVisibility(vec3 normal, vec3 toLight, float biasScale)
 {
     if (shadowsEnabled == 0) return 1.0;
     vec4 lightSpace = lightVP*vec4(fragPosition, 1.0);
@@ -949,7 +953,7 @@ float shadowVisibility(vec3 normal, vec3 toLight)
         return 1.0;
 
     float normalLight = max(dot(normal, toLight), 0.0);
-    float bias = max(0.00065*(1.0 - normalLight), 0.00012);
+    float bias = max(0.00065*(1.0 - normalLight), 0.00012)*biasScale;
     vec2 texel = vec2(1.0/float(shadowMapResolution));
     float occlusion = 0.0;
     float samples = 0.0;
@@ -975,6 +979,11 @@ void main()
     int materialTag = materialTagOverride >= 0
                           ? materialTagOverride
                           : vertexMaterialTag;
+    // Authored arcade castings use clean paint panels. Give their materials
+    // (14..17) the established vehicle responses without the
+    // legacy screen-space grain; Pixel Style remains in the world post pass.
+    bool sampleMaterial = materialTag >= 14 && materialTag <= 17;
+    if (sampleMaterial) materialTag -= 5;
     // Vehicles use their own painted metal response. Architecture and earth
     // share a softer painted ramp so the whole battlefield belongs together.
     bool vehicleMaterial = materialTag >= 9 && materialTag <= 13;
@@ -1048,7 +1057,7 @@ void main()
                    highlightColor*graphicHighlightMask*highlightStrength;
     }
     vec3 diffuseWeight = (1.0 - fresnel)*(1.0 - metallic);
-    float visibility = shadowVisibility(normal, toLight);
+    float visibility = shadowVisibility(normal, toLight, sampleMaterial ? 2.0 : 1.0);
     vec3 direct = (diffuseWeight*albedo/PI + specular)*lightColor*
                   2.55*directNormalLight*visibility;
 
@@ -1107,7 +1116,8 @@ void main()
         float staircase = arcadeOrder < 1.0 ? -0.026 :
                           arcadeOrder < 2.0 ? -0.008 :
                           arcadeOrder < 3.0 ? 0.010 : 0.026;
-        linearColor *= 1.0 + staircase*(shadeCoordinate < 0.72 ? 1.0 : 0.45);
+        if (!sampleMaterial)
+            linearColor *= 1.0 + staircase*(shadeCoordinate < 0.72 ? 1.0 : 0.45);
 
         // Material separation is intentionally graphic rather than physical:
         // warm saturated armor, cool flat steel, almost-ink rubber, luminous
@@ -1144,7 +1154,7 @@ void main()
         // Highlights are compact opaque paint patches, not metal reflections.
         float hardHighlight = step(0.82, normalHalf)*step(0.58, normalLight)*
                               step(0.42, normal.y*0.5 + 0.5);
-        if (materialTag == 9)
+        if (materialTag == 9 && !sampleMaterial)
             linearColor = mix(linearColor,
                               albedo*1.04 + vec3(0.10, 0.074, 0.031),
                               hardHighlight*0.26);
@@ -1178,7 +1188,7 @@ void main()
     // Keep gamma-encoded scene color for the existing filmic post pass. A
     // half-float target preserves values above one for bloom/tonemapping.
     vec3 encoded = pow(max(linearColor, vec3(0.0)), vec3(1.0/2.2));
-    if (vehicleMaterial)
+    if (vehicleMaterial && !sampleMaterial)
     {
         vec2 paletteCell = floor(gl_FragCoord.xy/2.0);
         float paletteDither = mod(paletteCell.x + paletteCell.y*2.0, 4.0) - 1.5;
@@ -1557,7 +1567,10 @@ public:
 
     float draw(std::uniform_real_distribution<float> &distribution) override
     {
-        return distribution(engine_);
+        // Float rounding can produce the excluded upper endpoint on libc++.
+        // Correct that value without drawing again or shifting the shared RNG.
+        return std::min(distribution(engine_),
+                        std::nextafter(distribution.b(), distribution.a()));
     }
 
     int draw(std::uniform_int_distribution<int> &distribution) override
@@ -5089,7 +5102,8 @@ ViewportHudLayout viewportHudLayout(Rectangle viewport, int playerCount,
 }
 
 void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport,
-                     bool showFrameRate)
+                     bool showFrameRate, bool showControlHints = true,
+                     bool aiControlled = false)
 {
     const Player &player = game.players()[playerIndex];
     const Color accent = playerColor(playerIndex);
@@ -5102,7 +5116,7 @@ void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport,
     const int mapY = top + 4;
 
     const std::string nationLine = "P" + std::to_string(playerIndex + 1) +
-                                   "  " + nationName(player.nation);
+                                   (aiControlled ? " AI  " : "  ") + nationName(player.nation);
     const bool drawFrameRate = showFrameRate && playerIndex == 0;
     const std::string fpsLine = drawFrameRate
                                     ? "FPS " + std::to_string(GetFPS())
@@ -5177,6 +5191,15 @@ void drawViewportHud(const Game3D &game, int playerIndex, Rectangle viewport,
     if (playerIndex == 0)
         drawMiniMap(game, layout.mapX, mapY, layout.mapCellSize);
 
+    if (!showControlHints)
+        return;
+    if (aiControlled)
+    {
+        drawCenteredText("AI TEAMMATE", layout.footerCenterX,
+                         static_cast<int>(viewport.y + viewport.height) - 28,
+                         16, accent);
+        return;
+    }
     const std::string movement = playerIndex == 0 ? "PAD 1 / ARROWS"
                                                  : "PAD 2 / WASD";
     const std::string fire = "BOTTOM/LEFT FACE OR R1/RT FIRE";
@@ -5799,7 +5822,8 @@ void renderHighScore(const Game3D &game)
 bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                 TankAssets &tankAssets, const EnvironmentAssets &environment,
                 bonus_assets::Assets &bonusAssets, PostProcess &postProcess,
-                bool showFrameRate)
+                bool showFrameRate, const std::string &lanStatus = "",
+                bool aiPlayer2 = false)
 {
     if (game.highScoreDisplay())
     {
@@ -5860,7 +5884,8 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                      static_cast<float>(GetTime()));
     drawStreakPopups(game, sharedCamera, screenWidth, screenHeight);
     for (int index = 0; index < game.playerCount(); ++index)
-        drawViewportHud(game, index, destination, showFrameRate);
+        drawViewportHud(game, index, destination, showFrameRate, lanStatus.empty(),
+                        aiPlayer2 && index == 1);
     drawGltfProbeHud(tankAssets, screenWidth, screenHeight);
     DrawRectangleLinesEx(destination, 3.0f, Color{224, 191, 67, 255});
     if (game.bonusMessageTimer() > 0.0f)
@@ -5880,18 +5905,22 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
                          game.gameOver() ? RED
                          : game.stageIntro() || game.stageTransition() ? GOLD
                                                                        : RAYWHITE);
+        const std::string exitHint = lanStatus.empty()
+                                         ? "MINUS / ESC: SETUP"
+                                         : "MINUS / ESC: LEAVE ROOM";
         if (game.gameOver())
-            drawCenteredText("BATTLE REPORT SOON    MINUS / ESC: SETUP",
+            drawCenteredText("BATTLE REPORT SOON    " + exitHint,
                              screenWidth / 2, screenHeight / 2 + 24, 21,
                              LIGHTGRAY);
         else if (game.stageIntro())
             drawCenteredText("GET READY", screenWidth / 2,
                              screenHeight / 2 + 24, 21, LIGHTGRAY);
         else if (game.paused())
-            drawCenteredText("PLUS / ENTER: RESUME    MINUS / ESC: SETUP",
+            drawCenteredText("PLUS / ENTER: RESUME    " + exitHint,
                              screenWidth / 2, screenHeight / 2 + 24, 21,
                              LIGHTGRAY);
     }
+    tanks3d::drawLanStatus(lanStatus);
     EndDrawing();
     return true;
 }
@@ -5899,6 +5928,7 @@ bool renderGame(Game3D &game, ViewTargets &viewTargets, SceneLighting &lighting,
 struct MenuSettings
 {
     int playerCount = 1;
+    bool aiPlayer2 = false;
     int stage = 1;
     int lives = 10;
     std::array<Nation, 2> nations{{Nation::UnitedStates, Nation::SovietUnion}};
@@ -5912,14 +5942,25 @@ struct MenuSettings
     int connectedGamepads = 0;
 };
 
+std::string menuPlayerModeLabel(const MenuSettings &settings)
+{
+    return settings.aiPlayer2 ? "AI AS P2"
+                             : (settings.playerCount == 1 ? "1 PLAYER" : "2 PLAYERS");
+}
+
 int menuRowCount(const MenuSettings &settings)
 {
-    return 5 + (settings.playerCount == 2 ? 1 : 0);
+    return 6 + (settings.playerCount == 2 ? 1 : 0);
 }
 
 int advancedMenuRow(const MenuSettings &settings)
 {
     return menuRowCount(settings) - 1;
+}
+
+int lanMenuRow(const MenuSettings &settings)
+{
+    return menuRowCount(settings) - 2;
 }
 
 bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
@@ -5929,6 +5970,7 @@ bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
     const int previousPlayerCount = settings.playerCount;
     const bool advancedWasSelected =
         settings.selected == advancedMenuRow(settings);
+    const bool lanWasSelected = settings.selected == lanMenuRow(settings);
     if (input.upPressed)
     {
         settings.selected = (settings.selected + rowCount - 1) % rowCount;
@@ -5950,7 +5992,10 @@ bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
     {
         if (settings.selected == 0)
         {
-            settings.playerCount = settings.playerCount == 1 ? 2 : 1;
+            const int mode = settings.aiPlayer2 ? 2 : settings.playerCount - 1;
+            const int next = (mode + direction + 3) % 3;
+            settings.playerCount = next == 0 ? 1 : 2;
+            settings.aiPlayer2 = next == 2;
             changed = true;
         }
         else if (settings.selected == 1)
@@ -5973,18 +6018,22 @@ bool updateMenu(MenuSettings &settings, const UiInputFrame &input)
     }
     if (input.selectOnePlayerPressed)
     {
-        changed = changed || settings.playerCount != 1;
+        changed = changed || settings.playerCount != 1 || settings.aiPlayer2;
         settings.playerCount = 1;
+        settings.aiPlayer2 = false;
     }
     if (input.selectTwoPlayerPressed)
     {
-        changed = changed || settings.playerCount != 2;
+        changed = changed || settings.playerCount != 2 || settings.aiPlayer2;
         settings.playerCount = 2;
+        settings.aiPlayer2 = false;
     }
     rowCount = menuRowCount(settings);
     settings.selected = advancedWasSelected &&
                                 settings.playerCount != previousPlayerCount
                             ? advancedMenuRow(settings)
+                        : lanWasSelected && settings.playerCount != previousPlayerCount
+                            ? lanMenuRow(settings)
                             : std::clamp(settings.selected, 0, rowCount - 1);
     return changed;
 }
@@ -6134,7 +6183,8 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
     const int width = GetScreenWidth();
     const int height = GetScreenHeight();
     const bool compact = height < 700;
-    const int rowHeight = compact ? 34 : 46;
+    const int rowHeight = compact ? 34 :
+        (settings.playerCount == 2 && height < 760 ? 42 : 46);
     const int treeRowHeight = compact ? 18 : 24;
     BeginDrawing();
     ClearBackground(Color{11, 18, 24, 255});
@@ -6167,7 +6217,7 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
                                 0.08f, 8, 2.0f, Color{99, 151, 159, 220});
 
     std::vector<std::string> labels{{"PLAYERS", "STAGE", "LIVES EACH", "P1 NATION"}};
-    std::vector<std::string> values{{std::to_string(settings.playerCount),
+    std::vector<std::string> values{{menuPlayerModeLabel(settings),
                                      std::to_string(settings.stage),
                                      std::to_string(settings.lives),
                                      nationName(settings.nations[0])}};
@@ -6176,6 +6226,8 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
         labels.push_back("P2 NATION");
         values.push_back(nationName(settings.nations[1]));
     }
+    labels.push_back("LOCAL NETWORK");
+    values.push_back("OPEN");
     labels.push_back("ADVANCED SETTINGS");
     values.push_back("OPEN");
     const int valueCenter = panelX + panelWidth - 170;
@@ -6195,7 +6247,7 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
                                              compact ? 19 : 23, 15);
         drawTextShadow(values[index], valueCenter - MeasureText(values[index].c_str(), valueFont) / 2,
                        y - 1, valueFont, selected ? GOLD : LIGHTGRAY);
-        if (selected && index != advancedMenuRow(settings))
+        if (selected && index != advancedMenuRow(settings) && index != lanMenuRow(settings))
         {
             drawTextShadow("<", valueCenter - 148, y, 21, GOLD);
             drawTextShadow(">", valueCenter + 132, y, 21, GOLD);
@@ -6222,12 +6274,15 @@ void drawMenu(const MenuSettings &settings, const std::string &error)
     drawCenteredText("BOTTOM FACE / ENTER: START OR OPEN", width / 2,
                      helpY + (compact ? 22 : 31), compact ? 19 : 25,
                      Color{255, 224, 94, 255});
-    drawCenteredText("P1  PAD 1 / ARROWS     P2  PAD 2 / WASD", width / 2,
+    drawCenteredText(settings.aiPlayer2
+                         ? "P1  YOU: PAD / ARROWS     P2  AI TEAMMATE"
+                         : "PLAYERS: 1 PLAYER / 2 PLAYERS / AI AS P2", width / 2,
                      helpY + (compact ? 48 : 67), compact ? 14 : 16,
                      Color{189, 210, 214, 255});
     const std::string deviceLine =
         "GAMEPADS " + std::to_string(settings.connectedGamepads) +
-        "     1P: PAD 1/2     2P: FIRST=P1 SECOND=P2     "
+        (settings.aiPlayer2 ? "     AI MODE: PAD 1/2 CONTROLS P1     "
+                           : "     1P: PAD 1/2     2P: FIRST=P1 SECOND=P2     ") +
         "F8 QUALITY     F11 FULLSCREEN     MINUS / ESC QUIT";
     drawCenteredText(deviceLine, width / 2, helpY + (compact ? 70 : 94),
                      fittedFontSize(deviceLine, width - 40,
@@ -6782,7 +6837,15 @@ int main(int argc, char **argv)
                                        : static_cast<std::uint32_t>(
                                              std::random_device{}());
     Game3D game(resourceRoot, gameSeed, &audio);
+    tanks3d::app::AiPlayerController aiPlayer;
     ViewTargets viewTargets;
+    tanks3d::net::TcpChannel lanChannel;
+    tanks3d::app::LanSession lanSession(lanChannel, tanks3d::net::executableFingerprint());
+    tanks3d::LanMenu lanMenu;
+    bool lanOpen = false;
+    bool lanAutoHost = false;
+    std::string lanAutoJoin;
+    std::uint16_t lanPort = tanks3d::net::kLanPort;
     bool inGame = false;
     bool bonusShowcase = false;
     bool tankShowcase = false;
@@ -6809,7 +6872,37 @@ int main(int argc, char **argv)
     for (int argument = 1; argument < argc; ++argument)
     {
         const std::string value = argv[argument];
-        if (value.rfind("--stage=", 0) == 0)
+        if (value == "--lan-host" || value.rfind("--lan-host=", 0) == 0)
+        {
+            lanAutoHost = true;
+            if (value != "--lan-host")
+            {
+                tanks3d::net::Endpoint endpoint;
+                if (!tanks3d::net::parseEndpoint("127.0.0.1:" + value.substr(11),
+                                                 endpoint))
+                {
+                    std::cerr << "Invalid LAN port\n";
+                    return 2;
+                }
+                lanPort = endpoint.port;
+            }
+        }
+        else if (value.rfind("--lan-join=", 0) == 0)
+        {
+            tanks3d::net::Endpoint endpoint;
+            lanAutoJoin = value.substr(11);
+            if (!tanks3d::net::parseEndpoint(lanAutoJoin, endpoint))
+            {
+                std::cerr << "--lan-join requires an IPv4 address[:port]\n";
+                return 2;
+            }
+        }
+        else if (value.rfind("--lan-", 0) == 0)
+        {
+            std::cerr << "Use --lan-host[=port] or --lan-join=IPv4[:port]\n";
+            return 2;
+        }
+        else if (value.rfind("--stage=", 0) == 0)
         {
             int requestedStage = settings.stage;
             std::istringstream(value.substr(8)) >> requestedStage;
@@ -6837,14 +6930,17 @@ int main(int argc, char **argv)
         }
         else if (value == "--quick-start")
         {
+            settings.playerCount = 1;
+            settings.aiPlayer2 = false;
             inGame = game.start(1, settings.lives, settings.stage,
                                 settings.nations, settings.advanced,
                                 settings.cameraYawDegrees,
                                 settings.cameraElevationDegrees);
         }
-        else if (value == "--quick-start-2p")
+        else if (value == "--quick-start-2p" || value == "--quick-start-ai")
         {
             settings.playerCount = 2;
+            settings.aiPlayer2 = value == "--quick-start-ai";
             inGame = game.start(2, settings.lives, settings.stage,
                                 settings.nations, settings.advanced,
                                 settings.cameraYawDegrees,
@@ -6852,6 +6948,8 @@ int main(int argc, char **argv)
         }
         else if (value == "--quick-start-ussr")
         {
+            settings.playerCount = 1;
+            settings.aiPlayer2 = false;
             settings.nations[0] = Nation::SovietUnion;
             inGame = game.start(1, settings.lives, settings.stage,
                                 settings.nations, settings.advanced,
@@ -6860,6 +6958,8 @@ int main(int argc, char **argv)
         }
         else if (value == "--quick-start-germany")
         {
+            settings.playerCount = 1;
+            settings.aiPlayer2 = false;
             settings.nations[0] = Nation::Germany;
             inGame = game.start(1, settings.lives, settings.stage,
                                 settings.nations, settings.advanced,
@@ -6966,6 +7066,42 @@ int main(int argc, char **argv)
         }
     }
 
+    const auto hostLanRoom = [&]()
+    {
+        tanks3d::net::RoomSettings room;
+        room.seed = static_cast<std::uint32_t>(std::random_device{}());
+        room.stage = settings.stage;
+        room.lives = settings.lives;
+        room.nations = settings.nations;
+        room.advanced = settings.advanced;
+        lanMenu.hostAddresses = tanks3d::net::localIpv4Addresses();
+        lanMenu.error.clear();
+        lanSession.host(room, GetTime(), lanPort);
+    };
+    if (lanAutoHost || !lanAutoJoin.empty())
+    {
+        if ((lanAutoHost && !lanAutoJoin.empty()) || inGame || bonusShowcase ||
+            tankShowcase || settlementShowcase || baseDamageShowcase ||
+            baseSteelShowcase || enemyCreationShowcase || forestCoverShowcase ||
+            settings.advancedOpen || releaseScreenshot.requested() ||
+            releasePerformance.requested())
+        {
+            std::cerr << "Use one LAN mode, without quick-start or preview modes\n";
+            return 2;
+        }
+        lanOpen = true;
+        SetWindowState(FLAG_WINDOW_ALWAYS_RUN);
+        if (lanAutoHost)
+            hostLanRoom();
+        else
+        {
+            lanMenu.address = lanAutoJoin;
+            tanks3d::net::Endpoint endpoint;
+            tanks3d::net::parseEndpoint(lanAutoJoin, endpoint);
+            lanSession.join(endpoint, settings.nations[0], GetTime());
+        }
+    }
+
     auto previousFrame =
         std::chrono::steady_clock::now() - kInteractiveFrameBudget;
     while (!exitRequested && !WindowShouldClose())
@@ -7033,6 +7169,128 @@ int main(int argc, char **argv)
         if (!releasePerformance.requested() && IsKeyPressed(KEY_F8))
             lighting.toggleQuality();
 
+        if (lanOpen)
+        {
+            using tanks3d::LanMenuAction;
+            using tanks3d::app::LanPhase;
+            const bool focused = IsWindowFocused();
+            const UiInputFrame lanUi = focused ? uiInput : UiInputFrame{};
+            const auto phase = lanSession.phase();
+            if (phase == LanPhase::Idle || phase == LanPhase::Failed)
+            {
+                inGame = false;
+                const auto action = lanMenu.update(lanUi);
+                if (action == LanMenuAction::Back)
+                {
+                    lanSession.stop();
+                    lanOpen = false;
+                    ClearWindowState(FLAG_WINDOW_ALWAYS_RUN);
+                    drawMenu(settings, menuError);
+                    continue;
+                }
+                if (action == LanMenuAction::Host)
+                    hostLanRoom();
+                if (action == LanMenuAction::Join)
+                {
+                    tanks3d::net::Endpoint endpoint;
+                    if (tanks3d::net::parseEndpoint(lanMenu.address, endpoint))
+                    {
+                        lanMenu.error.clear();
+                        lanSession.join(endpoint, settings.nations[0], GetTime());
+                    }
+                    else
+                        lanMenu.error = "Enter the host IPv4 address, optionally "
+                                        "followed by :port.";
+                }
+            }
+            else if (lanUi.cancelPressed)
+            {
+                lanSession.stop();
+                lanOpen = inGame = false;
+                audio.stopAll();
+                viewTargets.release();
+                ClearWindowState(FLAG_WINDOW_ALWAYS_RUN);
+                drawMenu(settings, menuError);
+                continue;
+            }
+            PlayerInputFrame localFrame = readRaylibPlayerInputFrame();
+            mergePlayerControlFrame(localFrame.players[0], localFrame.players[1]);
+            for (const auto &controls : gamepadFrame.players.players)
+                mergePlayerControlFrame(localFrame.players[0], controls);
+            if (!focused)
+                localFrame = {};
+            std::uint8_t controls = 0;
+            if (lanUi.pausePressed)
+                controls |= tanks3d::net::Control::Pause;
+            if (lanUi.confirmPressed)
+                controls |= tanks3d::net::Control::Confirm;
+            if (lanSession.isHost() && lanUi.restartPressed)
+                controls |= tanks3d::net::Control::Restart;
+            lanSession.update(GetTime(), localFrame.players[0], controls);
+            if (const auto room = lanSession.takeStart())
+            {
+                audio.stopAll();
+                viewTargets.release();
+                game = Game3D(resourceRoot, room->seed, &audio);
+                if (game.start(2, room->lives, room->stage, room->nations,
+                               room->advanced, settings.cameraYawDegrees,
+                               settings.cameraElevationDegrees))
+                {
+                    inGame = true;
+                    lanSession.ready();
+                }
+                else
+                    lanSession.abort(tanks3d::net::LeaveReason::CannotStart);
+            }
+            tanks3d::net::Packet tick;
+            while (lanSession.nextTick(tick))
+            {
+                const auto result = tanks3d::app::applyLanTick(game, tick);
+                if (result != tanks3d::app::LanTickResult::Continue)
+                {
+                    if (result == tanks3d::app::LanTickResult::CannotLoad)
+                        lanSession.abort(tanks3d::net::LeaveReason::CannotStart);
+                    else
+                        lanSession.stop();
+                    inGame = false;
+                    audio.stopAll();
+                    viewTargets.release();
+                    break;
+                }
+                if (tick.tick % tanks3d::net::kDigestInterval == 0)
+                    lanSession.recordDigest(
+                        tanks3d::net::stateHash(game.sessionDigest().state));
+            }
+            lanSession.flush();
+            if (lanSession.phase() == LanPhase::Playing)
+            {
+                tankAssets.setAnimationClock(GetTime());
+                postProcess.setPixelStyleEnabled(settings.pixelStyleEnabled);
+                if (lanSession.waitingForPeer())
+                    audio.updateEngine(false, false);
+                const std::string status =
+                    lanSession.waitingForPeer()
+                        ? "LAN: WAITING FOR THE OTHER COMPUTER..."
+                        : (lanSession.isHost() ? "LAN HOST - YOU ARE P1 (GOLD)"
+                                               : "LAN GUEST - YOU ARE P2 (GREEN)");
+                if (!renderGame(game, viewTargets, lighting, tankAssets, environment,
+                                bonusAssets, postProcess, true, status))
+                    lanSession.abort(tanks3d::net::LeaveReason::CannotStart);
+            }
+            else
+            {
+                if (lanSession.phase() == LanPhase::Failed)
+                {
+                    inGame = false;
+                    audio.stopAll();
+                    viewTargets.release();
+                }
+                lanMenu.draw(lanSession, settings.stage, settings.lives,
+                             nationName(settings.nations[0]), lanPort);
+            }
+            continue;
+        }
+
         if (releasePerformanceRecorder && !inGame)
         {
             std::cerr << "Release performance telemetry left the active "
@@ -7071,6 +7329,15 @@ int main(int argc, char **argv)
             else if (uiInput.confirmPressed)
             {
                 audio.play(AudioCue::MenuSelect);
+                if (settings.selected == lanMenuRow(settings))
+                {
+                    lanOpen = true;
+                    lanMenu.error.clear();
+                    SetWindowState(FLAG_WINDOW_ALWAYS_RUN);
+                    lanMenu.draw(lanSession, settings.stage, settings.lives,
+                                 nationName(settings.nations[0]), lanPort);
+                    continue;
+                }
                 if (settings.selected == advancedMenuRow(settings))
                 {
                     settings.advancedOpen = true;
@@ -7085,6 +7352,7 @@ int main(int argc, char **argv)
                                settings.cameraElevationDegrees))
                 {
                     inGame = true;
+                    aiPlayer.reset();
                     menuError.clear();
                 }
                 else
@@ -7127,10 +7395,12 @@ int main(int argc, char **argv)
             {
                 menuError = game.lastError();
             }
-            if (!game.endingSequence() && uiInput.restartPressed &&
-                !game.restart())
+            if (!game.endingSequence() && uiInput.restartPressed)
             {
-                menuError = game.lastError();
+                if (game.restart())
+                    aiPlayer.reset();
+                else
+                    menuError = game.lastError();
             }
         }
 
@@ -7156,13 +7426,20 @@ int main(int argc, char **argv)
                     inputFrame.players[playerIndex],
                     gamepadFrame.players.players[playerIndex]);
             }
-            if (game.playerCount() == 1)
+            if (game.playerCount() == 1 || settings.aiPlayer2)
             {
-                // Either of the two menu-capable pads may start and control a
-                // solo battle; two-player games retain strict P1/P2 isolation.
+                // Either menu-capable pad controls the sole human in solo/AI
+                // mode; human two-player games retain P1/P2 isolation.
                 mergePlayerControlFrame(
                     inputFrame.players[0],
                     gamepadFrame.players.players[1]);
+            }
+            if (settings.aiPlayer2)
+            {
+                const bool battleRunning = !game.paused() && !game.stageIntro() &&
+                    !game.gameOver() && !game.settling() && !game.highScoreDisplay();
+                aiPlayer.update(dt, battleRunning, game.stage(), game.map(),
+                                game.players(), game.enemies(), inputFrame);
             }
             game.update(dt, inputFrame);
             if (releasePerformanceRecorder)
@@ -7202,7 +7479,7 @@ int main(int argc, char **argv)
         postProcess.setPixelStyleEnabled(settings.pixelStyleEnabled);
         if (!renderGame(game, viewTargets, lighting, tankAssets, environment,
                         bonusAssets, postProcess,
-                        !releaseScreenshot.requested()))
+                        !releaseScreenshot.requested(), "", settings.aiPlayer2))
         {
             menuError = "Unable to allocate the gameplay render target";
             std::cerr << menuError << '\n';
@@ -7307,6 +7584,7 @@ int main(int argc, char **argv)
         processResult = 1;
     }
 
+    lanSession.stop();
     viewTargets.release();
     audio.updateEngine(false, false);
     audio.unload();

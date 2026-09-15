@@ -12,6 +12,18 @@ associated marks belong to their respective rights holders. This project has
 no affiliation with or endorsement from SNK. The source-to-model mapping is
 recorded in `ASSET_LICENSES.md`.
 
+The Chaffee study and its tank roster extension additionally study WAVE's SV-001/I model photographs
+for three-dimensional structure. Those photographs and SNK's gameplay screenshots
+remain reference material belonging to their rights holders; neither is included
+in the game assets. The geometry and paint colors are original project work,
+licensed under the repository's PolyForm Noncommercial 1.0.0 terms. No new
+third-party runtime asset or dependency is introduced by the roster extension.
+
+The nine pickup badges and the Boat pickup's tug geometry in
+`src/bonus_assets.h` are original work by the Tanks3D project contributors,
+under PolyForm Noncommercial 1.0.0. They use no imported icon pack, boat model,
+game sprite or additional runtime dependency.
+
 ## Upstream Tanks project
 
 Parts of the implementation and runtime audio were adapted from or developed
@@ -87,3 +99,28 @@ provided as a courtesy and is not a CC0 condition.
 `resources/textures/urban_masonry.png` were generated specifically for this
 project with OpenAI image generation. No downloaded image was supplied as an
 input. See `ASSET_LICENSES.md` for their project-license treatment.
+
+## Optional AI development tools
+
+The `training/requirements.txt` environment is installed under `build/ai-venv`.
+It is not bundled with Tanks3D, and no upstream pretrained weights are imported.
+The packages and all bundled portions retain their upstream terms:
+
+- Gymnasium — Farama Foundation, <https://github.com/Farama-Foundation/Gymnasium>,
+  MIT license.
+- Stable-Baselines3 — its contributors,
+  <https://github.com/DLR-RM/stable-baselines3>, MIT license.
+- PyTorch — PyTorch contributors, <https://github.com/pytorch/pytorch>.
+  The verified wheel declares Apache-2.0, Apache-2.0 WITH LLVM-exception,
+  BSD-2-Clause, BSD-3-Clause, BSL-1.0 and MIT portions; retain its notices.
+- NumPy — NumPy developers, <https://github.com/numpy/numpy>.
+  The verified wheel declares BSD-3-Clause, 0BSD, MIT, zlib and CC0-1.0 portions.
+- imageio-ffmpeg — ImageIO contributors,
+  <https://github.com/imageio/imageio-ffmpeg>, BSD-2-Clause wrapper. Its FFmpeg
+  executable has separate upstream licensing, reported by the executable's
+  `-L` command. It is used only to encode local QA recordings and is not
+  redistributed in the game.
+
+Exact installed metadata, versions and the FFmpeg license report are retained
+with local AI evidence. These terms are independent of the project's PolyForm
+license for its original code and generated training artifacts.
