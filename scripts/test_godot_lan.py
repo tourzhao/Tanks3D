@@ -39,7 +39,11 @@ def validate_pair(reports, traces, target_ticks=480):
             raise RuntimeError(f"{role} did not confirm the expected negotiated and local settings")
     common = sorted(tick for tick in set(traces["host"]) & set(traces["guest"]) if tick > 0)
     if len(common) < 360 or not common or common[-1] < target_ticks:
-        raise RuntimeError("Fewer than 360 shared authoritative tick observations or final tick missing")
+        observed = {role: {"count": len(trace), "first": min(trace, default=-1),
+                           "last": max(trace, default=-1)} for role, trace in traces.items()}
+        raise RuntimeError("Fewer than 360 shared authoritative tick observations or final tick missing: "
+                           f"matched={len(common)}, last_common={common[-1] if common else -1}, "
+                           f"target={target_ticks}, peers={observed}")
     for tick in common:
         if not traces["host"][tick] or traces["host"][tick] != traces["guest"][tick]:
             raise RuntimeError(f"Independent Godot process state/RNG digests diverged at tick {tick}")

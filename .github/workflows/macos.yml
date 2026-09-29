@@ -28,6 +28,16 @@ jobs:
         run: make test-godot-import
       - name: Verify self-contained app and two-process LAN
         run: make test-godot-bundle test-godot-lan
+      - name: Preserve Godot failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-failure-${{ github.run_id }}
+          path: |
+            build/godot/validation/
+            build/godot/lan-validation-*/
+            build/godot/package/*.log
+          retention-days: 14
 
   build:
     name: Shared rules and historical adapter
