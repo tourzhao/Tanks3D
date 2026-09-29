@@ -16,6 +16,8 @@ var fired := [0, 0]
 var ready_written := false
 var started_usec := 0
 var final_settings: Dictionary = {}
+var poll_interval_ms := 0
+var last_evidence_write := 0.0
 
 func _initialize() -> void:
     Engine.max_fps = 240
@@ -24,10 +26,11 @@ func _initialize() -> void:
         elif argument.begins_with("--output="): output = argument.trim_prefix("--output=")
         elif argument.begins_with("--address="): address = argument.trim_prefix("--address=")
         elif argument.begins_with("--ticks="): target_ticks = int(argument.trim_prefix("--ticks="))
+        elif argument.begins_with("--poll-interval-ms="): poll_interval_ms = int(argument.trim_prefix("--poll-interval-ms="))
         else:
             fail("Unexpected LAN check argument: " + argument)
             return
-    if role not in ["host", "guest"] or output.is_empty() or target_ticks < 360:
+    if role not in ["host", "guest"] or output.is_empty() or target_ticks < 360 or poll_interval_ms < 0 or poll_interval_ms > 100:
         fail("LAN checks require host/guest role, an output directory and at least 360 ticks")
         return
     call_deferred("run")
@@ -126,14 +129,28 @@ func run() -> void:
                         return
             observe(state)
             core.drain_audio()
-            if role == "guest" and last_tick >= target_ticks and not ready_written:
-                ready_written = write_json("guest-ready.json", {"tick": last_tick, "pid": OS.get_process_id()})
+            # A poll may consume several native ticks on a busy machine. Wait
+            # for actual shared observations, not a fixed wall-time assumption
+            # that every intermediate snapshot was visible to both scripts.
+            if role == "guest" and last_tick >= target_ticks and now() - last_evidence_write >= 0.1:
+                ready_written = write_json("guest-ready.json", {"tick": last_tick,
+                    "pid": OS.get_process_id(), "observations": observed_ticks})
+                last_evidence_write = now()
                 if not ready_written:
                     fail("Cannot publish guest progress")
                     return
             if role == "host" and last_tick >= target_ticks and FileAccess.file_exists(output.path_join("guest-ready.json")):
                 var ready: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(output.path_join("guest-ready.json")))
-                if int(ready.get("tick", 0)) >= target_ticks:
+                var shared := 0
+                var last_shared := 0
+                for tick in ready.get("observations", {}):
+                    if int(tick) <= 0 or not observed_ticks.has(tick): continue
+                    if str(ready.observations[tick]) != str(observed_ticks[tick]):
+                        fail("Peer state/RNG digest differs at tick " + str(tick))
+                        return
+                    shared += 1
+                    last_shared = maxi(last_shared, int(tick))
+                if shared >= 360 and last_shared >= target_ticks:
                     if not core.lan_stop():
                         fail(core.error())
                         return
@@ -143,7 +160,10 @@ func run() -> void:
                         return
                     finish(true, "host requested disconnect", last_tick)
                     return
-        await process_frame
+        if poll_interval_ms > 0:
+            await create_timer(poll_interval_ms / 1000.0).timeout
+        else:
+            await process_frame
     fail("Timed out waiting for authoritative ticks or disconnect")
 
 func observe(state: Dictionary) -> void:

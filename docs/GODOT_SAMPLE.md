@@ -255,7 +255,11 @@ A separate adapter test compares the original raylib integration with the shared
 session, including state/RNG/events and concrete effect hooks. The socket
 target runs an actual localhost TCP pair. `test-godot-lan` additionally starts
 two independent Godot processes and verifies negotiated settings, both players'
-movement/fire, 480 matching state/RNG updates and explicit disconnect handling.
+movement/fire, at least 360 matching state/RNG observations beyond a minimum
+480-tick run, and explicit disconnect handling. Slow peers may consume several
+ticks per poll, so the test continues until both observation logs have enough
+common ticks, within its existing 30-second deadline. A second run deliberately
+polls every 33 ms; it must satisfy the same digest and coverage checks.
 Neither test replaces physical two-machine QA.
 Import validation checks staged bytes, all GDScripts/scenes and actual native
 loading, then runs mesh contracts, a deterministic game tape and UI

@@ -62,7 +62,7 @@ def load_trace(path):
     return result
 
 
-def run_pair(godot, project, output, ticks=480, timeout=45):
+def run_pair(godot, project, output, ticks=480, timeout=45, poll_interval_ms=0):
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise RuntimeError(f"LAN evidence directory must be empty: {output}")
@@ -84,6 +84,8 @@ def run_pair(godot, project, output, ticks=480, timeout=45):
                        "--log-file", str(output / f"{role}.engine.log"),
                        "--script", "res://lan_checks.gd", "--", f"--role={role}",
                        f"--output={output}", f"--ticks={ticks}"]
+            if poll_interval_ms:
+                command.append(f"--poll-interval-ms={poll_interval_ms}")
             if address:
                 command.append(f"--address={address}")
             commands[role] = command
@@ -132,6 +134,8 @@ def main():
     parser.add_argument("--output", type=Path, help="Empty evidence directory; default creates a unique build/godot/lan-validation-* directory")
     parser.add_argument("--ticks", type=int, default=480)
     parser.add_argument("--timeout", type=int, default=45)
+    parser.add_argument("--poll-interval-ms", type=int, default=0,
+                        help="Diagnostic polling delay (0..100 ms); native network ticks remain unchanged")
     args = parser.parse_args()
     project = args.project.resolve()
     if args.output is None:
@@ -142,11 +146,11 @@ def main():
         output = args.output.resolve()
     if not project.is_relative_to(ROOT / "build") or not output.is_relative_to(ROOT / "build"):
         parser.error("Project and output must be inside the repository build directory")
-    if args.ticks < 360 or args.ticks > 900 or args.timeout < 15 or args.timeout > 120:
+    if args.ticks < 360 or args.ticks > 900 or args.timeout < 15 or args.timeout > 120 or not 0 <= args.poll_interval_ms <= 100:
         parser.error("Use 360..900 ticks and a 15..120 second timeout")
     if not (project / "lan_checks.gd").is_file():
         parser.error("Stage the project (including lan_checks.gd) before running this check")
-    run_pair(args.godot.resolve(), project, output, args.ticks, args.timeout)
+    run_pair(args.godot.resolve(), project, output, args.ticks, args.timeout, args.poll_interval_ms)
 
 
 if __name__ == "__main__":

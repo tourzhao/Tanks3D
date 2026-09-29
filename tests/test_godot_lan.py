@@ -34,6 +34,22 @@ class GodotLanGateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "tick 300"):
             GATE.validate_pair(self.reports, self.traces)
 
+    def test_sparse_polls_must_still_supply_360_real_shared_observations(self):
+        sparse = {tick: "0123456789abcdef" for tick in range(2, 724, 2)}
+        self.traces = {"host": dict(sparse), "guest": dict(sparse)}
+        for report in self.reports.values():
+            report["last_tick"] = 722
+        self.assertEqual(GATE.validate_pair(self.reports, self.traces)["matched_ticks"], 361)
+        del self.traces["guest"][2]
+        del self.traces["guest"][4]
+        with self.assertRaisesRegex(RuntimeError, "matched=359"):
+            GATE.validate_pair(self.reports, self.traces)
+
+    def test_sufficient_early_samples_cannot_replace_final_shared_progress(self):
+        self.traces["host"].pop(480)
+        with self.assertRaisesRegex(RuntimeError, "last_common=479"):
+            GATE.validate_pair(self.reports, self.traces)
+
     def test_same_process_cannot_claim_two_peers(self):
         self.reports["guest"]["pid"] = self.reports["host"]["pid"]
         with self.assertRaisesRegex(RuntimeError, "independent"):

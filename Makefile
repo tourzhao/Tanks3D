@@ -1684,6 +1684,7 @@ test-godot-lan-sockets: build/tests/godot_sample_core_tests
 test-godot-lan: godot-sample
 	python3 -B tests/test_godot_lan.py
 	python3 -B scripts/test_godot_lan.py
+	python3 -B scripts/test_godot_lan.py --poll-interval-ms=33
 
 build/godot/sanitize/godot_sample_core_tests: tests/godot_sample_core_tests.cpp $(GODOT_CORE_DEPS) $(GODOT_SANITIZER_OBJECTS)
 	mkdir -p $(dir $@)
