@@ -18,8 +18,10 @@ jobs:
         run: test "$(uname -m)" = arm64
       - name: Prepare hash-pinned Godot toolchain
         run: make godot-setup
-      - name: Check release tools and engine-independent boundaries
-        run: make test-godot-release test-architecture
+      # test-architecture also compiles historical raylib renderer bridges;
+      # the shared-rules job runs it with that dependency installed.
+      - name: Check Godot release tools
+        run: make test-godot-release
       - name: Check native bridge, sanitizers and real TCP
         run: make -j3 test-godot-core test-godot-core-sanitize test-godot-lan-sockets
       - name: Import scripts, validate presentation and run UI regression
