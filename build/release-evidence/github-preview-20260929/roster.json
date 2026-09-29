@@ -1,0 +1,214 @@
+{
+  "animation_fps": 60,
+  "animation_frames": 0,
+  "camera_position": [
+    -3.40000009536743,
+    3.90000009536743,
+    -5.0
+  ],
+  "camera_target": [
+    0.0,
+    0.469999998807907,
+    0.0
+  ],
+  "elevation_degrees": 29.6,
+  "game_pixel_scale": false,
+  "material_mode": "production",
+  "mode": "roster",
+  "neutral_albedo": "",
+  "neutral_materials": false,
+  "pixel_style": false,
+  "scale": 1.0,
+  "subjects": [
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        201,
+        183
+      ],
+      "effect_size": 0.0,
+      "label": "USA L0  M4A3(75) SHERMAN",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        247,
+        199
+      ],
+      "effect_size": 0.0,
+      "label": "USA L1  M26 PERSHING",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        262,
+        222
+      ],
+      "effect_size": 0.0,
+      "label": "USA L2  M60A3",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        268,
+        202
+      ],
+      "effect_size": 0.0,
+      "label": "USA L3  M1A1 ABRAMS",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        201,
+        165
+      ],
+      "effect_size": 0.0,
+      "label": "USSR L0  T-34/76",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        248,
+        205
+      ],
+      "effect_size": 0.0,
+      "label": "USSR L1  IS-2",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        258,
+        196
+      ],
+      "effect_size": 0.0,
+      "label": "USSR L2  T-62",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        279,
+        208
+      ],
+      "effect_size": 0.0,
+      "label": "USSR L3  T-90A",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        223,
+        190
+      ],
+      "effect_size": 0.0,
+      "label": "GER L0  PANTHER AUSF. A",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        249,
+        211
+      ],
+      "effect_size": 0.0,
+      "label": "GER L1  TIGER II",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        260,
+        204
+      ],
+      "effect_size": 0.0,
+      "label": "GER L2  LEOPARD 1",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    },
+    {
+      "age_fraction": -1.0,
+      "bounds_pixels": [
+        274,
+        214
+      ],
+      "effect_size": 0.0,
+      "label": "GER L3  LEOPARD 2A4",
+      "model_scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "span": 2.6
+    }
+  ],
+  "vehicle_yaw_degrees": 0,
+  "viewport": [
+    320,
+    272
+  ],
+  "window": [
+    1280,
+    1018
+  ],
+  "yaw_degrees": -145.8
+}

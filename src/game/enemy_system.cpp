@@ -174,7 +174,8 @@ EnemyMovementUpdate advanceActiveEnemyMovement(
 
 EnemyEscapeChoice chooseEnemyEscape(
     XZ position, CardinalDirection blockedDirection, XZ target,
-    int tieBreaker, const EnemyPositionAvailable &positionAvailable)
+    int tieBreaker, const EnemyPositionAvailable &positionAvailable,
+    bool allowUnsnappedEscape)
 {
     static constexpr std::array<CardinalDirection, 4> directions{{
         CardinalDirection::North, CardinalDirection::East,
@@ -196,9 +197,13 @@ EnemyEscapeChoice chooseEnemyEscape(
         if (direction == blockedDirection)
             continue;
 
-        const XZ aligned = core::snappedToCardinalLane(position, direction);
+        XZ aligned = core::snappedToCardinalLane(position, direction);
         if (!positionAvailable(aligned))
-            continue;
+        {
+            if (!allowUnsnappedEscape || !positionAvailable(position))
+                continue;
+            aligned = position;
+        }
 
         const XZ axis = core::cardinalVector(direction);
         int clearProbeCount = 0;
@@ -236,7 +241,7 @@ EnemyEscapeChoice chooseEnemyEscape(
 EnemySteeringOutcome advanceActiveEnemySteering(
     Enemy &enemy, const EnemyFrameStart &frame, float dt,
     const EnemyPositionAvailable &positionAvailable,
-    const EnemySteeringRandom &random)
+    const EnemySteeringRandom &random, bool allowUnsnappedEscape)
 {
     if (!frame.valid || frame.phase != EnemyFramePhase::Active ||
         !std::isfinite(dt) || dt < 0.0f || !positionAvailable ||
@@ -261,7 +266,7 @@ EnemySteeringOutcome advanceActiveEnemySteering(
     {
         const EnemyEscapeChoice choice = chooseEnemyEscape(
             enemy.position, enemy.movementDirection, enemy.target,
-            enemy.id, positionAvailable);
+            enemy.id, positionAvailable, allowUnsnappedEscape);
         if (commitEnemyEscape(enemy, choice))
         {
             enemy.directionDecisionInterval = kEnemyEscapeCommitTime +

@@ -89,7 +89,7 @@ OBJECTS := $(patsubst src/%.cpp,$(OBJECT_DIR)/%.o,$(SOURCES)) \
 	$(patsubst src/%.mm,$(OBJECT_DIR)/%.o,$(PLATFORM_SOURCES))
 DEPFILES := $(OBJECTS:.o=.d)
 AUDIO_HEADERS := src/audio/audio_cue.h src/audio/audio_output.h
-APP_HEADERS := src/app/ai_player.h $(LAN_HEADERS) src/app/command_side_effect_dispatch.h \
+APP_HEADERS := src/app/ai_player.h src/app/game_session.h $(LAN_HEADERS) src/app/command_side_effect_dispatch.h \
 	src/app/command_side_effect_sink.h src/app/presentation_values.h \
 	src/app/input_adapter.h \
 	src/app/atomic_output_file.h \
@@ -99,11 +99,12 @@ APP_HEADERS := src/app/ai_player.h $(LAN_HEADERS) src/app/command_side_effect_di
 	src/app/release_screenshot_file.h \
 	src/app/release_screenshot_options.h \
 	src/app/shell_cancellation_presentation.h \
+	src/app/shell_flight_presentation.h \
 	src/app/shell_map_core_presentation.h \
 	src/app/shell_tank_presentation.h
 CORE_HEADERS := src/core/coordinates.h src/core/gameplay_rules.h \
 	src/core/nation.h
-GAME_HEADERS := src/game/bonus_rules.h src/game/bonus_system.h \
+GAME_HEADERS := src/game/bonus_rules.h src/game/bonus_system.h src/game/bonus_identity.h src/game/vehicle_identity.h \
 	src/game/classic_stage_layouts.h \
 	src/game/combat_system.h src/game/enemy_system.h src/game/entities.h \
 	src/game/game_event.h src/game/player_system.h \
@@ -1502,7 +1503,7 @@ clean:
 	$(RM) -r $(TARGET) $(APP) $(OBJECT_DIR) $(DEBUG_DIR) \
 		$(SANITIZER_DIR) $(COVERAGE_DIR) $(DIST_DIR) build/tests \
 		$(RELEASE_SCREENSHOT_SMOKE_DIR) \
-		$(RELEASE_PERFORMANCE_SMOKE_DIR) build/verifier-path-escape.* build/ai
+		$(RELEASE_PERFORMANCE_SMOKE_DIR) build/verifier-path-escape.* build/ai build/godot build/Tanks3D-Godot.app
 
 -include $(DEPFILES) $(DEBUG_DEPFILES) $(SANITIZER_DEPFILES) \
 	$(COVERAGE_DEPFILES) $(RULE_IMPL_DEPFILES) \
@@ -1585,3 +1586,138 @@ test-ai-player-native: build/tests/ai_player_tests $(RUNTIME_RESOURCES)
 	./build/tests/ai_player_tests
 test-ai-player-sanitize: $(SANITIZER_DIR)/ai_player_tests $(RUNTIME_RESOURCES)
 	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$(SANITIZER_DIR)/ai_player_tests
+
+# Active Godot frontend. Unqualified historical raylib targets remain separate.
+GODOT := build/godot-tools/Godot.app/Contents/MacOS/Godot
+GODOT_CPP := build/godot-tools/godot-cpp
+GODOT_CPP_LIB := $(GODOT_CPP)/bin/libgodot-cpp.macos.template_release.arm64.a
+GODOT_CORE_DEPS := src/godot/sample_core.cpp src/godot/sample_core.h $(APP_HEADERS) $(PURE_HEADERS)
+GODOT_MACOS_MIN ?= 13.0
+GODOT_CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -arch arm64 -mmacosx-version-min=$(GODOT_MACOS_MIN)
+GODOT_SOURCES := $(APP_SOURCES) $(LAN_SOURCES) $(PURE_SOURCES)
+GODOT_OBJECTS := $(patsubst src/%.cpp,build/godot/obj/%.o,$(GODOT_SOURCES))
+GODOT_SANITIZER_OBJECTS := $(patsubst src/%.cpp,build/godot/sanitize/%.o,$(GODOT_SOURCES))
+GODOT_SANITIZER_FLAGS := -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined
+GODOT_ARGS ?=
+GODOT_RENDERER ?= mobile
+
+.PHONY: godot-setup godot-sample run-godot test-godot-core test-godot-core-sanitize
+godot-setup:
+	python3 scripts/setup_godot_sample.py
+
+$(GODOT_CPP_LIB): godot/DEPENDENCIES.json godot/build_profile.json godot/SConstruct scripts/setup_godot_sample.py
+	python3 scripts/setup_godot_sample.py
+
+build/godot/sample_core.o: $(GODOT_CORE_DEPS)
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc $(GODOT_CXXFLAGS) -fPIC -MMD -MP -c $< -o $@
+
+build/godot/obj/%.o: src/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc $(GODOT_CXXFLAGS) -fPIC -MMD -MP -c $< -o $@
+
+build/godot/sanitize/%.o: src/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc $(GODOT_CXXFLAGS) $(GODOT_SANITIZER_FLAGS) -MMD -MP -c $< -o $@
+
+build/godot/extension.o: godot/native/extension.cpp src/godot/sample_core.h $(GODOT_CPP_LIB)
+	mkdir -p $(dir $@)
+	$(CXX) $(GODOT_CXXFLAGS) \
+		-DMACOS_ENABLED -DUNIX_ENABLED -DTHREADS_ENABLED -DNDEBUG -DGDEXTENSION \
+		-fvisibility=hidden -isystem $(GODOT_CPP)/include -isystem $(GODOT_CPP)/gen/include \
+		-c $< -o $@
+
+build/godot/libtanks_sample.dylib: build/godot/extension.o build/godot/sample_core.o $(GODOT_OBJECTS) $(GODOT_CPP_LIB)
+	$(CXX) -dynamiclib -arch arm64 build/godot/extension.o build/godot/sample_core.o \
+		$(GODOT_OBJECTS) $(GODOT_CPP_LIB) -mmacosx-version-min=$(GODOT_MACOS_MIN) -o $@
+	codesign --force --sign - --timestamp=none $@
+
+godot-sample: build/godot/libtanks_sample.dylib
+	python3 -B scripts/test_godot_import.py --import-only
+
+.PHONY: test-godot-import
+test-godot-import: godot-sample
+	python3 -B tests/test_godot_import.py
+	python3 -B scripts/test_godot_import.py --skip-stage
+
+run-godot: godot-sample
+	$(GODOT) --path build/godot/project --rendering-method $(GODOT_RENDERER) \
+		--rendering-driver metal --log-file $(abspath build/godot/game.log) -- $(GODOT_ARGS)
+
+.PHONY: godot-app run-godot-app test-godot-bundle
+godot-app: godot-sample
+	python3 -B scripts/package_godot_app.py
+
+run-godot-app: godot-app
+	open -n build/Tanks3D-Godot.app
+
+test-godot-bundle: godot-app
+	python3 -B tests/test_godot_package.py
+	python3 -B scripts/package_godot_app.py --verify-only
+
+build/tests/godot_sample_core_tests: tests/godot_sample_core_tests.cpp $(GODOT_CORE_DEPS) $(GODOT_OBJECTS)
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc $(GODOT_CXXFLAGS) $< $(GODOT_OBJECTS) -o $@
+
+test-godot-core: build/tests/godot_sample_core_tests
+	./build/tests/godot_sample_core_tests
+
+.PHONY: test-game-session-adapter test-game-session-adapter-sanitize
+build/tests/game_session_adapter_tests: tests/game_session_adapter_tests.cpp src/main.cpp $(GODOT_CORE_DEPS) $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+
+test-game-session-adapter: build/tests/game_session_adapter_tests
+	./build/tests/game_session_adapter_tests
+
+$(SANITIZER_DIR)/game_session_adapter_tests: tests/game_session_adapter_tests.cpp src/main.cpp $(GODOT_CORE_DEPS) $(PRODUCTION_HEADERS) $(TEST_FILES) $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) -std=c++17 -Wall -Wextra -Wpedantic -Werror $(SANITIZER_FLAGS) $< $(filter-out $(SANITIZER_DIR)/main.o,$(SANITIZER_OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+
+test-game-session-adapter-sanitize: $(SANITIZER_DIR)/game_session_adapter_tests
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$<
+
+.PHONY: test-godot-lan-sockets test-godot-lan
+test-godot-lan-sockets: build/tests/godot_sample_core_tests
+	./build/tests/godot_sample_core_tests --lan-sockets
+
+test-godot-lan: godot-sample
+	python3 -B tests/test_godot_lan.py
+	python3 -B scripts/test_godot_lan.py
+
+build/godot/sanitize/godot_sample_core_tests: tests/godot_sample_core_tests.cpp $(GODOT_CORE_DEPS) $(GODOT_SANITIZER_OBJECTS)
+	mkdir -p $(dir $@)
+	$(CXX) -Isrc $(GODOT_CXXFLAGS) $(GODOT_SANITIZER_FLAGS) $< $(GODOT_SANITIZER_OBJECTS) -o $@
+
+test-godot-core-sanitize: build/godot/sanitize/godot_sample_core_tests
+	ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 ./$<
+
+build/tests/godot_reference_render: tests/godot_reference_render.cpp $(GODOT_CORE_DEPS) $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS))
+	mkdir -p $(dir $@)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -Werror $< $(filter-out $(OBJECT_DIR)/main.o,$(OBJECTS)) $(LDFLAGS) $(LDLIBS) -o $@
+
+-include build/godot/sample_core.d $(GODOT_OBJECTS:.o=.d) $(GODOT_SANITIZER_OBJECTS:.o=.d)
+
+# Godot publication starts with an immutable candidate; none of these targets
+# upload, tag, commit, or turn missing human/hardware QA into approval.
+GODOT_CHANNEL ?= alpha.1
+GODOT_CANDIDATE_DIR ?= build/release/godot/v$(APP_VERSION)-godot.$(GODOT_CHANNEL)
+GODOT_QA_STATUS ?= build/release-evidence/godot-qa-status.json
+.PHONY: test-godot-release godot-candidate verify-godot-candidate verify-tagged-godot-candidate init-godot-release-status verify-godot-release-ready
+test-godot-release:
+	python3 -B -m unittest tests.test_godot_release tests.test_godot_package tests.test_godot_benchmark
+
+godot-candidate:
+	python3 -B scripts/godot_release.py build --version "$(APP_VERSION)" --channel "$(GODOT_CHANNEL)"
+
+verify-godot-candidate:
+	python3 -B scripts/godot_release.py verify --candidate "$(abspath $(GODOT_CANDIDATE_DIR))"
+
+verify-tagged-godot-candidate:
+	python3 -B scripts/godot_release.py verify-tagged --candidate "$(abspath $(GODOT_CANDIDATE_DIR))"
+
+init-godot-release-status:
+	python3 -B scripts/godot_release.py init-status --candidate "$(abspath $(GODOT_CANDIDATE_DIR))" --status "$(abspath $(GODOT_QA_STATUS))"
+
+verify-godot-release-ready:
+	python3 -B scripts/godot_release.py verify-ready --candidate "$(abspath $(GODOT_CANDIDATE_DIR))" --status "$(abspath $(GODOT_QA_STATUS))"

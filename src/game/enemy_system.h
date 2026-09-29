@@ -223,10 +223,13 @@ EnemyMovementUpdate advanceActiveEnemyMovement(
 // advance. Candidate directions keep the historical tie-breaker order, require
 // an available snapped position plus at least one clear forward probe, prefer
 // progress and longer clear paths, and mildly penalize reversing. An empty
-// availability query fails closed.
+// availability query fails closed. Recovery callers may opt into probing from
+// the original position when a lane snap is unavailable; ordinary steering
+// retains its historical lane and query order.
 EnemyEscapeChoice chooseEnemyEscape(
     XZ position, CardinalDirection blockedDirection, XZ target,
-    int tieBreaker, const EnemyPositionAvailable &positionAvailable);
+    int tieBreaker, const EnemyPositionAvailable &positionAvailable,
+    bool allowUnsnappedEscape = false);
 
 // Advances the active steering timer and commits at most one direction
 // decision. Random callbacks are invoked synchronously at the historical draw
@@ -236,7 +239,7 @@ EnemyEscapeChoice chooseEnemyEscape(
 EnemySteeringOutcome advanceActiveEnemySteering(
     Enemy &enemy, const EnemyFrameStart &frame, float dt,
     const EnemyPositionAvailable &positionAvailable,
-    const EnemySteeringRandom &random);
+    const EnemySteeringRandom &random, bool allowUnsnappedEscape = false);
 
 // Basic and Armor enemies may replace the base fallback with a strictly closer
 // active player. Equal-distance candidates preserve the earlier choice, making

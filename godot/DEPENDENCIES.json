@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-16",
+  "platform": "macos.arm64",
+  "binding_api_version": "4.7",
+  "dependencies": {
+    "godot": {
+      "name": "Godot Engine",
+      "version": "4.7.2-stable",
+      "author": "Godot Engine contributors",
+      "license": "MIT; bundled third-party components retain their own notices",
+      "source": "https://github.com/godotengine/godot/releases/tag/4.7.2-stable",
+      "license_file": "godot/licenses/Godot-MIT.txt",
+      "third_party_notices": "godot/licenses/Godot-COPYRIGHT.txt",
+      "archive": "Godot_v4.7.2-stable_macos.universal.zip",
+      "url": "https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip",
+      "sha256": "c58a24e31d720be9d62f60cb5627c4e695fb72f21b0cfe1bc9ccaa9a3b3ba63e",
+      "mapping": "build/godot-tools/Godot.app (local editor/runtime; no system installation)"
+    },
+    "godot_cpp": {
+      "name": "godot-cpp",
+      "version": "10.0.0-stable",
+      "commit": "507ed9d840c01a3c5b2a39af8bb4000bfac30bf5",
+      "author": "Godot Engine contributors",
+      "license": "MIT",
+      "source": "https://github.com/godotengine/godot-cpp/tree/507ed9d840c01a3c5b2a39af8bb4000bfac30bf5",
+      "license_file": "godot/licenses/godot-cpp-MIT.txt",
+      "archive": "godot-cpp-507ed9d840c01a3c5b2a39af8bb4000bfac30bf5.tar.gz",
+      "url": "https://codeload.github.com/godotengine/godot-cpp/tar.gz/507ed9d840c01a3c5b2a39af8bb4000bfac30bf5",
+      "sha256": "30da4ac295997061a6af81ae531510efd4e6a86e506eb4466edc0898ef3fe048",
+      "mapping": "build/godot-tools/godot-cpp; RefCounted-only bindings linked into sample GDExtension"
+    },
+    "scons": {
+      "name": "SCons",
+      "version": "4.11.1",
+      "author": "The SCons Foundation and contributors",
+      "license": "MIT; bundled build helpers retain the notices in the wheel",
+      "source": "https://pypi.org/project/SCons/4.11.1/",
+      "license_file": "godot/licenses/SCons-MIT.txt",
+      "archive": "scons-4.11.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/8e/43/d6285848e893c19682c06e92679dc1a07d37ff7ea148747b1df681ec496c/scons-4.11.1-py3-none-any.whl",
+      "sha256": "454cef364348053422696e3d2ecb4fa593c96a624f955842eaaea64f95c8d11d",
+      "mapping": "build/godot-tools/venv (build tool only; not shipped with the game)"
+    }
+  }
+}

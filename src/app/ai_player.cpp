@@ -93,10 +93,21 @@ bool clearShot(const AiObservation &observation, double x, double z,
     return true;
 }
 
+bool overlapsAlly(const AiObservation &observation)
+{
+    const auto &s = observation.state;
+    return s[333] > .5f && core::axisAlignedCentersOverlap(
+        {coordinate(s[0]), coordinate(s[1])},
+        {coordinate(s[256]), coordinate(s[257])}, 1.75f);
+}
+
 bool passable(const AiObservation &observation, int direction)
 {
     const auto &s = observation.state;
     double x = coordinate(s[0]), z = coordinate(s[1]);
+    const core::XZ start{static_cast<float>(x), static_cast<float>(z)};
+    const core::XZ ally{coordinate(s[256]), coordinate(s[257])};
+    const bool recoveringOverlap = overlapsAlly(observation);
     const auto [dx, dz] = kDirections[direction];
     if (direction != heading(observation))
     {
@@ -105,6 +116,15 @@ bool passable(const AiObservation &observation, int direction)
         else if (!dz && std::abs(z - nearestEven(z)) <= 5.0 / 16)
             z = nearestEven(z);
     }
+    // A turn can propose a lane snap toward the ally. The real movement
+    // transaction rejects that snap and still tries forward from its origin.
+    if (recoveringOverlap && !core::axisAlignedMovementAvailable(
+            start, {static_cast<float>(x), static_cast<float>(z)}, ally, 1.75f))
+    {
+        x = start.x;
+        z = start.z;
+    }
+    const core::XZ aligned{static_cast<float>(x), static_cast<float>(z)};
     const double distance = s[6] > 0 ? .325 : .25;
     x += dx * distance;
     z += dz * distance;
@@ -119,6 +139,9 @@ bool passable(const AiObservation &observation, int direction)
                 (s[9] < .5f && observation.cell(5, row, col)))
                 return false;
     // NumPy's scalar promotion keeps these ally-distance comparisons float32.
+    if (recoveringOverlap)
+        return core::axisAlignedMovementAvailable(
+            aligned, {static_cast<float>(x), static_cast<float>(z)}, ally, 1.75f);
     if (s[333] > .5f &&
         std::abs(static_cast<float>(x) - coordinate(s[256])) < 1.75f &&
         std::abs(static_cast<float>(z) - coordinate(s[257])) < 1.75f)
@@ -354,6 +377,19 @@ int TacticalAi::chooseAction(const AiObservation &observation)
     }
     hasPreviousPosition_ = true;
     previousPosition_ = {x, z};
+    if (overlapsAlly(observation))
+    {
+        // An occupied starting node cannot produce a normal navigation route.
+        // Recover through the same incremental collision rule as the game;
+        // only this already-invalid configuration bypasses tactical planning.
+        route_.clear();
+        nextPlan_ = 0;
+        for (int direction = 1; direction <= 4; ++direction)
+            if (passable(observation, direction))
+                return previousAction_ = 2 * direction +
+                    static_cast<int>(safeFire(x, z, direction));
+        return previousAction_ = safeFire(x, z, heading(observation)) ? 1 : 0;
+    }
     const bool guardian = homeRole(observation);
     std::vector<int> enemies;
     double urgent = 0;

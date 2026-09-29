@@ -1,0 +1,18 @@
+"""Build only the bindings used by the optional native-core sample.
+
+Run from the repository root; all generated files stay in build/.
+"""
+
+from pathlib import Path
+
+from SCons.Script import ARGUMENTS, Dir, SConscript, SConsignFile
+
+repo = Path(Dir("#").abspath)
+ARGUMENTS.setdefault("platform", "macos")
+ARGUMENTS.setdefault("arch", "arm64")
+ARGUMENTS.setdefault("target", "template_release")
+ARGUMENTS.setdefault("api_version", "4.7")
+ARGUMENTS.setdefault("macos_deployment_target", "13.0")
+ARGUMENTS.setdefault("build_profile", str(repo / "godot/build_profile.json"))
+SConsignFile(str(repo / "build/godot-tools/.sconsign.dblite"))
+SConscript(str(repo / "build/godot-tools/godot-cpp/SConstruct"), exports={"api_version": "4.7"})

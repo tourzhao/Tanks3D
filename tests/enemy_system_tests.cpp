@@ -925,6 +925,36 @@ int main()
                queryTranscriptMatches,
            "escape query order, coordinates, or tieBreaker=2 result changed");
 
+    reporter.beginSuite("enemy-overlap-escape-rejected-lane-snap");
+    // Near the bottom edge, moving sideways separates these tanks but the
+    // usual Z=25 lane snap moves into the blocker. The South probe is outside
+    // the arena and North is the blocked direction, so no snapped route works.
+    const XZ overlapOrigin{7.2f, 25.1f};
+    const XZ overlapBlocker{7.2f, 24.7f};
+    const auto overlapAvailability = [&](XZ candidate) {
+        return candidate.x >= 0.875f && candidate.x <= 25.125f &&
+               candidate.z >= 0.875f && candidate.z <= 25.125f &&
+               tanks3d::core::axisAlignedMovementAvailable(
+                   overlapOrigin, candidate, overlapBlocker, 1.75f);
+    };
+    const EnemyEscapeChoice ordinaryOverlapChoice = chooseEnemyEscape(
+        overlapOrigin, CardinalDirection::North, {20.0f, 25.1f}, 0,
+        overlapAvailability);
+    const EnemyEscapeChoice recoveringOverlapChoice = chooseEnemyEscape(
+        overlapOrigin, CardinalDirection::North, {20.0f, 25.1f}, 0,
+        overlapAvailability, true);
+    expect(!ordinaryOverlapChoice.available() &&
+               recoveringOverlapChoice.direction == CardinalDirection::East &&
+               recoveringOverlapChoice.clearProbeCount == 3 &&
+               samePosition(recoveringOverlapChoice.alignedPosition,
+                            overlapOrigin),
+           "overlap escape failed to retain its safe unsnapped origin");
+    const EnemyEscapeChoice invalidOriginChoice = chooseEnemyEscape(
+        overlapOrigin, CardinalDirection::North, {20.0f, 25.1f}, 0,
+        [](XZ) { return false; }, true);
+    expect(!invalidOriginChoice.available(),
+           "overlap escape bypassed an unavailable original position");
+
     reporter.beginSuite("enemy-steering-invalid-static-input-is-atomic");
     int invalidQueries = 0;
     int invalidUnitRolls = 0;

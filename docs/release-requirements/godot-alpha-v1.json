@@ -1,0 +1,13 @@
+{
+  "schema": "tanks3d-godot-release-requirements-v1",
+  "inherits_semantic_checklists": "macos-alpha-v2.json",
+  "groups": {
+    "lan_two_macs": ["same_candidate_sha256", "host_and_join", "same_and_different_nations", "both_players_move_fire_pause", "disconnect_ends_both_sessions", "no_silent_offline_fallback"],
+    "physical_bluetooth": ["controller_model_and_os_recorded", "menu_bindings", "fire_and_pause_latency", "held_stick_return_and_release", "two_controllers_independent", "disconnect_and_reconnect"],
+    "clean_mac": ["downloaded_exact_candidate_over_https", "checksum_matches", "source_checkout_absent", "homebrew_libraries_unused", "minimum_macos_tested", "menu_game_audio_and_exit"],
+    "gatekeeper": ["browser_download_quarantine_preserved", "first_finder_launch_recorded", "documented_open_path_works", "signature_preserved", "no_security_protections_disabled"],
+    "audio": ["all_22_recordings_reviewed", "source_and_licenses_retained", "volume_mute_pause_resume_audible"],
+    "extended_session": ["candidate_sha256_and_machine_recorded", "at_least_30_minutes", "at_least_one_stage_completed", "average_fps_at_least_50", "one_percent_low_at_least_30", "memory_growth_at_most_256_mib", "gameplay_at_least_80_percent", "focused_at_least_95_percent", "no_serious_or_critical_thermal_state", "pixel_off_on_and_wide_coop_checked", "no_crash_or_render_corruption"],
+    "paused_efficiency": ["real_pause_freezes_world", "scene_is_cached", "resize_pixel_resume_refresh", "native_input_and_lan_stay_live", "cpu_observation_attached"]
+  }
+}

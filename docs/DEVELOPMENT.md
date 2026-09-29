@@ -3,7 +3,21 @@
 This page is for contributors. Players should start with the
 [project README](../README.md).
 
-## Current main
+## Active development: Godot
+
+User decision, September 27, 2026: **Godot is the only active development
+mainline**. Follow the [Godot build/run/test guide](GODOT_SAMPLE.md) and use
+`make run-godot-app` for the game. The engine-independent C++ rules remain
+supported through GDExtension. Freeze raylib as a historical reference; do not
+automatically mirror Godot art, UI or feature work into it.
+
+Build the active game with `make godot-setup` and `make run-godot-app`.
+Godot CI runs import/UI, native/sanitizer, packaging and loopback LAN checks on
+Apple Silicon. Formal candidates use the [Godot release workflow](GODOT_RELEASE.md).
+The older build and release instructions explicitly marked below describe
+retained raylib targets. Unqualified Make defaults still select that version.
+
+## Historical raylib main preview
 
 `main` includes the arcade model upgrade: 12 player tank models with substantial
 turrets and short thick cannons, four enemy roles, remodeled buildings and
@@ -19,7 +33,7 @@ The published
 predates this artwork and the adjustable camera. Build the current source to
 try these changes; the versioned Alpha 4 screenshots document that release.
 
-## Build and run
+## Historical raylib build and run
 
 Tanks 3D requires macOS, a C++17 compiler, Homebrew, and raylib 6.0.
 From the repository root:
@@ -57,6 +71,53 @@ For a quick two-player stage 10 preview after building:
 ```sh
 ./build/Tanks3D --stage=10 --camera-yaw=45 --camera-elevation=70 --quick-start-2p
 ```
+
+## Godot frontend commands
+
+The active Godot / native Metal frontend has deployment and advanced settings,
+local/AI co-op, LAN controls, native controller mapping, radar, battle reports
+and an authored arcade art roster. Both frontends use the engine-independent
+`app/GameSession`; the GDExtension no longer includes `main.cpp` or links raylib.
+Godot-only builds need Apple Silicon, Python 3 and Xcode Command Line Tools;
+the original app and its adapter comparison tests still need Homebrew raylib.
+See the [frontend guide](GODOT_SAMPLE.md) and [art mapping](GODOT_ART.md).
+
+```sh
+make run-godot                 # Staged project, Mobile / Metal, deployment menu
+make run-godot-app             # Separate self-contained local Godot app
+make test-godot-core           # Native state/RNG/events, settings, pad and LAN parity
+make test-game-session-adapter # Original raylib adapter versus shared session
+make test-godot-lan-sockets    # Real localhost TCP pair
+make test-godot-import         # Strict script/scene import and native/UI smoke
+make test-godot-bundle         # Exact packaged files, native dependencies and smoke
+make test-godot-release        # Candidate integrity and QA rejection contracts
+```
+
+The local app uses the cached editor's arm64 runtime, a PCK and one native
+extension; it contains no raylib library. The build targets macOS 13.0 for Metal,
+but runtime testing so far is on the development M2, not every supported OS.
+It is ad-hoc signed and is not a notarized release.
+Deployment/presentation preferences use `user://deployment.cfg`; generated
+project/cache/package outputs stay under `build/`. The original raylib app and
+release gates remain separate. Godot candidates and the final no-blocker gate
+are documented in [GODOT_RELEASE.md](GODOT_RELEASE.md). These checks do not replace physical Bluetooth
+controller, two-Mac LAN, audible playback or sustained-performance acceptance.
+The 20-part UI gate reaches genuine stage-clear, non-record defeat, earned
+record and timed-record exit through normal native inputs. All 22 existing
+recordings retain their original licenses; audio uses ordered native requests.
+The separate mixer test captures decoded output into a muted bus, so it proves
+playback plumbing rather than speaker audibility.
+
+For a sustained diagnostic after `make godot-sample`:
+
+```sh
+python3 -B scripts/benchmark_godot_sample.py --renderer mobile \
+  --seconds 1200 --stress --thermal --log-dir build/godot/soak-new
+```
+
+This records monotonic frame intervals, per-minute distributions, exact-child
+RSS and macOS thermal-pressure classes. A completed workload is not itself a
+performance pass; review the receipt against the intended frame budget.
 
 ## LAN development
 
