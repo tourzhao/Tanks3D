@@ -190,8 +190,6 @@ PlayerMovementUpdate advanceActivePlayerMovement(
 
     PlayerMovementState next = state;
     const bool hadMomentum = next.moving;
-    const CardinalDirection previousDrive = next.driveDirection;
-    const CardinalDirection previousTravel = next.movementDirection;
 
     next.driveDirection = parameters.driveDirection;
     if (parameters.propelling)
@@ -202,26 +200,32 @@ PlayerMovementUpdate advanceActivePlayerMovement(
         next.driveDirection, parameters.elapsed, next.movementDirection,
         next.iceSlipTimer, next.onIce);
 
-    if (next.moving &&
-        (next.movementDirection != previousTravel ||
-         (parameters.propelling &&
-          parameters.driveDirection != previousDrive &&
-          next.movementDirection == parameters.driveDirection)))
-    {
-        const core::XZ snapped = core::snappedToCardinalLane(
-            next.position, next.movementDirection);
-        if (positionAvailable(snapped))
-            next.position = snapped;
-    }
-
     update.valid = true;
     if (next.moving)
     {
         const core::XZ direction =
             core::cardinalVector(next.movementDirection);
-        const core::XZ candidate =
-            next.position + direction * movementDistance;
-        if (positionAvailable(candidate))
+        const core::XZ displacement = direction * movementDistance;
+        core::XZ candidate = next.position + displacement;
+        bool available = positionAvailable(candidate);
+        // Rounding every turn erases short taps, even when the direct route
+        // is clear. Align only to enter a nearby blocked lane, and retry while
+        // held: a turn can initially be clear before reaching the wall edge.
+        // Ice carry must still follow its old travel direction until expiry.
+        if (!available && parameters.propelling && movementDistance > 0.0f &&
+            next.movementDirection == next.driveDirection)
+        {
+            const core::XZ aligned = core::snappedToCardinalLane(
+                next.position, next.movementDirection);
+            if ((aligned.x != next.position.x || aligned.z != next.position.z) &&
+                positionAvailable(aligned) &&
+                positionAvailable(aligned + displacement))
+            {
+                candidate = aligned + displacement;
+                available = true;
+            }
+        }
+        if (available)
         {
             next.position = candidate;
             update.movementAccepted = true;

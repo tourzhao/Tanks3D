@@ -43,6 +43,28 @@ inline bool axisAlignedCentersOverlap(XZ first, XZ second, float extent)
            std::fabs(first.z - second.z) < extent;
 }
 
+// Incremental movement normally requires a free destination. If the starting
+// centers already overlap, let them separate without moving either axis closer
+// to, or across, the other center. An unchanged position is valid so an enemy
+// can test its aligned origin before searching outward for an escape route.
+// Callers still check terrain and every other blocking tank independently.
+inline bool axisAlignedMovementAvailable(XZ from, XZ to, XZ blocker,
+                                         float extent)
+{
+    if (!axisAlignedCentersOverlap(from, blocker, extent))
+        return !axisAlignedCentersOverlap(to, blocker, extent);
+
+    const auto separatingAxis = [](float start, float candidate, float center) {
+        if (start < center)
+            return candidate <= start;
+        if (start > center)
+            return candidate >= start;
+        return true;
+    };
+    return separatingAxis(from.x, to.x, blocker.x) &&
+           separatingAxis(from.z, to.z, blocker.z);
+}
+
 enum class CardinalDirection : unsigned char
 {
     None,

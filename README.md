@@ -6,27 +6,30 @@ AI teammate, or in local/LAN co-op across the 35 original Battle City layouts.
 
 ## Current development preview
 
-**These images show the current development source.** The unified arcade tank
-roster, redesigned pickup badges, LAN play and native rule-based AI teammate
-are available when you [build the current version](#build-and-play-current-version).
-They are not included in the published Alpha 4 download.
+**Godot / native Metal is the active version.** It uses the existing C++ gameplay
+and AI core, twelve national tank models, progressively larger chassis/turrets
+and distinct camouflage. The raylib frontend is retained as a historical reference.
+The September 29 images below show the current Godot models and interface.
+The redesigned pickups, LAN play and native rule-based AI teammate are available when you
+[build the current version](#build-and-play-current-version).
+These development changes are not included in the published Alpha 4 download.
 
-![Human P1 and native AI P2 in the ordinary game](build/release-evidence/github-preview-20260915/ai-p2.png)
+![Godot gameplay with P1 and native AI P2](build/release-evidence/github-preview-20260929/game/clean.png)
 
-*Normal shared game camera. P2 moves and fires autonomously; the right HUD
-identifies the AI teammate. Original 1280×720 game content with the window title
-bar retained. Select PLAYERS → AI AS P2 to try it.*
+*Actual Metal rendering at 1280×720, default camera (yaw 0°, elevation 50°),
+Pixel Style OFF. Deterministic demo inputs drive P1; P2 uses the game's AI.
+Select PLAYERS → AI AS P2 for interactive play.*
 
 Development tests and packaging checks pass; physical controller, human/AI,
 clean-Mac and long-session release acceptance remain pending. See the
-[development review](build/release-evidence/github-preview-20260915/README.md)
+[current capture details](build/release-evidence/github-preview-20260929/README.md)
 and [historical Alpha 5 candidate notes](docs/releases/v0.1.0-alpha.5.md).
 
 ## Highlights
 
-- Chunky arcade machinery with continuous tracks, layered armor, distinctive
-  rounded cabins and painted materials, inspired by the military adventure art of
-  1990s arcade games.
+- Stylized historical vehicles with broad tracks, thicker guns and hulls,
+  model-specific armor slopes, turrets and running gear. US woodland green,
+  Soviet winter camouflage and German gray distinguish the national lines.
 - 12 player tanks across United States, Soviet and German light-to-super-heavy
   lines, plus four enemy roles. Enemy vehicles come from the nations not chosen
   by participating players: two opposing nations in solo or same-nation co-op,
@@ -46,33 +49,43 @@ and [historical Alpha 5 candidate notes](docs/releases/v0.1.0-alpha.5.md).
   battle audio uses engine sounds and effects without looping background music
   ([audio sources](ASSET_LICENSES.md#runtime-audio)).
 
-![Fourteen distinct vehicles with a shared arcade casting and paint style](build/release-evidence/github-preview-20260915/roster.png)
+![Twelve Godot vehicles in the American, Soviet and German upgrade lines](build/release-evidence/github-preview-20260929/roster.png)
 
 *Diagnostic close-ups with fixed crops and identical camera/light settings;
 this sheet is for comparing models, not their normal gameplay size. Geometry
 is original procedural work; see the [art direction](docs/ART_DIRECTION.md).*
 
-![Original and redesigned pickup badges, including the Boat tug](build/release-evidence/github-preview-20260915/pickups-before-after.png)
+![Godot deployment menu with AI teammate and national vehicle selection](build/release-evidence/github-preview-20260929/menu.png)
 
-*Top: previous badges. Bottom: redesigned badges at native 64 px and 35 px.
-Boat now uses a connected tug hull, wheelhouse, funnel and life ring.*
+*The deployment menu selects solo, human co-op or AI P2, national lines,
+starting stage, local network and advanced settings.*
 
-[Image sources, capture conditions and validation](build/release-evidence/github-preview-20260915/README.md)
+[Capture conditions and Pixel Style comparison](build/release-evidence/github-preview-20260929/README.md).
+[September 15 raylib preview](build/release-evidence/github-preview-20260915/README.md)
+is retained as a historical reference.
 
 ## Build and play current version
 
-On macOS, with Homebrew and the Xcode Command Line Tools installed:
+On an Apple Silicon Mac, install Xcode Command Line Tools and Python 3.9 or later:
 
 ```sh
 git clone https://github.com/tourzhao/Tanks3D.git
 cd Tanks3D
-brew install raylib
-make run-app
+make godot-setup
+make run-godot-app
 ```
 
-The project uses C++17 and raylib 6.0. `make run-app` builds and opens
-`build/Tanks3D.app`; `make run` starts the executable in the terminal. See the
-[development guide](docs/DEVELOPMENT.md) for prerequisites, tests and project layout.
+`godot-setup` downloads free, hash-pinned tools into `build/godot-tools`.
+`make run-godot-app` builds and opens `build/Tanks3D-Godot.app`; `make run-godot`
+runs the staged project from the terminal. The Godot game builds without raylib
+and targets macOS 13+ / Metal. Runtime testing so far is on the development M2.
+See the [Godot guide](docs/GODOT_SAMPLE.md) and [development guide](docs/DEVELOPMENT.md).
+
+The ordinary app is a local development build. Distributable Godot candidates
+use the separate [candidate and release verification workflow](docs/GODOT_RELEASE.md),
+including source/tag binding, package verification and candidate-specific QA.
+The historical `make`, `make run` and `make run-app` commands still select raylib;
+use the explicit Godot commands above for current development.
 
 ## Play with an AI teammate
 
@@ -96,7 +109,7 @@ workflow, not a trained opponent bundled in the published download.
 
 ## Play over a local network
 
-Build the current source and use the same `Tanks3D.app` on both Macs. Choose
+Build the current source and use the same `Tanks3D-Godot.app` on both Macs. Choose
 **LOCAL NETWORK → CREATE ROOM** on one computer, then enter its displayed
 IPv4 address under **LOCAL NETWORK → HOST IP** on the other. Each computer
 controls one tank; the host is P1 and the guest is P2. The existing two-player

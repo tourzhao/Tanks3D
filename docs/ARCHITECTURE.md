@@ -6,11 +6,51 @@ sequence, test gates, and rollback rules are in
 
 ## Decision
 
+As confirmed by the user on September 27, 2026, **Godot is the sole active
+development mainline**. Keep raylib frozen as a historical reference; do not
+duplicate new rendering, art, UI or feature work there unless explicitly
+requested. Retain the engine-independent C++ session and GDExtension bridge.
+Godot now has explicit CI and candidate/release gates; unqualified development
+Make targets and previously published releases still refer to raylib. The persistent instructions and
+current Godot entry points are in [AGENTS.md](../AGENTS.md).
+
 Refactor this project incrementally. The current build is warning-clean, passes
 the headless rule suite, and passes AddressSanitizer and UndefinedBehaviorSanitizer.
 A large rewrite before release would put established collision, progression, and
 rendering behavior at unnecessary risk. New features should, however, stop
 expanding the existing `Game3D` class.
+
+## Shared engine-independent session, September 2026
+
+`src/app/game_session.h` now owns the command-driven session used by both
+frontends: world state, seeded random stream, progression, reports, session-only
+record, camera values and ordered semantic side effects. It compiles with C++17
+and project headers alone. Neither it nor the Godot bridge includes raylib or
+`main.cpp`. The existing pure rule modules remain the rule owners.
+
+Raylib's `Game3D` derives from `GameSession` and supplies concrete `BattleFx`
+hooks, drawing and raylib camera conversion. Its copy/move operations rebind
+the presentation sink to the owning adapter. Godot's C ABI uses `GameSession`
+directly, returns snapshots and queues ordered `AudioOutput` requests outside
+the deterministic world. Godot owns its scene, GUI, input sampling and audio
+voices. Identical adjacent engine requests may coalesce; play/stop requests
+remain ordering barriers.
+
+The dedicated Godot build uses `build/godot/obj/` and links no raylib library.
+The local app bundles only its native extension alongside the official Godot
+engine and PCK. Its original-assets/license collection remains intact. The
+original raylib app remains a separate target with its existing release gates.
+
+`test-godot-core` tests session/bridge state, RNG, events, native audio, input and
+LAN behavior across all 35 stages. `test-game-session-adapter` compares the
+raylib adapter with the shared session and checks concrete effects. The Godot UI
+gate reaches real stage-clear, non-record defeat, earned-record and timeout
+paths through normal native steps. These checks are separate from physical
+controllers, two-computer LAN, audible listening and sustained rendering QA.
+
+The detailed extraction account below records the earlier increments. Historical
+`Game3D` ownership statements and line counts describe their pre-session-
+extraction baseline; the boundary above is the current implementation.
 
 ## LAN co-op boundary
 
@@ -20,8 +60,9 @@ expanding the existing `Game3D` class.
 authority, flow control, timeout and digest checks also run without sockets.
 `app/lan_game_bridge.h` applies one agreed frame to the existing game API.
 `lan_menu.h` owns the connection UI; main only wires it to input, rendering,
-audio and a newly seeded `Game3D`. No networking method or state is added to
-`Game3D`, and core/game modules have no network dependency.
+audio and a newly seeded session. Raylib uses its `Game3D` adapter; Godot uses
+`GameSession` directly. Networking state remains in the application bridge and
+`LanSession`, not in the shared game session or core/game modules.
 
 The host orders inputs at 60 Hz. Both peers simulate those exact frames, starting
 from the host's seed, stage, lives and advanced settings plus both selected
@@ -32,7 +73,7 @@ queues are bounded, and a lagging peer stops host advancement before a timeout.
 Offline timing/input/rendering retains its prior path. See [LAN play](LAN_PLAY.md)
 for the first version's scope and real-socket test commands.
 
-## Current Shape and Risks
+## Pre-session-extraction shape and risks (historical)
 
 The forty-nine production source/header files contain 21,236 lines.
 `src/main.cpp` remains one 7,679-line production translation unit; 11,042 lines
@@ -590,10 +631,10 @@ randomness is deterministic and scriptable in tests but remains owned by
 ## Target Boundaries
 
 ```text
-app/        lifecycle/setup target; owned command values/mappers and sync sink
+app/        GameSession, lifecycle/setup, command values/mappers and sync sink
 core/       coordinates, directions, settings, shared value types
 game/       entities, BonusSystem, StageGenerator, StageMap, CombatSystem,
-            SettlementSystem, incremental EnemySystem, GameSession
+            SettlementSystem, incremental EnemySystem
 platform/   macOS GameController backend behind a C++ snapshot boundary
 audio/      shared cue values and runtime output interface; mapping target
 render/     Renderer, HUD, lighting, models, GPU resources
@@ -614,10 +655,11 @@ the Objective-C++ platform edge receives
 callbacks on a serial user-interactive queue and latches edges for frame-loop
 consumption. This avoids both the silent Bluetooth Switch Pro path in GLFW and
 main-thread render stalls while keeping Apple types out of application and
-gameplay code. `Game3D` records
+gameplay code. The shared `GameSession` records
 `GameEvent` values such as `ShellFired`, `TankDamaged`, and `BonusCollected`.
-The target `GameSession` keeps that contract while rendering reads a const
-snapshot and audio/effects consume events. Code eventually moved into `core/`
+Rendering reads its snapshots; audio and concrete effects consume ordered
+semantic requests. Godot samples controllers through its own engine and reuses
+the native input mapper. Code eventually moved into `core/`
 and `game/` must not call raylib. `tanks3d::core` now owns coordinates,
 directions, strict center overlap, lane snapping, ice travel, advanced-setting
 normalization, player-level statistics, and the sole `Nation` definition.
@@ -642,7 +684,7 @@ presentation-free completion value.
 `planSettlementTransition()` owns the pure strict high-score, stage-wrap, and
 lives/level decisions in a detached player snapshot. These pure paths do not
 emit `GameEvent` values, request cues, load a stage, navigate, or mutate live
-players; `Game3D` performs those concrete commits.
+players; `GameSession` performs those concrete commits.
 Compatibility imports keep renderer callers unchanged, and checked bridges prove
 that render code consumes the shared nation, bonus type, and game-owned `Pickup`
 with `core::XZ`; only the renderer creates local `Vector3` heights.

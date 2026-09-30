@@ -11,6 +11,40 @@ from training.rule_policy import TacticalDefender
 
 
 class NativeAiPlayerTests(unittest.TestCase):
+    def test_overlap_recovery_matches_native_policy(self):
+        lib = ct.CDLL(str(ROOT / "build/tests/ai_player_probe.dylib"))
+        floats = np.ctypeslib.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
+        lib.t3rule_create.restype = ct.c_void_p
+        lib.t3rule_destroy.argtypes = [ct.c_void_p]
+        lib.t3rule_predict_observation.argtypes = [ct.c_void_p, floats, floats]
+        for open_direction in range(1, 5):
+            for offset_x, offset_z in ((0, 0), (.05, 0), (0, .05), (-.05, -.05)):
+                with self.subTest(open_direction=open_direction, offset=(offset_x, offset_z)):
+                    terrain = np.zeros((10, 26, 26), np.float32)
+                    state = np.zeros(340, np.float32)
+                    state[:2] = np.asarray((13, 13), np.float32) / 26
+                    state[3] = -1
+                    state[[4, 8, 332, 333]] = 1
+                    state[256:258] = np.asarray((13 + offset_x, 13 + offset_z), np.float32) / 26
+                    for direction in range(1, 5):
+                        if direction == open_direction:
+                            continue
+                        if direction <= 2:
+                            terrain[4, 11 if direction == 1 else 14, 12:14] = 1
+                        else:
+                            terrain[4, 12:14, 11 if direction == 3 else 14] = 1
+                    view = {"map": terrain, "state": state}
+                    reference = TacticalDefender()
+                    expected = guard_fire(view, reference.predict(view))
+                    rule = lib.t3rule_create()
+                    try:
+                        actual = lib.t3rule_predict_observation(rule, terrain.ravel(), state)
+                        self.assertEqual(actual, expected)
+                        if offset_x == offset_z == 0:
+                            self.assertEqual(actual // 2, open_direction)
+                    finally:
+                        lib.t3rule_destroy(rule)
+
     def compare_episode(self, stage, seed, seconds):
         with CoopEnv(max_seconds=seconds, native_path=ROOT / "build/tests/ai_player_probe.dylib") as env:
             lib = env.lib
@@ -60,13 +94,20 @@ class NativeAiPlayerTests(unittest.TestCase):
         self.assertEqual(decisions, 8400)
 
     def test_known_complete_episodes_preserve_reference_outcomes(self):
-        cases = ((5, 3000004, "b1c2dddee2c73d49"),
-                 (21, 3000020, "3d32d284c1ee3f4d"),
-                 (33, 3000032, "517e6792024b6781"))
-        for stage, seed, digest in cases:
+        # Spawn reservation now defers a second warning at the occupied
+        # (13, 1) spawn at t=2s. These corrected traces retain frame-by-frame
+        # native/reference parity and explicitly cover win, loss and timeout.
+        cases = ((5, 3000004, "efaf39c417482a28", 1, 0, 20),
+                 (21, 3000020, "b59bfdfd3dc1cbc0", 0, 0, 13),
+                 (33, 3000032, "dbab4a5513ce2b7a", 0, 1, 19))
+        for stage, seed, digest, won, truncated, kills in cases:
             with self.subTest(stage=stage):
-                _, _, actual = self.compare_episode(stage, seed, 120)
+                _, info, actual = self.compare_episode(stage, seed, 120)
                 self.assertEqual(actual, digest)
+                self.assertEqual(info["won"], won)
+                self.assertEqual(info["truncated"], truncated)
+                self.assertEqual(info["kills"], kills)
+                self.assertEqual(info["own_base_hits"], 0)
 
 
 if __name__ == "__main__":

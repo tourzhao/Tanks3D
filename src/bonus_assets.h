@@ -2,6 +2,7 @@
 #define TANKS3D_BONUS_ASSETS_H
 
 #include "game/bonus_system.h"
+#include "game/bonus_identity.h"
 
 #include <raylib.h>
 #include <rlgl.h>
@@ -26,23 +27,7 @@ using tanks3d::game::weightedTypeSlotCount;
 constexpr float kPickupModelScale = 1.53f;
 constexpr float kPickupIconSize = 0.90f;
 
-inline const char *name(Type type)
-{
-    switch (type)
-    {
-    case Type::Grenade: return "GRENADE";
-    case Type::Helmet: return "HELMET";
-    case Type::Clock: return "CLOCK";
-    case Type::Shovel: return "SHOVEL";
-    case Type::Tank: return "1-UP TANK";
-    case Type::Star: return "STAR";
-    case Type::Gun: return "MAX GUN";
-    case Type::Boat: return "BOAT";
-    case Type::Bandage: return "BANDAGE";
-    case Type::Count: return "UNKNOWN";
-    }
-    return "UNKNOWN";
-}
+inline const char *name(Type type) { return tanks3d::game::bonusName(type); }
 
 inline Color accent(Type type)
 {

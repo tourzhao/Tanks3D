@@ -1,10 +1,49 @@
 # Arcade machinery and battlefield art
 
-The September 2026 visual revision moves Tanks 3D toward the compact,
-characterful military machinery and layered scenery of 1990s arcade games.
-SNK's **Metal Slug** informs the project's compact mechanical proportions,
-layered scenery and painted materials. The implementation is original
-procedural 3D geometry, with no imported SNK game assets.
+The latest user-requested adjustment widens all twelve tank models by 20% along
+their local lateral axis in both renderers. Length, height, individual layouts,
+paint and native collision rules stay unchanged. This is a presentation choice
+on top of the per-vehicle profiles, not a revised historical measurement.
+
+The current armor-surface pass separates each vehicle's front cheek, sidewall,
+roof shoulder and rear bustle construction. A4 keeps a broad flat front and
+narrow edge bevel; Abrams has long oblique cheeks; Panther and production
+Tiger II have different inward-sloping plate towers. Cast bodies retain their
+individual shoulder and lower-neck curves. See [armor surface construction](TANK_ARMOR_SURFACES.md).
+Welded faces use actual coplanar geometry and hard normals, not a shared rounded
+box or a normal trick. Existing paint, world lighting and game camera remain.
+The six cast turret skins now retain their individual section landmarks while
+sampling each rounded corner more closely. Continuous shoulder normals remove
+triangle seams; the roof and lower-neck junction remain structural hard edges.
+This treatment is restricted to cast turrets, leaving welded plates and hulls intact.
+
+The current tank direction, updated September 27, 2026 after the realistic trial,
+is illustrated military machinery between cartoon and realism. The twelve selected
+vehicle layouts stay recognizable: modestly fuller turrets, substantial painted
+gun tubes, and thicker belts provide game-size clarity. Sherman stays tall, M60
+remains taller than Pershing, and Abrams/Leopard 2 keep low angular plate forms.
+Soviet winter paint is muted gray-white with cool shadows rather than near-white;
+USA woodland and German Panzer gray remain separate national palettes.
+
+The working rule is **real-vehicle structure first, stylization second**.
+Before each model edit, follow the [modeling standard](TANK_MODELING_STANDARD.md):
+identify the exact variant, separate measured data from estimates, and check its
+protected shape landmarks. T-34 keeps its forward turret and long rear deck;
+Sherman keeps its high, substantial hull. Illustration style must preserve those
+relationships, not normalize every vehicle into the same cartoon proportions.
+
+The latest chassis pass replaces the common track aspect with per-model width
+and length profiles while retaining equal tier plan area. Sherman, IS-2 and early
+Leopard 1 are relatively slender; Pershing and T-90 remain broader. Hull heights,
+round wheel radii and turret dimensions stay independent of those axes. See
+[the authored footprint table](TANK_PROPORTIONS.md) and the fixed-camera evidence
+in `build/release-evidence/vehicle-proportion-pass-20260927/`.
+
+The user-supplied illustrations guide volume and painted plane separation only;
+none are imported as game assets. Original procedural meshes retain the previous
+historical wheel/station/details. Gun-tip coordinates, physics, maps, default
+camera, world lighting and interface are unchanged. See the latest implementation
+and actual-render evidence in [the tank study record](CARTOON_TANKS.md).
 
 This artwork is available in the current development source. The published
 **Alpha 4** package predates this revision and the adjustable gameplay camera.
@@ -12,14 +51,34 @@ See the [development preview](../README.md#current-development-preview) for rend
 examples and the [development guide](DEVELOPMENT.md) to build and run it.
 
 
-## Chaffee study and coherent tank roster (September 2026)
+## Previous cartoon roster and direction (historical)
+
+The September 26 cartoon trial implements the requested M4 → M26 → M60 → M1,
+T-34 → IS-2 → T-62 → T-90, and Panther → Tiger II → Leopard 1 → Leopard 2
+rosters in both renderers. USA uses olive woodland camouflage, the Soviet family
+uses warm winter white over green, and Germany uses matte dark Panzer gray.
+The September 27 refinement gives each type a distinct turret construction,
+separates turret and engine deck, narrows the belts within the same outer
+footprint, and makes the cannon read as a slimmer tube. Broad highlights,
+curved fenders and a few readable mechanical features keep the cartoon style.
+No pixels or mesh from the reference are included in the game. See
+[the current work and earlier trial records](CARTOON_TANKS.md),
+[shared size standard](TANK_PROPORTIONS.md), and the
+[US](US_TANK_REFERENCES.md), [Soviet](SOVIET_TANK_REFERENCES.md) and
+[German](GERMAN_TANK_REFERENCES.md) historical references.
+
+### Earlier September study (historical)
+
+The following account documents the previous roster and palette. It is retained
+as a record of the geometry, attachment and animation work on which the current
+trial builds; old model names and paints below do not describe the active roster.
 
 The USA level-zero player (`Vehicle::M24Chaffee`, HUD `M24 CHAFFEE`) now uses
 `src/chaffee_sample_model.h`. Following the single-tank review, the requested
 roster expansion applies that casting and material language to all 14 distinct
-vehicles, including every national enemy role. The USA Fast enemy now shares
-the Chaffee geometry with enemy armor colors; the accepted player rendering is
-preserved. `src/arcade_tank_roster.h` reuses the study's section lofts, continuous
+vehicles, including every national enemy role. The USA Fast enemy shares
+the Chaffee geometry; both use the American national armor palette.
+`src/arcade_tank_roster.h` reuses the study's section lofts, continuous
 belts and beveled wheel faces. `rosterDesign()` in `src/wwii_tank_model.h` assigns
 each vehicle its own proportions without changing selection or attachments.
 
@@ -29,11 +88,35 @@ each vehicle its own proportions without changing selection or attachments.
 | USSR | T-70 | T-34/85 | IS-2 | KV-5 | Offset light cabin, rearward crown lean, tall KV-5 and auxiliary turret |
 | Germany | Panzer II F | Panzer IV H | Tiger I E | Maus | Squarer cheeks, stronger cupolas, skirts, wide Maus and secondary cannon |
 
+National identity now changes the major armor sections as well as the paint.
+American cabins retain rounded cast shoulders. Soviet cabins use a swept wedge
+with a receding roof and a sloped hull bow; the T-70 stays offset and the IS-2
+has a taller shoulder than the flatter Pershing. German cabins have upright
+plate sides, broad flat roofs and small bevels, with a narrow Panzer II,
+skirted Panzer IV and broader heavy cabins. Optics and cupolas follow these
+surfaces instead of sharing one wide visor. Both frontends preserve the
+existing running gear, neutral muzzle positions and national vehicle mappings.
+Same-camera colored and gray renders, native-size crops and runtime checks for
+this revision are in `build/release-evidence/national-silhouettes-20260919/`.
+
 The German Fast enemy retains six road tires (`Sdkfz231SixRad`), and its
 Power enemy retains the separate `PanzerIIIL` casting. Existing enemy role to
-vehicle mappings remain intact. Armor damage and bonus-carrier pulses still
-color the large armor panels; rubber, steel and optics keep independent colors.
+vehicle mappings remain intact. Both frontends use American army olive
+(`#55613d`), Soviet flag red (`#cd0000`) and German snow camouflage with a
+cool white base (`#d8dedc`) and broad gray patches. These are authored game
+palettes, not claims of exact historical paint specifications.
+Warm highlights and cool recesses retain the
+painted relief. Enemy armor loss modestly lightens the national paint; the
+existing armor-status and bonus-carrier pulse colors stay on roof and side
+markings. Rubber, exposed steel and optics keep independent colors.
 P1 gold and P2 green appear on roof and side markings in all player tiers.
+
+The Soviet base follows this [flag color reference](https://www.schemecolor.com/soviet-union-flag-colors.php).
+The snow camouflage is original procedural art: broad patches follow the
+vehicle's local surfaces and remain separate from metal, rubber, optics and
+identity markings. No external reference image is distributed.
+Actual before/after palette captures and validation are under
+`build/release-evidence/olive-snow-20260919/`.
 
 The chosen round-shouldered cabin has a narrower base and roof, a broad cheek,
 a backward-sloping brow, a recessed visor and a short hollow cannon. A hatch,
@@ -70,31 +153,29 @@ mesh, texture, asset-loader path or resource manifest entry is required.
 
 ## Shape and material language
 
-Vehicles take their visual reference from the compact crew cabin, curved nose
-and exposed machinery of the SV-001. [WAVE's official SV-001/I model page](https://www.hobby-wave.com/products/gm033/)
-provides front, side and oblique views for judging the silhouette. Proportions
-are visual estimates from those views, not measured kit dimensions. No WAVE
-photographs or SNK game assets are imported into the project.
+Current vehicles prioritize recognizable construction at the normal game
+camera. M4, M26 and M60 use different cast profiles; M1 has a low wedge and
+rear bustle. T-34 has an angular turret, IS-2 an oval casting, T-62 a low dome,
+and T-90 grouped angular armor. Panther, Tiger II, Leopard 1 and Leopard 2 use
+trapezoidal, long slab-sided, rounded and broad box-shaped turrets respectively.
+The same national palette must not be their only identifying feature.
 
-A compact crew cabin has full cheeks and a rounded crown, seated over a deep
-hull whose nose slopes down between the tracks. The longer running gear leaves
-room for the front transmission cover and rear engine deck. Continuous belts
-wrap around large end wheels, with steel tread shoes, dark recessed carriers
-and exposed hubs. Short fenders and side skirts leave the curved ends visible.
-The short cannon has a painted recoil sleeve, a dark brake and a recessed bore;
-its visual muzzle tip and flash attachment retain their existing coordinates.
-The cabin and hull proportions are adjusted independently of that attachment.
+Hull, turret, belts and cannon are derived from each selected vehicle's structure
+and stylized deliberately. Turret stations follow that vehicle's fighting
+compartment; never move every turret rearward just to expose more gun tube.
+Check the existing visual muzzle and flash connection explicitly. Belt width and
+length can vary within the existing maximum envelope, preserving ground contact
+and four-tier plan-area growth.
+Keep the existing rigid suspension and breathing motion; do not stretch the
+whole model or alter the gameplay camera to sell new proportions. Authored
+normals and warm/cool painted planes should explain the large surfaces before
+small fixtures are added. Rubber, exposed metal, optics and P1/P2 markings remain
+separate from national armor paint.
 
-Light, medium, heavy and super-heavy roles retain distinct national shapes:
-offset light cabins, rounded American castings, Soviet crowns that lean
-rearward, squarer German cheeks and a low, broad T95 casemate with paired
-belts on each side. The KV-5 keeps its auxiliary turret, the Maus its secondary
-cannon, and the fast armored car its three axles. Offset hatches, viewing slits,
-roof equipment, exhausts and stowage follow the new body surfaces. Moving
-vehicles use restrained suspension motion without stretching the entire model.
-Authored panel normals preserve the shoulder sections without diagonal lighting
-seams; tread shoes and wheel faces provide their own normals. Contact shadows follow each vehicle's actual
-track or wheel footprint.
+The earlier SV-001 studies above remain historical development records; their
+compact pod, short-nozzle and uniformly swollen turret targets are no longer
+the current tank standard. The surrounding battlefield retains its existing
+arcade art direction:
 
 Architecture uses warm plaster, exposed brick, oxidized green metal, terracotta
 roofs and deep window recesses. Residential shutters, industrial doors,
@@ -203,7 +284,8 @@ Evidence and comparison harnesses belong under `build/release-evidence/`.
   Soviet basic/fast/power/armored enemies use their medium/light/heavy/super-heavy
   models respectively. German enemies retain the Panzer II, Sd.Kfz.231,
   Panzer III and Tiger. Enemy armor colors and bonus-carrier flashes retain
-  their gameplay meaning. Models, contact and sun shadows, and muzzle flashes
+  their gameplay meaning in local markings, without replacing the national
+  body color. Models, contact and sun shadows, and muzzle flashes
   all select the same national vehicle; damage does not switch models.
 - `ArcadeVehicleSpec`, vehicle selection and visual muzzle attachments retain
   their existing values. The muzzle helpers place the rendered barrel tip and

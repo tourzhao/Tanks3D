@@ -36,7 +36,10 @@ int main()
     int previous = 0;
     for (int decision = 0; decision < 1600 && !env.done; ++decision)
     {
-        const int action = decision < 300 || decision > 600 ? 3 : 7;
+        // Advance/fire for five seconds, turn west for two, then resume
+        // north. This reaches combat without relying on enemies stacking
+        // inside the same creation warning (fixed by spawn reservation).
+        const int action = decision >= 100 && decision < 140 ? 7 : 3;
         const int before = env.ticks;
         env.step(action);
         for (int frame = 0; frame < env.ticks - before; ++frame)
@@ -53,7 +56,12 @@ int main()
             return 3;
     }
     if (env.kills < 1 || env.shots < 1)
+    {
+        std::cerr << "Training combat fixture did not exercise kills/shots: "
+                  << "ticks=" << env.ticks << " kills=" << env.kills
+                  << " shots=" << env.shots << '\n';
         return 4;
+    }
     std::cout << "PASS all 35 terrain observations, brick quadrants and steel\n"
               << "PASS training adapter matches production state/RNG at " << env.ticks
               << " ticks; kills=" << env.kills << " shots=" << env.shots << "\n";

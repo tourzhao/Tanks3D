@@ -2,6 +2,7 @@
 #define TANKS3D_WWII_TANK_MODEL_H
 
 #include "core/nation.h"
+#include "game/vehicle_identity.h"
 #include "chaffee_sample_model.h"
 #include "arcade_tank_roster.h"
 
@@ -20,23 +21,16 @@ namespace wwii_tank_model
 using Nation = tanks3d::core::Nation;
 using tanks3d::core::nationName;
 
-enum class Vehicle
+// User-directed visual widening; the authored profiles, muzzle center line and
+// all gameplay dimensions remain unchanged. Lighting optionally compensates
+// for rlgl's forward-transformed immediate normals during this local scale.
+inline constexpr float kPresentationWidthScale = 1.20f;
+struct PresentationLighting
 {
-    M24Chaffee,
-    M4A3Sherman,
-    M26Pershing,
-    T28T95,
-    T70,
-    T3485,
-    IS2,
-    KV5Project,
-    PanzerIIF,
-    PanzerIVH,
-    TigerIE,
-    Maus,
-    Sdkfz231SixRad,
-    PanzerIIIL
+    void *context = nullptr;
+    void (*setWidthScale)(void *, float) = nullptr;
 };
+inline PresentationLighting presentationLighting;
 
 namespace detail
 {
@@ -103,24 +97,28 @@ inline Palette palette(Color arcadeColor, bool enemy)
             material(mix(paint, Color{67, 71, 57, 255}, 0.55f), 13)};
 }
 
-inline Color nationalPlayerPaint(Color identity, Nation nation)
+inline Color nationalArmorPaint(Nation nation)
 {
-    Color national = Color{128, 143, 135, 255};
+    // National paint remains separate from identity marks, rubber and steel.
+    // Broad model-space camouflage patches are authored in the roster mesh.
     switch (nation)
     {
     case Nation::SovietUnion:
-        national = Color{99, 126, 94, 255};
-        break;
+        return Color{184, 188, 175, 255};
     case Nation::Germany:
-        national = Color{151, 139, 110, 255};
-        break;
+        return Color{69, 73, 75, 255};
     case Nation::UnitedStates:
     case Nation::Count:
         break;
     }
-    // P1/P2 identity remains on lamps and trim, while the broad armor panels
-    // finally carry a nation-readable field color.
-    return mix(identity, national, 0.94f);
+    return Color{85, 97, 61, 255};
+}
+
+inline Color nationalPlayerPaint(Color, Nation nation)
+{
+    // Player identity belongs to the roof and side markings. Broad panels
+    // retain the same national hue for P1, P2 and opposing vehicles.
+    return nationalArmorPaint(nation);
 }
 
 inline void box(Vector3 center, Vector3 size, Color color)
@@ -1322,6 +1320,9 @@ inline ArcadeNationStyle arcadeNationStyle(Vehicle vehicle)
     case Vehicle::T3485:
     case Vehicle::IS2:
     case Vehicle::KV5Project:
+    case Vehicle::T3476:
+    case Vehicle::T62:
+    case Vehicle::T90A:
         return ArcadeNationStyle::Soviet;
     case Vehicle::PanzerIIF:
     case Vehicle::PanzerIVH:
@@ -1329,11 +1330,17 @@ inline ArcadeNationStyle arcadeNationStyle(Vehicle vehicle)
     case Vehicle::Maus:
     case Vehicle::Sdkfz231SixRad:
     case Vehicle::PanzerIIIL:
+    case Vehicle::PantherA:
+    case Vehicle::TigerII:
+    case Vehicle::Leopard1:
+    case Vehicle::Leopard2A4:
         return ArcadeNationStyle::German;
     case Vehicle::M24Chaffee:
     case Vehicle::M4A3Sherman:
     case Vehicle::M26Pershing:
     case Vehicle::T28T95:
+    case Vehicle::M60A3:
+    case Vehicle::M1A1:
     default:
         return ArcadeNationStyle::American;
     }
@@ -1558,6 +1565,15 @@ inline ArcadeVehicleSpec arcadeVehicleSpec(Vehicle vehicle)
         spec.gunRadius = 0.038f;
         spec.headShape = ArcadeHeadShape::Angular;
         break;
+    case Vehicle::M60A3: return arcadeVehicleSpec(Vehicle::M26Pershing);
+    case Vehicle::M1A1: return arcadeVehicleSpec(Vehicle::T28T95);
+    case Vehicle::T3476: return arcadeVehicleSpec(Vehicle::T70);
+    case Vehicle::T62: return arcadeVehicleSpec(Vehicle::IS2);
+    case Vehicle::T90A: return arcadeVehicleSpec(Vehicle::KV5Project);
+    case Vehicle::PantherA: return arcadeVehicleSpec(Vehicle::PanzerIIF);
+    case Vehicle::TigerII: return arcadeVehicleSpec(Vehicle::PanzerIVH);
+    case Vehicle::Leopard1: return arcadeVehicleSpec(Vehicle::TigerIE);
+    case Vehicle::Leopard2A4: return arcadeVehicleSpec(Vehicle::Maus);
     }
     return spec;
 }
@@ -1844,9 +1860,60 @@ inline ArcadeVisualProfile arcadeVisualProfile(const ArcadeVehicleSpec &spec)
     return art;
 }
 
+inline Vector2 playerVisualMuzzle(Nation nation, int tier)
+{
+    // Pre-remodel presentation attachments by gameplay slot. Shell spawning
+    // remains in combat_system; the original gun axis does not move with art.
+    constexpr std::array<std::array<Vector2, 4>, 3> anchors{{
+        {{{.5624f, .77f}, {.6754f, .82f}, {.7826f, .85f}, {.744f, .70f}}},
+        {{{.5152f, .75f}, {.6482f, .81f}, {.764f, .85f}, {.8012f, .88f}}},
+        {{{.5038f, .77f}, {.6382f, .81f}, {.7726f, .86f}, {.8341f, .90f}}}}};
+    const auto index = static_cast<std::size_t>(tanks3d::core::normalizedNation(nation));
+    return anchors[index][static_cast<std::size_t>(std::clamp(tier, 0, 3))];
+}
+
+inline Vector2 enemyVisualMuzzle(Nation nation, int role)
+{
+    role = (role % 4 + 4) % 4;
+    if (nation == Nation::Germany)
+    {
+        constexpr std::array<Vector2, 4> anchors{{
+            {.5038f, .77f}, {.4766f, .73f}, {.6339f, .80f}, {.7726f, .86f}}};
+        return anchors[static_cast<std::size_t>(role)];
+    }
+    constexpr std::array<int, 4> tiers{{1, 0, 2, 3}};
+    return playerVisualMuzzle(nation, tiers[static_cast<std::size_t>(role)]);
+}
+
+// Fixed art-only mounts from the proportion study. Subsequent stylization
+// changes the surrounding turret, not its gun axis. Legacy accessors retain
+// their old values; physical shell spawning is owned by combat_system.
+inline Vector2 renderedPlayerMuzzle(Nation nation, int tier)
+{
+    constexpr std::array<std::array<float, 4>, 3> distances{{
+        {{.87f, 1.36f, 1.44f, 1.38f}}, {{.82f, 1.49f, 1.40f, 1.52f}},
+        {{1.19f, 1.43f, 1.48f, 1.43f}}}};
+    constexpr std::array<std::array<float, 4>, 3> decks{{
+        {{.48f, .365f, .43f, .34f}}, {{.385f, .39f, .345f, .345f}},
+        {{.44f, .465f, .36f, .39f}}}};
+    constexpr std::array<std::array<float, 4>, 3> heights{{
+        {{.18f, .19f, .23f, .175f}}, {{.165f, .21f, .145f, .155f}},
+        {{.19f, .23f, .18f, .205f}}}};
+    const auto n = static_cast<std::size_t>(tanks3d::core::normalizedNation(nation));
+    const auto t = static_cast<std::size_t>(std::clamp(tier, 0, 3));
+    return {distances[n][t], decks[n][t] + .006f + .025f + heights[n][t] * .48f};
+}
+
+inline Vector2 renderedEnemyMuzzle(Nation nation, int role)
+{
+    constexpr std::array<int, 4> tiers{{1, 0, 2, 3}};
+    return renderedPlayerMuzzle(nation, tiers[static_cast<std::size_t>((role % 4 + 4) % 4)]);
+}
+
 inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
 {
     using arcade_tank_roster::Family;
+    using Model = arcade_tank_roster::CartoonModel;
     const ArcadeVehicleSpec spec = arcadeVehicleSpec(vehicle);
     const ArcadeVisualProfile art = arcadeVisualProfile(spec);
     arcade_tank_roster::Design d;
@@ -1858,6 +1925,78 @@ inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
     d.skirts = spec.skirts;
     d.wheeled = spec.wheeled;
     d.auxiliary = spec.auxiliaryTurret;
+    Nation nation = Nation::UnitedStates;
+    switch (vehicle)
+    {
+    case Vehicle::M4A3Sherman: d.cartoon = Model::Sherman; d.tier = 0; break;
+    case Vehicle::M26Pershing: d.cartoon = Model::Pershing; d.tier = 1; break;
+    case Vehicle::M60A3: d.cartoon = Model::Patton; d.tier = 2; break;
+    case Vehicle::M1A1: d.cartoon = Model::Abrams; d.tier = 3; break;
+    case Vehicle::T3476: d.cartoon = Model::T34; d.tier = 0; nation = Nation::SovietUnion; break;
+    case Vehicle::IS2: d.cartoon = Model::Stalin; d.tier = 1; nation = Nation::SovietUnion; break;
+    case Vehicle::T62: d.cartoon = Model::T62; d.tier = 2; nation = Nation::SovietUnion; break;
+    case Vehicle::T90A: d.cartoon = Model::T90; d.tier = 3; nation = Nation::SovietUnion; break;
+    case Vehicle::PantherA: d.cartoon = Model::Panther; d.tier = 0; nation = Nation::Germany; break;
+    case Vehicle::TigerII: d.cartoon = Model::TigerII; d.tier = 1; nation = Nation::Germany; break;
+    case Vehicle::Leopard1: d.cartoon = Model::Leopard1; d.tier = 2; nation = Nation::Germany; break;
+    case Vehicle::Leopard2A4: d.cartoon = Model::Leopard2; d.tier = 3; nation = Nation::Germany; break;
+    default: break;
+    }
+    if (d.cartoon != Model::None)
+    {
+        constexpr std::array<float, 4> chassis{{.82f, .88f, .94f, 1.0f}};
+        const auto tier = static_cast<std::size_t>(d.tier);
+        const auto country = static_cast<std::size_t>(nation);
+        constexpr std::array<std::array<float, 4>, 3> widths{{
+            {{.56f,.64f,.69f,.80f}}, {{.55f,.66f,.72f,.78f}}, {{.55f,.67f,.71f,.81f}}}};
+        constexpr std::array<std::array<float, 4>, 3> lengths{{
+            {{.61f,.76f,.91f,1.02f}}, {{.58f,.75f,.80f,.89f}}, {{.63f,.80f,.87f,1.01f}}}};
+        constexpr std::array<std::array<float, 4>, 3> decks{{
+            {{.48f,.365f,.43f,.34f}}, {{.385f,.39f,.345f,.345f}}, {{.44f,.465f,.36f,.39f}}}};
+        constexpr std::array<std::array<float, 4>, 3> heights{{
+            {{.205f,.215f,.255f,.190f}}, {{.185f,.235f,.165f,.180f}}, {{.210f,.250f,.205f,.225f}}}};
+        constexpr std::array<std::array<float, 4>, 3> centers{{
+            {{-.055f,-.03f,-.015f,.02f}}, {{-.22f,-.10f,-.065f,-.075f}}, {{-.08f,-.055f,-.02f,.015f}}}};
+        constexpr std::array<float,4> gunRadii{{.032f,.035f,.038f,.042f}};
+        // Source-informed hull slenderness, with equal tier plan area. These
+        // are game adjustments, not measured track contact-length ratios.
+        constexpr std::array<std::array<float, 4>, 3> lateral{{
+            {{.91f,1.0f,1.0f,.96f}}, {{.97f,.91f,.97f,1.0f}},
+            {{.96f,.97f,.925f,.98f}}}};
+        d.chassisScale = chassis[tier];
+        d.chassisWidth = chassis[tier] * lateral[country][tier];
+        d.chassisLength = chassis[tier] / lateral[country][tier];
+        d.shape = {1.90f * d.chassisLength, .50f * chassis[tier],
+                   .38f * d.chassisWidth, .24f * d.chassisWidth,
+                   widths[country][tier] * 1.04f, lengths[country][tier],
+                   heights[country][tier], centers[country][tier] / lateral[country][tier], gunRadii[tier]};
+        d.hullTop = decks[country][tier];
+        d.base = d.hullTop + .006f;
+        d.family = nation == Nation::SovietUnion ? Family::Soviet :
+                   nation == Nation::Germany ? Family::German : Family::American;
+        // Road-wheel stations, not the paired discs at a station. M4 keeps
+        // three VVSS bogies; Panther interleaves eight, Tiger II overlaps nine.
+        constexpr std::array<std::array<int, 4>, 3> roadWheels{{
+            {{6, 6, 6, 7}}, {{5, 6, 5, 6}}, {{8, 9, 7, 7}}}};
+        d.wheels = roadWheels[static_cast<std::size_t>(nation)][tier];
+        constexpr std::array<std::array<float, 4>, 3> trackHeights{{
+            {{.40f,.36f,.37f,.34f}}, {{.34f,.36f,.34f,.34f}},
+            {{.39f,.40f,.35f,.35f}}}};
+        d.shape.trackHeight = trackHeights[static_cast<std::size_t>(nation)][tier] * chassis[tier];
+        d.brake = d.cartoon == Model::Pershing || d.cartoon == Model::Stalin ||
+                  d.cartoon == Model::Panther || d.cartoon == Model::TigerII;
+        d.skirts = (d.family == Family::German && d.cartoon != Model::Leopard1) ||
+                   d.cartoon == Model::Abrams || d.cartoon == Model::T90;
+        d.auxiliary = false;
+        d.wheeled = false;
+        d.casemate = false;
+        // Model proportions and visible gun mounts are independent from
+        // legacy attachments and the unchanged rule projectile origin.
+        const auto muzzle = renderedPlayerMuzzle(nation, d.tier);
+        d.muzzleY = muzzle.y;
+        d.muzzleZ = -muzzle.x;
+        return d;
+    }
     // Dimensions below are visual profiles only. The attachment and original
     // running-gear footprint above remain independent of these cabin studies.
     switch (vehicle)
@@ -1867,11 +2006,12 @@ inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
         d.chaffee = true;
         break;
     case Vehicle::M4A3Sherman:
-        d.wheels = 6;
+        d.shape.cabinWidth = .92f; d.shape.cabinLength = .74f;
+        d.shape.cabinHeight = .61f; d.wheels = 6;
         break;
     case Vehicle::M26Pershing:
-        d.shape.cabinWidth = .97f; d.shape.cabinLength = .77f;
-        d.shape.cabinHeight = .64f; d.shape.gunRadius = .102f;
+        d.shape.cabinWidth = 1.04f; d.shape.cabinLength = .83f;
+        d.shape.cabinHeight = .60f; d.shape.gunRadius = .102f;
         d.base = .57f; d.wheels = 6;
         break;
     case Vehicle::T28T95:
@@ -1882,17 +2022,17 @@ inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
         d.wheels = 7; d.casemate = true;
         break;
     case Vehicle::T70:
-        d.shape.cabinWidth = .72f; d.shape.cabinLength = .66f;
-        d.shape.cabinHeight = .49f; d.shape.gunRadius = .085f;
-        d.base = .53f; d.cabinX = -.035f;
+        d.shape.cabinWidth = .68f; d.shape.cabinLength = .66f;
+        d.shape.cabinHeight = .40f; d.shape.gunRadius = .085f;
+        d.base = .53f; d.cabinX = -.055f;
         break;
     case Vehicle::T3485:
-        d.shape.cabinWidth = .86f; d.shape.cabinLength = .76f;
-        d.shape.cabinHeight = .55f; d.wheels = 5;
+        d.shape.cabinWidth = .88f; d.shape.cabinLength = .80f;
+        d.shape.cabinHeight = .46f; d.wheels = 5;
         break;
     case Vehicle::IS2:
-        d.shape.cabinWidth = .94f; d.shape.cabinLength = .82f;
-        d.shape.cabinHeight = .61f; d.shape.gunRadius = .105f;
+        d.shape.cabinWidth = 1.02f; d.shape.cabinLength = .88f;
+        d.shape.cabinHeight = .50f; d.shape.gunRadius = .105f;
         d.base = .57f; d.wheels = 6;
         break;
     case Vehicle::KV5Project:
@@ -1901,22 +2041,22 @@ inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
         d.base = .59f; d.wheels = 7;
         break;
     case Vehicle::PanzerIIF:
-        d.shape.cabinWidth = .76f; d.shape.cabinLength = .65f;
-        d.shape.cabinHeight = .52f; d.shape.gunRadius = .086f;
+        d.shape.cabinWidth = .68f; d.shape.cabinLength = .65f;
+        d.shape.cabinHeight = .50f; d.shape.gunRadius = .086f;
         d.base = .54f;
         break;
     case Vehicle::PanzerIVH:
-        d.shape.cabinWidth = .85f; d.shape.cabinLength = .73f;
-        d.shape.cabinHeight = .57f; d.wheels = 6;
+        d.shape.cabinWidth = .89f; d.shape.cabinLength = .75f;
+        d.shape.cabinHeight = .55f; d.wheels = 6;
         break;
     case Vehicle::TigerIE:
-        d.shape.cabinWidth = .99f; d.shape.cabinLength = .78f;
-        d.shape.cabinHeight = .61f; d.shape.gunRadius = .105f;
+        d.shape.cabinWidth = 1.04f; d.shape.cabinLength = .82f;
+        d.shape.cabinHeight = .58f; d.shape.gunRadius = .105f;
         d.base = .57f; d.wheels = 7;
         break;
     case Vehicle::Maus:
-        d.shape.cabinWidth = 1.07f; d.shape.cabinLength = .86f;
-        d.shape.cabinHeight = .65f; d.shape.cabinZ = .09f;
+        d.shape.cabinWidth = 1.10f; d.shape.cabinLength = .90f;
+        d.shape.cabinHeight = .60f; d.shape.cabinZ = .09f;
         d.shape.gunRadius = .11f; d.base = .59f;
         d.wheels = 7; d.coaxial = true;
         break;
@@ -1929,6 +2069,8 @@ inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
         d.shape.cabinWidth = .83f; d.shape.cabinLength = .72f;
         d.shape.cabinHeight = .56f; d.wheels = 6;
         break;
+    default:
+        break;
     }
     if (spec.nationStyle == ArcadeNationStyle::Soviet)
     {
@@ -1938,9 +2080,31 @@ inline arcade_tank_roster::Design rosterDesign(Vehicle vehicle)
     if (spec.nationStyle == ArcadeNationStyle::German)
     {
         d.family = Family::German;
-        d.corner = .105f; d.roofWidth = .80f; d.roofShift = .055f;
+        d.corner = .045f; d.roofWidth = .94f; d.roofShift = .042f;
     }
     return d;
+}
+
+inline ArcadeVisualProfile visualProfileForVehicle(Vehicle vehicle)
+{
+    auto art = arcadeVisualProfile(arcadeVehicleSpec(vehicle));
+    const auto design = rosterDesign(vehicle);
+    if (design.cartoon != arcade_tank_roster::CartoonModel::None)
+    {
+        const auto &s = design.shape;
+        art.trackLength = s.trackLength;
+        art.trackHeight = s.trackHeight;
+        art.trackHalfWidth = s.trackCenter;
+        art.trackWidth = s.trackWidth;
+        art.hullWidth = (s.trackCenter - s.trackWidth * .12f) * 2;
+        art.hullLength = s.trackLength * .9f;
+        art.turretWidth = s.cabinWidth;
+        art.turretLength = s.cabinLength;
+        art.turretHeight = s.cabinHeight;
+        art.turretY = design.base + s.cabinHeight * .5f;
+        art.turretZ = s.cabinZ;
+    }
+    return art;
 }
 
 inline void drawArcadeRunningGear(const ArcadeVehicleSpec &spec,
@@ -2557,133 +2721,40 @@ inline void drawShield(float shield, int identity)
 
 } // namespace detail
 
-inline Vehicle playerVehicle(Nation nation, int level)
-{
-    const int tier = std::clamp(level, 0, 3);
-    switch (nation)
-    {
-    case Nation::UnitedStates:
-        switch (tier)
-        {
-        case 0: return Vehicle::M24Chaffee;
-        case 1: return Vehicle::M4A3Sherman;
-        case 2: return Vehicle::M26Pershing;
-        default: return Vehicle::T28T95;
-        }
-    case Nation::SovietUnion:
-        switch (tier)
-        {
-        case 0: return Vehicle::T70;
-        case 1: return Vehicle::T3485;
-        case 2: return Vehicle::IS2;
-        default: return Vehicle::KV5Project;
-        }
-    case Nation::Germany:
-        switch (tier)
-        {
-        case 0: return Vehicle::PanzerIIF;
-        case 1: return Vehicle::PanzerIVH;
-        case 2: return Vehicle::TigerIE;
-        default: return Vehicle::Maus;
-        }
-    case Nation::Count:
-        break;
-    }
-    return playerVehicle(Nation::UnitedStates, tier);
-}
-
-inline Vehicle enemyVehicle(int type)
-{
-    switch ((type % 4 + 4) % 4)
-    {
-    case 0: return Vehicle::PanzerIIF;          // A: basic light tank
-    case 1: return Vehicle::Sdkfz231SixRad;     // B: fast wheeled armored car
-    case 2: return Vehicle::PanzerIIIL;         // C: long-gun, fast projectile
-    default: return Vehicle::TigerIE;           // D: broad heavy silhouette
-    }
-}
-
-inline Vehicle enemyVehicle(Nation nation, int type)
-{
-    nation = tanks3d::core::normalizedNation(nation);
-    if (nation == Nation::Germany)
-        return enemyVehicle(type);
-
-    // These tiers choose silhouettes only: Fast remains the compact light
-    // tank, while the four classic enemy types retain their combat rules.
-    static constexpr std::array<int, 4> roleTiers{{1, 0, 2, 3}};
-    const int role = (type % 4 + 4) % 4;
-    return playerVehicle(nation, roleTiers[static_cast<std::size_t>(role)]);
-}
-
-// Compatibility selector retained for the original enemy mapping tests.
-// Legacy player callers deliberately continue to resolve to the Sherman.
-inline Vehicle vehicleFor(bool enemy, int identity)
-{
-    return enemy ? enemyVehicle(identity) : Vehicle::M4A3Sherman;
-}
-
-inline const char *tierName(int level)
-{
-    switch (std::clamp(level, 0, 3))
-    {
-    case 0: return "LIGHT";
-    case 1: return "MEDIUM";
-    case 2: return "HEAVY";
-    default: return "SUPER HEAVY";
-    }
-}
-
-inline const char *nameForVehicle(Vehicle vehicle)
-{
-    switch (vehicle)
-    {
-    case Vehicle::M24Chaffee: return "M24 CHAFFEE";
-    case Vehicle::M4A3Sherman: return "M4A3(76)W SHERMAN";
-    case Vehicle::M26Pershing: return "M26 PERSHING";
-    case Vehicle::T28T95: return "T28/T95";
-    case Vehicle::T70: return "T-70";
-    case Vehicle::T3485: return "T-34-85";
-    case Vehicle::IS2: return "IS-2";
-    case Vehicle::KV5Project: return "KV-5 PROJECT";
-    case Vehicle::PanzerIIF: return "PANZER II AUSF. F";
-    case Vehicle::PanzerIVH: return "PANZER IV AUSF. H";
-    case Vehicle::TigerIE: return "TIGER I AUSF. E";
-    case Vehicle::Maus: return "PANZER VIII MAUS";
-    case Vehicle::Sdkfz231SixRad: return "SD.KFZ. 231 6-RAD";
-    case Vehicle::PanzerIIIL: return "PANZER III AUSF. L";
-    }
-    return "WWII AFV";
-}
-
-inline const char *playerVehicleName(Nation nation, int level)
-{
-    return nameForVehicle(playerVehicle(nation, level));
-}
-
-inline const char *vehicleName(bool enemy, int identity)
-{
-    return nameForVehicle(vehicleFor(enemy, identity));
-}
-
 inline float muzzleDistanceForVehicle(Vehicle vehicle)
 {
+    const auto design = detail::rosterDesign(vehicle);
+    if (design.cartoon != arcade_tank_roster::CartoonModel::None)
+        return detail::playerVisualMuzzle(static_cast<Nation>(design.family), design.tier).x;
     return detail::arcadeMuzzleDistance(detail::arcadeVehicleSpec(vehicle));
 }
 
 inline float muzzleHeightForVehicle(Vehicle vehicle)
 {
+    const auto design = detail::rosterDesign(vehicle);
+    if (design.cartoon != arcade_tank_roster::CartoonModel::None)
+        return detail::playerVisualMuzzle(static_cast<Nation>(design.family), design.tier).y;
     return detail::arcadeVehicleSpec(vehicle).headY;
+}
+
+inline Vector2 renderedPlayerMuzzle(Nation nation, int level)
+{
+    return detail::renderedPlayerMuzzle(nation, level);
+}
+
+inline Vector2 renderedEnemyMuzzle(Nation nation, int type)
+{
+    return detail::renderedEnemyMuzzle(nation, type);
 }
 
 inline float playerMuzzleDistance(Nation nation, int level)
 {
-    return muzzleDistanceForVehicle(playerVehicle(nation, level));
+    return detail::playerVisualMuzzle(nation, level).x;
 }
 
 inline float playerMuzzleHeight(Nation nation, int level)
 {
-    return muzzleHeightForVehicle(playerVehicle(nation, level));
+    return detail::playerVisualMuzzle(nation, level).y;
 }
 
 inline float enemyMuzzleDistance(int type)
@@ -2698,12 +2769,12 @@ inline float enemyMuzzleHeight(int type)
 
 inline float enemyMuzzleDistance(Nation nation, int type)
 {
-    return muzzleDistanceForVehicle(enemyVehicle(nation, type));
+    return detail::enemyVisualMuzzle(nation, type).x;
 }
 
 inline float enemyMuzzleHeight(Nation nation, int type)
 {
-    return muzzleHeightForVehicle(enemyVehicle(nation, type));
+    return detail::enemyVisualMuzzle(nation, type).y;
 }
 
 inline float muzzleDistance(bool enemy, int identity)
@@ -2723,10 +2794,14 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
     nation = tanks3d::core::normalizedNation(nation);
     const Vehicle vehicle = enemy ? enemyVehicle(nation, identity)
                                   : playerVehicle(nation, armor);
+    const Color national = detail::nationalArmorPaint(nation);
+    // Damage lightens the national paint without replacing its national hue
+    // with the old status palette. The caller's armor and bonus-carrier color
+    // remains on the roof stripe and side badges through identityColor.
     const Color armorColor = enemy
-                                 ? bodyColor
-                                 : detail::nationalPlayerPaint(bodyColor,
-                                                               nation);
+                                 ? detail::shade(national, 1.0f - 0.04f *
+                                       (std::clamp(armor, 1, 4) - 1))
+                                 : national;
     const Color identityColor = enemy
                                     ? detail::mix(bodyColor, WHITE, 0.22f)
                                     : (identity & 1) == 0
@@ -2737,8 +2812,9 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
     rlTranslatef(x, 0.0f, z);
     rlRotatef(-yaw * RAD2DEG, 0.0f, 1.0f, 0.0f);
 
-    // Small suspension movement keeps the heavy chassis planted. Geometry is
-    // never stretched and the neutral pose uses the exact attachment scale.
+    // Small suspension movement keeps the heavy chassis planted. Widen only
+    // the model's local X axis after the suspension pose, leaving the shield
+    // and the existing gameplay/muzzle axes outside the presentation scale.
     rlPushMatrix();
     if (moving)
     {
@@ -2748,13 +2824,22 @@ inline void DrawTank(float x, float z, float yaw, Color bodyColor, bool enemy,
         rlRotatef(std::sin(phase) * 0.55f, 0.0f, 0.0f, 1.0f);
         rlRotatef(std::sin(phase + 0.95f) * 0.65f, 1.0f, 0.0f, 0.0f);
     }
+    rlScalef(kPresentationWidthScale, 1.0f, 1.0f);
+    if (presentationLighting.setWidthScale != nullptr)
+        presentationLighting.setWidthScale(presentationLighting.context,
+                                           kPresentationWidthScale);
 
-    if (!enemy && vehicle == Vehicle::M24Chaffee)
-        chaffee_sample_model::draw(identityColor, moving);
-    else
-        arcade_tank_roster::draw(detail::rosterDesign(vehicle), armorColor,
-                                 identityColor, moving, enemy);
+    auto design = detail::rosterDesign(vehicle);
+    if (enemy)
+    {
+        const auto muzzle = detail::renderedEnemyMuzzle(nation, identity);
+        design.muzzleY = muzzle.y;
+        design.muzzleZ = -muzzle.x;
+    }
+    arcade_tank_roster::draw(design, armorColor, identityColor, moving);
 
+    if (presentationLighting.setWidthScale != nullptr)
+        presentationLighting.setWidthScale(presentationLighting.context, 1.0f);
     rlPopMatrix();
     detail::drawShield(shield, identity);
     rlPopMatrix();

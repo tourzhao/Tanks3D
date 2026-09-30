@@ -59,9 +59,32 @@ class TacticalDefender:
         return x + dx * distance, z + dz * distance
 
     @classmethod
+    def overlaps_ally(cls, state):
+        ally = cls.ally(state)
+        return ally is not None and np.all(np.abs(state[:2] * 26 - ally[:2] * 26) < 1.75)
+
+    @staticmethod
+    def separating_from_ally(start, candidate, ally):
+        # Match the shared native recovery predicate in float32. Once already
+        # overlapped, each coordinate must stay on its side and move outward.
+        return all((end <= begin if begin < center else
+                    end >= begin if begin > center else True)
+                   for begin, end, center in zip(start, candidate, ally))
+
+    @classmethod
     def passable(cls, obs, direction, bricks=False):
         state, terrain = obs["state"], obs["map"]
         x, z = cls.predicted_position(state, direction)
+        recovering = cls.overlaps_ally(state)
+        if recovering:
+            start = state[:2] * 26
+            ally_position = state[256:258] * 26
+            dx, dz = DIRECTIONS[direction]
+            distance = .325 if state[6] > 0 else .25
+            aligned = np.asarray((x - dx * distance, z - dz * distance), np.float32)
+            if not cls.separating_from_ally(start, aligned, ally_position):
+                aligned = start
+                x, z = float(start[0]) + dx * distance, float(start[1]) + dz * distance
         if min(x, z) < .875 or max(x, z) > 25.125:
             return False
         left, right = int(np.floor(x - .875)), int(np.ceil(x + .875))
@@ -72,6 +95,11 @@ class TacticalDefender:
         if bricks and area[:4].any():
             return False
         ally = cls.ally(state)
+        if recovering:
+            candidate = np.asarray((x, z), np.float32)
+            if not np.all(np.abs(aligned - ally_position) < 1.75):
+                return not np.all(np.abs(candidate - ally_position) < 1.75)
+            return cls.separating_from_ally(aligned, candidate, ally_position)
         if ally is not None and abs(x - ally[0] * 26) < 1.75 and abs(z - ally[1] * 26) < 1.75:
             return False
         return True
@@ -140,6 +168,16 @@ class TacticalDefender:
             if moved > 3:
                 self.route, self.next_plan = [], 0
         self.previous_position = x, z
+        if self.overlaps_ally(state):
+            self.route, self.next_plan = [], 0
+            for direction in range(1, 5):
+                if self.passable(obs, direction):
+                    self.previous_action = 2 * direction + int(Defender.safe_fire(x, z, direction))
+                    self.last_reason = "overlap_recovery"
+                    return self.previous_action
+            self.previous_action = int(Defender.safe_fire(x, z, self.heading(state)))
+            self.last_reason = "overlap_blocked"
+            return self.previous_action
         guardian = self.home_role(state)
         self.counts["guarding"] += int(guardian)
         enemies = state[16:64].reshape(4, 12)

@@ -4016,9 +4016,12 @@ int runSettingsProgressionAndSettlementSelfTests(
                     viewport, playerCount, playerIndex);
                 const int panelLeft = layout.panelTextX - 7;
                 const int panelRight = panelLeft + layout.panelWidth;
-                const int mapLeft = layout.mapX - 4;
-                const int mapRight = layout.mapX +
-                                     kMapSize * layout.mapCellSize + 4;
+                const int mapLeft = static_cast<int>(viewport.x + viewport.width) - 184;
+                const int mapTop = static_cast<int>(viewport.y + viewport.height) - 208;
+                const int mapRight = mapLeft + 168;
+                const int mapBottom = mapTop + 196;
+                const int otherPanelLeft = static_cast<int>(viewport.x + viewport.width) -
+                                           layout.panelWidth - 7;
                 const float footerLeft = layout.footerCenterX -
                                           layout.footerWidth * 0.5f;
                 const float footerRight = layout.footerCenterX +
@@ -4027,12 +4030,16 @@ int runSettingsProgressionAndSettlementSelfTests(
                     layout.panelWidth > 0 && layout.footerWidth > 0 &&
                     panelLeft >= viewport.x &&
                     panelRight <= viewport.x + viewport.width &&
+                    viewport.y + 109 <= mapTop &&
                     mapLeft >= viewport.x &&
                     mapRight <= viewport.x + viewport.width &&
-                    (panelRight + 12 <= mapLeft ||
-                     mapRight + 12 <= panelLeft) &&
+                    mapBottom <= viewport.y + viewport.height &&
+                    layout.mapX - 4 >= mapLeft && layout.mapY - 4 >= mapTop + 44 &&
+                    layout.mapX + kMapSize * layout.mapCellSize + 4 <= mapRight &&
+                    layout.mapY + kMapSize * layout.mapCellSize + 4 <= mapBottom &&
+                    (playerCount == 1 || playerIndex != 0 || panelRight + 14 <= otherPanelLeft) &&
                     footerLeft >= previousFooterRight &&
-                    footerRight <= viewport.x + viewport.width;
+                    footerRight + 16 <= mapLeft;
                 previousFooterRight = footerRight;
             }
         }
@@ -4045,19 +4052,20 @@ int runSettingsProgressionAndSettlementSelfTests(
     const ViewportHudLayout defaultSecondHud =
         viewportHudLayout(defaultHudViewport, 2, 1);
     if (!checkTest(hudRegionsStaySeparate &&
-                       defaultSoloHud.panelWidth == 390 &&
+                       defaultSoloHud.panelWidth == 320 &&
                        defaultSoloHud.panelTextX == 14 &&
-                       defaultSoloHud.mapX == 1134 &&
-                       defaultFirstHud.panelWidth == 390 &&
-                       defaultSecondHud.panelWidth == 390 &&
+                       defaultSoloHud.mapX == 1115 &&
+                       defaultSoloHud.mapY == 562 &&
+                       defaultFirstHud.panelWidth == 320 &&
+                       defaultSecondHud.panelWidth == 320 &&
                        defaultFirstHud.panelTextX == 14 &&
-                       defaultSecondHud.panelTextX == 876 &&
-                       defaultFirstHud.mapX == 575 &&
-                       defaultSecondHud.mapX == 575 &&
-                       defaultFirstHud.footerCenterX == 320 &&
-                       defaultSecondHud.footerCenterX == 960,
+                       defaultSecondHud.panelTextX == 960 &&
+                       defaultFirstHud.mapX == 1115 &&
+                       defaultSecondHud.mapX == 1115 &&
+                       defaultFirstHud.footerCenterX == 270 &&
+                       defaultSecondHud.footerCenterX == 810,
                    "HUD panels, minimap, or player hints overlap after resize, "
-                   "or the default HUD placement changed"))
+                   "or the compact corner HUD placement changed"))
         return 1;
     const auto initialSpawnMatches = [](const Player &player, int id,
                                         Nation nation, XZ position) {
@@ -11903,51 +11911,88 @@ int runEnemyNationSelfTests(const fs::path &resourceRoot)
         {2, {{N::SovietUnion, N::SovietUnion}}, {{N::UnitedStates, N::Germany}}},
         {2, {{N::Germany, N::Germany}}, {{N::UnitedStates, N::SovietUnion}}},
     }};
+    constexpr std::uint32_t kSeed = 0xead10000U;
     for (const NationCase &test : cases)
     {
-        Game3D game(resourceRoot, 0xead10000U);
-        if (!checkTest(game.start(test.playerCount, 3, 1, test.players),
+        Game3D game(resourceRoot, kSeed);
+        Game3D noLookups(resourceRoot, kSeed);
+        if (!checkTest(game.start(test.playerCount, 3, 1, test.players) &&
+                           noLookups.start(test.playerCount, 3, 1, test.players),
                        game.lastError()))
             return 1;
+        std::array<Nation, kEnemiesPerStage> firstStage{};
+        bool adjacentRepeat = false;
+        bool firstObserved = false;
+        bool secondObserved = false;
         for (int index = 0; index < kEnemiesPerStage; ++index)
         {
             Enemy enemy;
+            Enemy referenceEnemy;
             if (!checkTest(Game3DTestAccess::sampleRandomEnemy(game, enemy) &&
-                               enemy.id == index &&
-                               game.enemyNation(enemy.id) ==
-                                   test.enemies[static_cast<std::size_t>(index % 2)],
-                           "spawned enemy did not alternate opposing nations"))
+                               Game3DTestAccess::sampleRandomEnemy(noLookups, referenceEnemy) &&
+                               enemy.id == index && referenceEnemy.id == index,
+                           "enemy nation fixture failed to spawn a stable ID"))
+                return 1;
+            const Nation nation = game.enemyNation(enemy.id);
+            firstStage[static_cast<std::size_t>(index)] = nation;
+            firstObserved |= nation == test.enemies[0];
+            secondObserved |= nation == test.enemies[1];
+            adjacentRepeat |= index > 0 && nation == firstStage[static_cast<std::size_t>(index - 1)];
+            for (int lookup = index; lookup >= 0; --lookup)
+            {
+                if (!checkTest(game.enemyNation(lookup) == firstStage[static_cast<std::size_t>(lookup)],
+                               "repeat/out-of-order lookup changed a spawned enemy's nation"))
+                    return 1;
+            }
+            if (!checkTest((nation == test.enemies[0] || nation == test.enemies[1]) &&
+                               game.sessionDigest() == noLookups.sessionDigest(),
+                           "opposing nation escaped its pool or consumed gameplay RNG"))
                 return 1;
         }
-        const SessionDigest beforeLookup = game.sessionDigest();
+        if (!checkTest(firstObserved && secondObserved && adjacentRepeat,
+                       "spawned enemies did not exercise both random choices or still alternate"))
+            return 1;
         const int lastId = game.enemies().front().id;
         const Nation lastNation = game.enemyNation(lastId);
-        if (!checkTest(game.sessionDigest() == beforeLookup,
-                       "looking up enemy nation mutated the session"))
-            return 1;
         for (int index = 0; index < test.playerCount; ++index)
             Game3DTestAccess::setPlayerDeathEntryState(
                 game, index, index, false, 0, 0.0f);
         if (!checkTest(game.enemyNation(lastId) == lastNation,
                        "player defeat changed an existing enemy's nation"))
             return 1;
+        if (!checkTest(game.changeStage(1), game.lastError()))
+            return 1;
+        std::array<Nation, kEnemiesPerStage> secondStage{};
+        bool stageChanged = false;
+        for (int index = 0; index < kEnemiesPerStage; ++index)
+        {
+            secondStage[static_cast<std::size_t>(index)] = game.enemyNation(index);
+            stageChanged |= secondStage[static_cast<std::size_t>(index)] !=
+                            firstStage[static_cast<std::size_t>(index)];
+        }
+        if (!checkTest(test.enemies[0] == test.enemies[1] || stageChanged,
+                       "new stage ignored its nationality-sequence seed"))
+            return 1;
         for (bool restart : {false, true})
         {
             Enemy first;
-            if (!checkTest((restart ? game.restart() : game.changeStage(1)) &&
+            if (!checkTest((!restart || game.restart()) &&
                                Game3DTestAccess::sampleRandomEnemy(game, first) &&
-                               first.id == 0 &&
-                               game.enemyNation(first.id) == test.enemies[0],
-                           "stage change or restart lost opposing nations"))
+                               first.id == 0 && game.enemyNation(first.id) == secondStage[0],
+                           "stage change or restart lost deterministic opposing nations"))
                 return 1;
+            for (int index = 0; index < kEnemiesPerStage; ++index)
+                if (!checkTest(game.enemyNation(index) == secondStage[static_cast<std::size_t>(index)],
+                               "same-stage restart changed its nationality sequence"))
+                    return 1;
         }
         const SessionDigest beforeRejectedStart = game.sessionDigest();
         Game3DTestAccess::rejectStageLoads(game);
         if (!checkTest(!game.start(2, 3, 1, {{N::Germany, N::SovietUnion}}) &&
-                           game.enemyNation(0) == test.enemies[0] &&
-                           game.enemyNation(1) == test.enemies[1] &&
+                           game.enemyNation(0) == secondStage[0] &&
+                           game.enemyNation(1) == secondStage[1] &&
                            game.sessionDigest() == beforeRejectedStart,
-                       "rejected new game changed the enemy nation pool"))
+                       "rejected new game changed the enemy nation pool or stage seed"))
             return 1;
     }
     return 0;
@@ -11955,6 +12000,14 @@ int runEnemyNationSelfTests(const fs::path &resourceRoot)
 
 int runVehicleMetadataSelfTests()
 {
+    using Vehicle = wwii_tank_model::Vehicle;
+    static_assert(static_cast<int>(Vehicle::M24Chaffee) == 0 &&
+                  static_cast<int>(Vehicle::M4A3Sherman) == 1 &&
+                  static_cast<int>(Vehicle::M26Pershing) == 2 &&
+                  static_cast<int>(Vehicle::IS2) == 6 &&
+                  static_cast<int>(Vehicle::PanzerIIIL) == 13 &&
+                  static_cast<int>(Vehicle::M60A3) == 14,
+                  "New vehicle presentation IDs must not renumber the legacy IDs");
     if (!checkTest(std::string(wwii_tank_model::vehicleName(true, 0)) == "PANZER II AUSF. F" &&
                        std::string(wwii_tank_model::vehicleName(true, 1)) == "SD.KFZ. 231 6-RAD" &&
                        std::string(wwii_tank_model::vehicleName(true, 2)) == "PANZER III AUSF. L" &&
@@ -11963,25 +12016,36 @@ int runVehicleMetadataSelfTests()
         return 1;
 
     static constexpr std::array<std::array<const char *, 4>, 3> expectedVehicles{{
-        {{"M24 CHAFFEE", "M4A3(76)W SHERMAN", "M26 PERSHING", "T28/T95"}},
-        {{"T-70", "T-34-85", "IS-2", "KV-5 PROJECT"}},
-        {{"PANZER II AUSF. F", "PANZER IV AUSF. H", "TIGER I AUSF. E",
-          "PANZER VIII MAUS"}}}};
+        {{"M4A3(75) SHERMAN", "M26 PERSHING", "M60A3", "M1A1 ABRAMS"}},
+        {{"T-34/76", "IS-2", "T-62", "T-90A"}},
+        {{"PANTHER AUSF. A", "TIGER II", "LEOPARD 1", "LEOPARD 2A4"}}}};
     static constexpr std::array<std::array<wwii_tank_model::Vehicle, 4>, 3>
         expectedVehicleIds{{
-            {{wwii_tank_model::Vehicle::M24Chaffee,
-              wwii_tank_model::Vehicle::M4A3Sherman,
+            {{wwii_tank_model::Vehicle::M4A3Sherman,
               wwii_tank_model::Vehicle::M26Pershing,
-              wwii_tank_model::Vehicle::T28T95}},
-            {{wwii_tank_model::Vehicle::T70,
-              wwii_tank_model::Vehicle::T3485,
+              wwii_tank_model::Vehicle::M60A3,
+              wwii_tank_model::Vehicle::M1A1}},
+            {{wwii_tank_model::Vehicle::T3476,
               wwii_tank_model::Vehicle::IS2,
-              wwii_tank_model::Vehicle::KV5Project}},
-            {{wwii_tank_model::Vehicle::PanzerIIF,
-              wwii_tank_model::Vehicle::PanzerIVH,
-              wwii_tank_model::Vehicle::TigerIE,
-              wwii_tank_model::Vehicle::Maus}},
+              wwii_tank_model::Vehicle::T62,
+              wwii_tank_model::Vehicle::T90A}},
+            {{wwii_tank_model::Vehicle::PantherA,
+              wwii_tank_model::Vehicle::TigerII,
+              wwii_tank_model::Vehicle::Leopard1,
+              wwii_tank_model::Vehicle::Leopard2A4}},
         }};
+    // Original presentation mounts are a compatibility contract even though
+    // each slot now displays a different model. These are not shell offsets.
+    static constexpr std::array<std::array<float, 4>, 3> playerMuzzleDistances{{
+        {{.5624f, .6754f, .7826f, .7440f}},
+        {{.5152f, .6482f, .7640f, .8012f}},
+        {{.5038f, .6382f, .7726f, .8341f}},
+    }};
+    static constexpr std::array<std::array<float, 4>, 3> playerMuzzleHeights{{
+        {{.77f, .82f, .85f, .70f}},
+        {{.75f, .81f, .85f, .88f}},
+        {{.77f, .81f, .86f, .90f}},
+    }};
     static constexpr std::array<const char *, 3> expectedNations{{
         "USA", "USSR", "GERMANY"}};
     static constexpr std::array<const char *, 4> expectedTiers{{
@@ -12012,7 +12076,9 @@ int runVehicleMetadataSelfTests()
                             expectedTiers[static_cast<std::size_t>(level)] &&
                         std::isfinite(muzzleDistance) && muzzleDistance > 0.45f &&
                         muzzleDistance < 1.10f && std::isfinite(muzzleHeight) &&
-                        muzzleHeight > 0.5f && muzzleHeight < 1.2f,
+                        muzzleHeight > 0.5f && muzzleHeight < 1.2f &&
+                        std::fabs(muzzleDistance - playerMuzzleDistances[nationIndex][static_cast<std::size_t>(level)]) < .00001f &&
+                        std::fabs(muzzleHeight - playerMuzzleHeights[nationIndex][static_cast<std::size_t>(level)]) < .00001f,
                     "one of the 12 player vehicles has an invalid name or muzzle"))
                 return 1;
         }
@@ -12030,13 +12096,22 @@ int runVehicleMetadataSelfTests()
                    "enemy arcade short-gun muzzle alignment is incorrect"))
         return 1;
 
-    using Vehicle = wwii_tank_model::Vehicle;
     const std::array<std::array<Vehicle, 4>, 3> expectedEnemyVehicles{{
-        {{Vehicle::M4A3Sherman, Vehicle::M24Chaffee,
-          Vehicle::M26Pershing, Vehicle::T28T95}},
-        {{Vehicle::T3485, Vehicle::T70, Vehicle::IS2, Vehicle::KV5Project}},
-        {{Vehicle::PanzerIIF, Vehicle::Sdkfz231SixRad,
-          Vehicle::PanzerIIIL, Vehicle::TigerIE}},
+        {{Vehicle::M26Pershing, Vehicle::M4A3Sherman,
+          Vehicle::M60A3, Vehicle::M1A1}},
+        {{Vehicle::IS2, Vehicle::T3476, Vehicle::T62, Vehicle::T90A}},
+        {{Vehicle::TigerII, Vehicle::PantherA,
+          Vehicle::Leopard1, Vehicle::Leopard2A4}},
+    }};
+    static constexpr std::array<std::array<float, 4>, 3> enemyMuzzleDistances{{
+        {{.6754f, .5624f, .7826f, .7440f}},
+        {{.6482f, .5152f, .7640f, .8012f}},
+        {{.5038f, .4766f, .6339f, .7726f}},
+    }};
+    static constexpr std::array<std::array<float, 4>, 3> enemyMuzzleHeights{{
+        {{.82f, .77f, .85f, .70f}},
+        {{.81f, .75f, .85f, .88f}},
+        {{.77f, .73f, .80f, .86f}},
     }};
     for (std::size_t nationIndex = 0; nationIndex < kSelectableNations.size(); ++nationIndex)
     {
@@ -12047,10 +12122,10 @@ int runVehicleMetadataSelfTests()
                 [static_cast<std::size_t>(type)];
             if (!checkTest(
                     wwii_tank_model::enemyVehicle(nation, type) == expected &&
-                        wwii_tank_model::enemyMuzzleDistance(nation, type) ==
-                            wwii_tank_model::muzzleDistanceForVehicle(expected) &&
-                        wwii_tank_model::enemyMuzzleHeight(nation, type) ==
-                            wwii_tank_model::muzzleHeightForVehicle(expected),
+                        std::fabs(wwii_tank_model::enemyMuzzleDistance(nation, type) -
+                            enemyMuzzleDistances[nationIndex][static_cast<std::size_t>(type)]) < .00001f &&
+                        std::fabs(wwii_tank_model::enemyMuzzleHeight(nation, type) -
+                            enemyMuzzleHeights[nationIndex][static_cast<std::size_t>(type)]) < .00001f,
                     "enemy nation/type model or muzzle attachment is incorrect"))
                 return 1;
         }

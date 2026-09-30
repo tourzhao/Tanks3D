@@ -21,6 +21,13 @@ void t3rule_observe(void *world, int slot, float *terrain, float *state)
     std::copy(observation.terrain.begin(), observation.terrain.end(), terrain);
     std::copy(observation.state.begin(), observation.state.end(), state);
 }
+int t3rule_predict_observation(void *rule, const float *terrain, const float *state)
+{
+    tanks3d::app::AiObservation observation;
+    std::copy(terrain, terrain + observation.terrain.size(), observation.terrain.begin());
+    std::copy(state, state + observation.state.size(), observation.state.begin());
+    return static_cast<tanks3d::app::TacticalAi *>(rule)->predict(observation);
+}
 }
 
 #ifndef TANKS3D_AI_PLAYER_PROBE_ONLY
@@ -216,6 +223,72 @@ void testAiProductionWorld()
     requireAi(game.stage() == 2 && game.stageIntro(), "AI clear must retain original report/stage progression");
     std::cout << "PASS native AI clear, no gameplay/RNG writes, real report and Stage 2 transition\n";
 }
+
+void testAiOverlapRecovery()
+{
+    using namespace tanks3d::app;
+    const auto observationAt = [](float x, float z, float allyX, float allyZ) {
+        AiObservation observation;
+        auto &s = observation.state;
+        s[0] = x / 26;
+        s[1] = z / 26;
+        s[3] = -1;
+        s[4] = s[8] = s[332] = s[333] = 1;
+        s[256] = allyX / 26;
+        s[257] = allyZ / 26;
+        return observation;
+    };
+    const auto block = [](AiObservation &observation, int direction) {
+        const auto wall = [&](int row, int column) {
+            observation.terrain[4 * AiObservation::kCells + row * 26 + column] = 1;
+        };
+        if (direction <= 2)
+        {
+            wall(direction == 1 ? 11 : 14, 12);
+            wall(direction == 1 ? 11 : 14, 13);
+        }
+        else
+        {
+            wall(12, direction == 3 ? 11 : 14);
+            wall(13, direction == 3 ? 11 : 14);
+        }
+    };
+    for (int direction = 1; direction <= 4; ++direction)
+    {
+        auto observation = observationAt(13, 13, 13, 13);
+        for (int obstacle = 1; obstacle <= 4; ++obstacle)
+            if (obstacle != direction)
+                block(observation, obstacle);
+        TacticalAi ai;
+        requireAi(ai.predict(observation) / 2 == direction,
+                  "AI must escape exact ally overlap through each sole open cardinal direction");
+    }
+
+    TacticalAi towardAlly;
+    requireAi(towardAlly.predict(observationAt(13, 13, 13, 12.5f)) / 2 == 2,
+              "AI overlap recovery must move away from ally, not deeper into it");
+    auto snap = observationAt(13.2f, 13.2f, 12.8f, 13.2f);
+    snap.state[2] = 1;
+    snap.state[3] = 0;
+    TacticalAi rejectedSnap;
+    requireAi(rejectedSnap.predict(snap) / 2 == 1,
+              "Rejected inward lane snap must still allow outward motion from actual origin");
+
+    auto enclosed = observationAt(13, 13, 13, 13);
+    for (int direction = 1; direction <= 4; ++direction)
+        block(enclosed, direction);
+    TacticalAi trapped;
+    requireAi(trapped.predict(enclosed) / 2 == 0,
+              "Overlap recovery must not issue movement through surrounding walls");
+
+    auto acrossCenter = observationAt(13, 13, 13.05f, 13);
+    for (int direction = 1; direction <= 3; ++direction)
+        block(acrossCenter, direction);
+    TacticalAi crossing;
+    requireAi(crossing.predict(acrossCenter) / 2 == 0,
+              "Overlap recovery must not cross ally center toward a more distant endpoint");
+    std::cout << "PASS AI overlap recovery: four exits, inward rejection, snap fallback, terrain and center-crossing\n";
+}
 } // namespace
 
 int main()
@@ -224,6 +297,7 @@ int main()
     {
         testAiMenu();
         testAiCommandsAndClock();
+        testAiOverlapRecovery();
         testAiWithHumanCommands();
         testAiProductionWorld();
         std::cout << "PASS AI menu modes/nations/shortcuts, command isolation, 20 Hz clock, pause/resume/restart\n";

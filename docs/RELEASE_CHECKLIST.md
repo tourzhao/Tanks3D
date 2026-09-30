@@ -1,5 +1,11 @@
 # macOS Alpha Release Checklist
 
+**Current Godot releases:** use [GODOT_RELEASE.md](GODOT_RELEASE.md),
+`make godot-candidate` and `make verify-godot-release-ready`. The checklist
+below and unqualified `alpha-candidate`/`test-dist` commands are the retained
+raylib publication contract. They cannot approve a Godot release. Keep prior
+tags, candidates and their evidence immutable.
+
 The first public target is a non-commercial, Apple Silicon GitHub Alpha. A
 source checkout may still use the Homebrew-linked development app; files shared
 with players must come from a verified `make alpha-candidate` directory. A

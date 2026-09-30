@@ -24,10 +24,21 @@ mechanical file move must not update either.
   footprints. Artificial steering, Boat, and ice cases live in test fixtures,
   never in an original stage.
 - Simulation `dt` is clamped to 0.05 seconds. Tanks move only north, south, west,
-  or east. Ice momentum lasts 0.380 seconds; lane snapping is allowed within
-  5/16 tile of the cardinal lane.
+  or east. Ice momentum lasts 0.380 seconds. Player movement tries the direct
+  route first: short steps survive immediate direction changes. When a driven
+  step is blocked, lane assistance is allowed strictly within 5/16 tile, only
+  if both the aligned origin and forward destination are available. Held input
+  retries this assistance at narrow entries; failed assistance never moves the
+  tank sideways. Enemy lane-snapping behavior is unchanged.
 - A tank has a 0.875-tile half-extent. Tank centers overlap only when both axis
   separations are strictly below 1.75; exact edge contact is not collision.
+- A tank already overlapping another tank may move outward in ordinary small
+  steps. Against every existing overlapping blocker, neither center-axis
+  separation may decrease or cross to the opposite side; an unchanged position
+  is valid for a steering alignment probe. Terrain, map bounds, Boat permission,
+  and all new tank contacts remain strict. This recovery does not teleport or
+  push either participant, change speed, or consume random draws. AI P2 uses
+  the same separation rule when choosing a route out of an overlapping ally.
 
 Player progression is fixed as follows:
 
@@ -168,10 +179,12 @@ the tank center; visual muzzle length must not change gameplay spawn position.
   negative-zero distance retain the legacy query, accepted-move, and dust gates.
 - Valid movement commits drive direction unconditionally and yaw only while
   propelling, then applies the existing ice transition. `None` and invalid
-  directions `5`/`255` retain zero-vector movement parity. When lane correction
-  is eligible, the exact snapped position is queried before the forward
-  candidate. A rejected snap advances from the original position; an accepted
-  snap remains committed even if the following forward candidate is blocked.
+  directions `5`/`255` retain zero-vector movement parity. Query the unsnapped
+  forward candidate first. Only a blocked, positive-distance, propelled move
+  in the drive direction may try a distinct aligned origin followed by its
+  forward candidate. Both must be available before committing either. This
+  applies to held directions as well as fresh turns, and does not redirect
+  unexpired ice momentum or move during a zero-time turn.
 - Blocking stops movement, clears `iceSlipTimer`, restores movement direction
   to drive direction, emits no dust, and does not prevent same-frame firing.
   Otherwise ice carries the prior travel direction until expiry. Dust crosses
@@ -207,7 +220,12 @@ the tank center; visual muzzle length must not change gameplay spawn position.
   vector order, so P2 collision sees P1's same-frame committed position; water
   blocks a player without Boat and permits the same move with it.
 - Pause, stage intro, game over, settlement, high-score display, death, and the
-  one-second player creation state ignore input; pressed edges are not buffered.
+  player creation state ignore input; pressed edges are not buffered. Creation
+  normally lasts one second. If the spawn footprint is occupied, the warning
+  remains nonphysical and retries activation every 0.05 seconds until the
+  footprint is free; the player does not lose shield time while blocked. This
+  wait does not repeat the life debit, shell cleanup, respawn event, audio, or
+  level reset.
 
 ## Camera Tracking
 
@@ -217,6 +235,15 @@ the tank center; visual muzzle length must not change gameplay spawn position.
   their exact midpoint and expands the view from their separation and actual
   viewport aspect ratio. Portrait and square windows must not crop separated
   players by imposing a fixed maximum orthographic span.
+- The Godot frontend may translate and expand this native shared rig to fit
+  both rendered tank bounds and nearby ground inside the HUD-safe scene area.
+  This presentation constraint retains yaw/elevation and never writes back to
+  the native midpoint, span, player state or input mapping. After that fit,
+  a presentation-only translation can pan solo and co-op views inward at map
+  edges to reduce unused outside ground. This second constraint cannot alter
+  scale, direction or camera-space depth, and must retain the players' model
+  bounds and nearby road inside the HUD-safe area. No active players means no
+  edge adjustment.
 - Horizontal rotation is selectable from -45 to +45 degrees. Elevation is
   selectable from 40 to 70 degrees, defaults to 50, and keeps a fixed camera
   orbit distance. Both use five-degree steps and are presentation-only; they
@@ -497,11 +524,17 @@ the shell even though its map-specific `ImpactKind` remains `None`.
 
 - Enemy vehicles belong to nations not selected by participating players.
   Solo ignores the unused P2 menu choice; same-nation co-op has two opposing
-  nations, and different-nation co-op has one. Successfully spawned enemy IDs
-  alternate through those nations in USA/USSR/Germany order, restarting at ID 0
-  each stage. Defeated players remain members of their selected side. This
-  presentation selection consumes no random draws and does not alter enemy
-  role, armor, movement, firing, collision bounds or rewards.
+  nations, and different-nation co-op has one. Human and AI P2 count equally.
+  Each successful enemy spawn independently chooses an eligible nation using
+  a fixed cosmetic hash of the session construction seed, stage number and
+  spawn ID. Consecutive enemies may share a nation; equal counts are not
+  guaranteed. IDs restart at 0 each stage: a same-stage restart repeats these
+  nationalities; a different stage or session seed gives a fresh sequence when
+  two opposing nations are available.
+  Defeated players remain members of their selected side, and repeated/out-of-
+  order render lookups cannot change an existing enemy's identity. This
+  presentation selection consumes no gameplay random draws and does not alter
+  enemy role, armor, movement, firing, collision bounds or rewards.
 - P1's nation selects the shared national base. The three visual themes use the
   same original enclosure: row 23, columns 11–14; rows 24–25, columns 11 and
   14 (zero-based). Each wall segment occupies exactly one 1x1 cell, with no
@@ -520,9 +553,16 @@ the shell even though its map-specific `ImpactKind` remains `None`.
   repeating damage events. Destroying it loses the game.
 - Stage intro lasts 3.2 seconds and freezes players, enemies, projectiles,
   pickups, protection, and spawn clocks.
-- After intro, the default first spawn cooldown is 0.5 seconds. Enemy creation is
-  a fixed 1.0-second, ten-frame warning with no physical tank, movement, firing,
-  or damage.
+- After intro, the default first spawn cooldown is 0.5 seconds. Enemy creation
+  normally lasts 1.0 second, with a ten-frame warning and no physical tank,
+  movement, firing, or damage. If an active tank occupies the footprint when
+  the timer expires, activation waits in 0.05-second retries until it is free.
+  Existing tanks may still drive through the nonphysical warning and leave it.
+  A pending warning reserves its footprint against another spawn allocation,
+  so repeated spawn attempts cannot stack additional warnings on that point.
+  This overlap correction intentionally changes replay trajectories that used
+  to stack warnings, including later spawn/RNG timing; stage layout signatures
+  remain unchanged. AI episode fixtures characterize the corrected behavior.
 - Enemy frame entry is phase ordered. Destroyed enemies advance only the death
   timer. Creating enemies stop moving and advance creation plus Clock/frozen
   time; the developer showcase may hold only creation time. Frozen enemies stop
@@ -554,6 +594,10 @@ the shell even though its map-specific `ImpactKind` remains `None`.
   direction, yaw, and zero ice-slip state, clears the blocked timer, and chooses
   the next interval as `0.55 + R * 0.18`. Failure retries at `0.1` seconds.
   No-decision and failed-escape paths consume no randomness.
+- For an enemy already overlapping another tank, a rejected lane snap may use
+  the unsnapped current origin to evaluate an outward escape. This avoids an
+  inward snap eliminating the only legal route near a wall. Ordinary free-origin
+  steering retains its original candidate, query and random-draw order.
 - An ordinary steering decision chooses its next interval as `0.1 + R * 0.8`.
   Basic enemies pursue for a branch roll strictly below `0.8`; every other type
   uses a strict `0.5` threshold. Pursuit then uses an `R-R-R` transcript and
@@ -573,8 +617,8 @@ the shell even though its map-specific `ImpactKind` remains `None`.
   in `Game3D` and request no enemy-fire audio.
 - Basic enemy speed is 4.0 and Fast speed is 5.2. Speed, fire rate, and spawn rate
   settings range from -30% through +30% in 5% steps. Movement multiplies by
-  `1 + p/100`; fire/spawn intervals divide by that value. The one-second warning
-  never changes.
+  `1 + p/100`; fire/spawn intervals divide by that value. Rate tuning does not
+  change the normal one-second warning or the occupied-footprint retry above.
 - Active movement resolves ice carry before collision. A changed travel
   direction first attempts a collision-safe lane snap; the collision probe is
   `speed * dt + 1/16` tile while the committed displacement remains
@@ -841,13 +885,14 @@ transition planning are now transactional or detached. PR 3.5 remains partial.
 The headless audio-output checks additionally lock stage-entry, engine, and
 pause/resume calls at the injected raylib-free boundary; the settlement suite
 locks its final stop request there as well. Neither claims hardware or concrete
-voice-policy coverage. Thirty-one standalone PlayerSystem suites contain 64 checks;
+voice-policy coverage. Thirty-two standalone PlayerSystem suites contain 69 checks;
 independent literal tables exercise 2,560 input combinations (not 2,560 checks)
 plus atomic invalid frame/death elapsed, signed-zero and entry-snapshot phase
 policy, death entry/cross-zero/malformed timer behavior, `INT_MIN` life
 saturation, ordered malformed-clock clamps, invalid `5`/`255`
 control/movement/launch parity,
-atomic invalid and overflowing movement, exact snap/forward query transcripts,
+atomic invalid and overflowing movement, one-frame perpendicular turns at
+30/60/144 Hz, direct-first movement and collision-gated lane-assistance transcripts,
 ice/block states, detached dust, request/cooldown gates, reset-before-cap
 behavior, explicit reload/spawn scalars, slot-owned payloads, level-derived
 speed, cap, and power, plus complete Preserve/Reset spawn write masks,

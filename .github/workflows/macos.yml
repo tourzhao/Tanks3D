@@ -1,4 +1,4 @@
-name: macOS build and self-test
+name: macOS Godot and shared-core checks
 
 on:
   push:
@@ -8,9 +8,41 @@ permissions:
   contents: read
 
 jobs:
+  godot:
+    name: Godot arm64
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify Apple Silicon runner
+        run: test "$(uname -m)" = arm64
+      - name: Prepare hash-pinned Godot toolchain
+        run: make godot-setup
+      # test-architecture also compiles historical raylib renderer bridges;
+      # the shared-rules job runs it with that dependency installed.
+      - name: Check Godot release tools
+        run: make test-godot-release
+      - name: Check native bridge, sanitizers and real TCP
+        run: make -j3 test-godot-core test-godot-core-sanitize test-godot-lan-sockets
+      - name: Import scripts, validate presentation and run UI regression
+        run: make test-godot-import
+      - name: Verify self-contained app and two-process LAN
+        run: make test-godot-bundle test-godot-lan
+      - name: Preserve Godot failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-failure-${{ github.run_id }}
+          path: |
+            build/godot/validation/
+            build/godot/lan-validation-*/
+            build/godot/package/*.log
+          retention-days: 14
+
   build:
+    name: Shared rules and historical adapter
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -38,7 +70,7 @@ jobs:
         run: make test-unit test-session test-assets
 
       - name: Run AddressSanitizer and UndefinedBehaviorSanitizer
-        run: make test-sanitize
+        run: make test-sanitize test-game-session-adapter test-game-session-adapter-sanitize
 
       - name: Build and verify self-contained macOS Alpha archive
         run: make test-dist

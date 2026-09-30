@@ -11,6 +11,7 @@ namespace
 using tanks3d::core::CardinalDirection;
 using tanks3d::core::XZ;
 using tanks3d::core::axisAlignedCentersOverlap;
+using tanks3d::core::axisAlignedMovementAvailable;
 using tanks3d::core::cardinalToward;
 using tanks3d::core::cardinalVector;
 using tanks3d::core::cardinalYaw;
@@ -191,6 +192,67 @@ int main()
         expect(overlap == axisAlignedCentersOverlap(
                               test.second, test.first, test.extent),
                std::string("strict AABB lost symmetry at ") + test.name);
+    }
+
+    struct SeparationCase
+    {
+        XZ from;
+        XZ to;
+        bool expected;
+        const char *name;
+    };
+    // Literal local cases include the formerly permanent same-center lock,
+    // sub-frame outward steps, turns, lane snaps, edge contact and overshoots.
+    const std::array<SeparationCase, 20> separationCases{{
+        {{}, {}, true, "stationary aligned origin"},
+        {{}, {0.001f, 0.0f}, true, "same-center tiny outward step"},
+        {{0.5f, 0.0f}, {0.51f, 0.0f}, true, "partial overlap outward"},
+        {{0.5f, 0.0f}, {0.5f, 0.01f}, true, "partial overlap turn"},
+        {{0.5f, 0.25f}, {0.5f, 0.25f}, true, "partial unchanged alignment"},
+        {{0.5f, 0.25f}, {0.75f, 0.25f}, true, "outward lane snap"},
+        {{0.5f, 0.25f}, {0.25f, 0.25f}, false, "inward lane snap"},
+        {{0.5f, 0.25f}, {0.75f, 0.20f}, false, "one axis deepens overlap"},
+        {{0.5f, 0.0f}, {0.49f, 0.0f}, false, "partial overlap inward"},
+        {{0.5f, 0.0f}, {0.0f, 0.0f}, false, "approach blocker center"},
+        {{0.5f, 0.0f}, {-0.75f, 0.0f}, false, "cross center while overlapped"},
+        {{0.5f, 0.0f}, {-2.0f, 0.0f}, false, "cross center to free endpoint"},
+        {{1.5f, 0.0f}, {kExtent, 0.0f}, true, "reach exact edge"},
+        {{1.5f, 0.0f}, {2.0f, 0.0f}, true, "exit penetration"},
+        {{kExtent, 0.0f}, {kExtent, 0.0f}, true, "existing edge stationary"},
+        {{kExtent, 0.0f}, {1.74f, 0.0f}, false, "edge must not enter"},
+        {{2.0f, 0.0f}, {kExtent, 0.0f}, true, "approach exact edge"},
+        {{2.0f, 0.0f}, {1.74f, 0.0f}, false, "new overlap rejected"},
+        {{2.0f, 2.0f}, {1.74f, 1.74f}, false, "new corner overlap rejected"},
+        {{2.0f, 2.0f}, {kExtent, 1.74f}, true, "separated on one axis"},
+    }};
+    for (const SeparationCase &test : separationCases)
+    {
+        // Reflect around both axes, swap X/Z, and translate the origin. The
+        // recovery rule must behave the same in every cardinal direction and
+        // cannot accidentally rely on a zero world-space blocker coordinate.
+        for (float signX : {-1.0f, 1.0f})
+        {
+            for (float signZ : {-1.0f, 1.0f})
+            {
+                for (bool swapAxes : {false, true})
+                {
+                    for (XZ blocker : {XZ{}, XZ{7.0f, 13.0f}})
+                    {
+                        const auto transform = [&](XZ value) {
+                            const XZ mirrored{signX * value.x,
+                                              signZ * value.z};
+                            return blocker + (swapAxes
+                                ? XZ{mirrored.z, mirrored.x} : mirrored);
+                        };
+                        expect(axisAlignedMovementAvailable(
+                                   transform(test.from), transform(test.to),
+                                   blocker, kExtent) == test.expected,
+                               std::string("overlap recovery changed at ") +
+                                   test.name);
+                    }
+                }
+            }
+        }
     }
 
     const std::array<CardinalDirection, 4> movingDirections{{

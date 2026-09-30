@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 namespace tanks3d::core
 {
@@ -26,11 +27,13 @@ inline Nation normalizedNation(Nation nation)
     return Nation::UnitedStates;
 }
 
-// Derive each enemy's national identity from the session's enabled player
-// slots and its stable spawn ID. Player death and spawn retries do not alter
-// this selection, and no gameplay random draw is needed.
+// Pick a national identity from the unselected sides using a separate,
+// deterministic cosmetic hash. The construction seed, stage and successful
+// spawn ID make this independent of lookup order, player death, spawn retries
+// and the shared gameplay random stream. Same-stage restarts repeat the picks.
 inline Nation opposingNationForPlayers(
-    const std::array<Nation, 2> &playerNations, int playerCount, int enemyId)
+    const std::array<Nation, 2> &playerNations, int playerCount, int enemyId,
+    std::uint32_t sessionSeed, int stage)
 {
     const int enabledPlayers = std::clamp(playerCount, 1, 2);
     std::array<Nation, kSelectableNations.size()> opponents{};
@@ -52,8 +55,18 @@ inline Nation opposingNationForPlayers(
     }
     // At most two player nations are excluded from the three choices, so
     // opponentCount is always nonzero, including after input normalization.
-    const std::size_t spawnId = static_cast<std::size_t>(std::max(enemyId, 0));
-    return opponents[spawnId % opponentCount];
+    // Fixed-width unsigned arithmetic keeps LAN peers and replays identical
+    // across platforms. SplitMix64's finalizer mixes adjacent IDs instead of
+    // alternating them; consecutive enemies may legitimately share a nation.
+    const auto spawnId = static_cast<std::uint64_t>(std::max(enemyId, 0));
+    const auto stageId = static_cast<std::uint64_t>(std::max(stage, 1));
+    std::uint64_t choice = static_cast<std::uint64_t>(sessionSeed) ^
+                           (stageId << 32U) ^ UINT64_C(0x4e4154494f4e5333);
+    choice += (spawnId + 1U) * UINT64_C(0x9e3779b97f4a7c15);
+    choice = (choice ^ (choice >> 30U)) * UINT64_C(0xbf58476d1ce4e5b9);
+    choice = (choice ^ (choice >> 27U)) * UINT64_C(0x94d049bb133111eb);
+    choice ^= choice >> 31U;
+    return opponents[static_cast<std::size_t>(choice % opponentCount)];
 }
 
 inline Nation cycleNation(Nation nation, int direction)

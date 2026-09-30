@@ -8,6 +8,31 @@ separate pull requests. A move-only pull request may relocate or rename code but
 must not rebalance timing, collision extents, probabilities, HP, scoring, camera
 composition, models, shaders, audio selection, or effects.
 
+## Current migration boundary, September 2026
+
+The shared session extraction is implemented in `src/app/game_session.h`.
+This app-layer class composes the existing pure rules, seeded RNG, progression,
+reports, camera values and semantic side effects. The raylib `Game3D` is now its
+render/effect adapter. The Godot bridge constructs `GameSession` directly and
+does not include `main.cpp` or link raylib; its dedicated object directory and
+package checks enforce that separation.
+
+Ordered native audio requests cross `AudioOutput`; they are not reconstructed
+from visual events and do not change snapshots or RNG. The same 22 cue ordinals,
+recordings and voice policy are retained. Session records remain per app run.
+Further extraction must preserve this shared implementation, avoid duplicate
+rules in GDScript and retain adapter sink rebinding on copy/move.
+
+Run `make clean`, `make test`, `make test-godot-core`,
+`make test-game-session-adapter` and their sanitizer counterparts for session
+changes. Godot UI/import and package gates additionally cover actual terminal
+flows, resources, scripts, dependency paths and local launch. They do not replace
+physical input, audible listening, two-Mac or rendering-performance acceptance.
+The sequence and numeric baselines below are the historical incremental plan,
+not a claim that session orchestration still resides in `main.cpp`.
+
+## Historical baseline and sequence
+
 The pre-refactoring audit baseline was 15,508 source lines. `src/main.cpp`
 contained 9,786 lines, including `StageMap`, `Game3D`, rendering, menus,
 self-tests, and process startup. Its approximately 1,730-line `runSelfTests()`
@@ -20,7 +45,7 @@ and ASan/UBSan currently pass. Preserve that baseline after every step.
 ```text
 app/main + app/menu (wiring)
                  |
-platform/raylib_input --commands--> game/GameSession <-- tests/scripted_input
+platform/raylib_input --commands--> app/GameSession <-- tests/scripted_input
                                          | emits          | exposes
                                          v                v
                                   game/GameEvent    game/GameSnapshot
@@ -33,7 +58,9 @@ core/  <--- game/  <--- app, platform, audio, render
 `core/` and `game/` must not include raylib or call `IsKey*`, `GetTime`, `Draw*`,
 audio APIs, or particle APIs. `GameSession` receives commands and elapsed
 simulation time. It emits events and exposes a read-only snapshot. Audio and
-effects consume events; rendering consumes the snapshot.
+effects consume ordered semantic requests; rendering consumes the snapshot.
+The current `app/GameSession` composes the pure `game/` modules; keeping these
+orchestration contracts at the app boundary avoids a reverse dependency.
 
 ## Pull Request Sequence
 
