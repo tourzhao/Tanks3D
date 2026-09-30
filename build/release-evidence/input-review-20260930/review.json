@@ -1,0 +1,141 @@
+{
+  "schema": "tanks3d-pr-input-review-v1",
+  "date": "2026-09-30",
+  "base_commit": "c29dd49c9d3d7107b98c9b4047d517fbfcb5349d",
+  "purpose": "Review evidence for controller response, precise player turns and first-water preparation; not release approval.",
+  "source_sha256": {
+    "Makefile": "4f1e813b976b18f7047884b3835d1096443065e33ef9f23d45d1fab15a678971",
+    "docs/GAMEPLAY_INVARIANTS.md": "97b1775b8fdd955893ef462fa7fea273f5e886a88152439450716b615c83e976",
+    "docs/GODOT_SAMPLE.md": "df7c8d2f9b5fc9d7f70e486c2ba75f9311884eb53550030f7cfcce3b0df5b983",
+    "godot/sample/art.gd": "683f2c62d57680416d3901c690166b82c609222a2d4212e147262653f3e6c2e2",
+    "godot/sample/frontend.gd": "fbcafa7ae2e3fa5da97026a1b512fd62c410db44b7bcdc6a250ecdb2744e9373",
+    "godot/sample/main.gd": "61246a1bc590eb52c742c02e0e2a889f1ecce7685ba82f1c580d1450cae285ec",
+    "godot/sample/ui_checks.gd": "2ab0a9de223c92654483e3e2bdc56d45a7491c5ca11b41e14e60e0b3538fda1a",
+    "scripts/package_godot_app.py": "5641cbdebd42c95c3e769ee00f25b6a5b0fdb874c2a2cc13cc7893544299d4ac",
+    "scripts/test_godot_import.py": "5c0ec08e729b7e93b9dbffbcd58ff86518c38be6a1dcce1e79dbad23fc9f787e",
+    "src/game/player_system.cpp": "bda7f3b48118c4c96187228dd90deec3b9258500de8325bf5f31f1cef8cf5d34",
+    "src/game/player_system.h": "5bd2fe964a5cc43a8e6a02c97ea810511ff4acd548fd2a0354b7f8aec84838c0",
+    "tests/godot_sample_core_tests.cpp": "574d6d4b5f20e37612fdb12577553d9ff5441f1dd522a3b7a7da512781a0a337",
+    "tests/player_system_tests.cpp": "09539347d1a606585af89a6103ed1f228bd5b07d27224a3e8b55b2eb7da89d0c",
+    "tests/test_godot_import.py": "733cd65cf6ddc037bd3e452929bfc831de1cc13372a60b0eaa9cc9344899990d",
+    "tests/test_godot_package.py": "729987efb9261d17608e424cbd59a0aa092c12b7fbdf24daec8c6c4c485c85e7"
+  },
+  "screenshot": {
+    "path": "menu.png",
+    "sha256": "9ace46759726e6cb1c5654f89b4d8dd8b323a09913392ee5166e79f4b40eb297",
+    "size_px": [
+      2940,
+      1653
+    ],
+    "window_px": [
+      2940,
+      1846
+    ],
+    "world_render_px": [
+      1280,
+      720
+    ],
+    "renderer": "Mobile / Metal, Apple M2",
+    "source": "Actual packaged Godot viewport, captured after frame_post_draw by a passive observer; unchanged PNG bytes.",
+    "menu": "AI P2, stage 1, 10 lives, Germany/USA; current Start/+ and A/B confirmation hints.",
+    "hardware_limit": "No controller connected at this capture; screenshot does not prove physical input acceptance."
+  },
+  "validation": [
+    {
+      "command": "make clean",
+      "result": "passed"
+    },
+    {
+      "command": "make -j4 test test-godot-core test-game-session-adapter",
+      "result": "passed",
+      "coverage": [
+        "19 legacy integration suites / 16429 checks",
+        "32 player suites / 69 checks",
+        "35 stage layouts unchanged",
+        "42000 shared-session adapter updates",
+        "Godot core precise wall corner, controls, AI, nations, LAN rules"
+      ]
+    },
+    {
+      "command": "make test-godot-release",
+      "result": "73 passed"
+    },
+    {
+      "command": "SDL_HIDAPI_IGNORE_DEVICES=0x057e/0x2009 make test-godot-import test-godot-bundle",
+      "result": "passed",
+      "coverage": [
+        "47 import gate fixtures",
+        "30 Godot UI integration groups",
+        "23 bundle contract fixtures",
+        "actual packaged headless native and UI run",
+        "arm64, deployment version, resource hash, codesign and dependency verification"
+      ]
+    },
+    {
+      "command": "isolated build copy with only frontend joy_connection_changed connection removed, --ui-self-test",
+      "result": "expected failure confirmed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "ui_groups": [
+    "settings",
+    "nations",
+    "two-player",
+    "controller-menu",
+    "frame-input",
+    "camera",
+    "quick-pause",
+    "pixel",
+    "menu",
+    "restart",
+    "native-report",
+    "gui-accept-press-hold-release",
+    "keyboard-fire-locations",
+    "focus-clear",
+    "background-gui",
+    "focus-lifecycle",
+    "enter-start",
+    "render-cache",
+    "game-over",
+    "record",
+    "record-timeout",
+    "session-record",
+    "audio-resources",
+    "native-audio",
+    "coop-camera",
+    "player-visibility",
+    "running-gear-lifecycle",
+    "native-fire-effects",
+    "arcade-hud",
+    "raylib-ui-parity"
+  ],
+  "sanitizers": {
+    "command": "make -j3 test-sanitize test-godot-core-sanitize test-game-session-adapter-sanitize",
+    "result": "passed; changed C++ production/test source hashes rechecked against the run"
+  },
+  "human_feedback": {
+    "wired_before_backend_change": "User confirmed USB operation with the earlier input/turn fixes.",
+    "bluetooth_system_backend_experiment": "User reported acceptable latency with macOS GameController and fullscreen.",
+    "limitation": "Physical button-to-display latency was not measured. The final VID/PID-specific default still needs Bluetooth/USB/reconnect hardware acceptance."
+  },
+  "remaining_release_acceptance": [
+    "A new immutable candidate and its bound validation after the current source changes",
+    "Final Switch Pro defaults: Bluetooth/USB/reconnect and two controllers",
+    "Two physical Macs for LAN",
+    "Clean/minimum-supported macOS and actual Gatekeeper path",
+    "Candidate-bound gameplay/audio/visual matrix and extended session",
+    "Named QA lead and release owner approvals"
+  ],
+  "assets": "Original in-game screenshot; no new game assets or third-party bytes. Existing font, audio, texture and engine notices are unchanged.",
+  "local_raw_evidence": [
+    "build/release-evidence/controller-fix-20260930/",
+    "build/release-evidence/turn-precision-20260930/",
+    "build/release-evidence/water-stall-20260930/",
+    "build/release-evidence/bluetooth-latency-20260930/"
+  ],
+  "raw_evidence_note": "These local directories are not included wholesale in the PR. This small curated screenshot and source-bound report are included.",
+  "published_release": false
+}

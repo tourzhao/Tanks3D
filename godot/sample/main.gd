@@ -118,13 +118,17 @@ func _enter_tree() -> void:
 func _ready() -> void:
     var ready_begin := Time.get_ticks_usec()
     Input.set_ignore_joypad_on_unfocused_application(true)
-    # Godot 4.7's built-in ui_accept contains keyboard keys only. Keep the
-    # existing bindings and explicitly support the controller's bottom button.
-    var accept_button := InputEventJoypadButton.new()
-    accept_button.device = -1
-    accept_button.button_index = JOY_BUTTON_A
-    if not InputMap.action_has_event(&"ui_accept", accept_button):
-        InputMap.action_add_event(&"ui_accept", accept_button)
+    # Preserve individual input edges/axis reports; sample the latest buffered
+    # events immediately before this frame's simulation (see _process).
+    Input.use_accumulated_input = false
+    # Godot names face buttons by position: its A is Nintendo's B. Accept both
+    # bottom and right faces so Switch A works as well; neither is a cancel key.
+    for button in [JOY_BUTTON_A, JOY_BUTTON_B]:
+        var accept_button := InputEventJoypadButton.new()
+        accept_button.device = -1
+        accept_button.button_index = button
+        if not InputMap.action_has_event(&"ui_accept", accept_button):
+            InputMap.action_add_event(&"ui_accept", accept_button)
     for arg in OS.get_cmdline_user_args():
         if arg == "--quick-start":
             quick_start = true
@@ -343,6 +347,15 @@ func create_scene() -> void:
     camera.far = 150.0
     world.add_child(camera)
     player_visibility = PlayerVisibility.new(world)
+
+    # Water first appears in stage 4. Register its mesh/material with the real
+    # viewport during setup so Mobile can prepare the surface pipeline before
+    # that transition. A material alone does not cover instance preparation.
+    # Keep this one hidden instance outside terrain and all gameplay queries.
+    var water_warmup := Art.make_tile("~", 0, 0, 0)
+    water_warmup.name = "WaterShaderWarmup"
+    water_warmup.visible = false
+    world.add_child(water_warmup)
 
     display = TextureRect.new()
     display.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -697,6 +710,10 @@ func input_bits(slot: int) -> int:
 func _process(delta: float) -> void:
     var begin := Time.get_ticks_usec()
     if frame_trace: frame_trace.enter(begin, trace_context(), trace_pipeline_counters())
+    # Deliver any events queued after the engine's preceding flush before menu
+    # guards and native input sampling. This does not add a simulation step.
+    Input.flush_buffered_events()
+    if frame_trace: frame_trace.mark("input_dispatch", Time.get_ticks_usec())
     process_game_frame(delta, begin)
     if frame_trace: frame_trace.finish(Time.get_ticks_usec(), trace_context())
     if report_requested:

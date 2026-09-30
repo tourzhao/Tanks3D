@@ -67,7 +67,7 @@ def validate_ui_report(text):
     reports = re.findall(r"^TANKS_UI_CHECKS_PASSED (.+)$", text, flags=re.MULTILINE)
     required = {"settings", "nations", "two-player", "camera", "quick-pause", "pixel", "menu",
                 "restart", "native-report", "gui-accept-press-hold-release", "keyboard-fire-locations",
-                "focus-clear", "background-gui", "focus-lifecycle", "enter-start", "render-cache", "game-over", "record",
+                "focus-clear", "background-gui", "focus-lifecycle", "controller-menu", "frame-input", "enter-start", "render-cache", "game-over", "record",
                 "record-timeout", "session-record", "audio-resources", "native-audio", "coop-camera", "player-visibility",
                 "running-gear-lifecycle", "native-fire-effects", "arcade-hud", "raylib-ui-parity"}
     if len(reports) != 1 or not required.issubset(set(reports[0].split("/"))):

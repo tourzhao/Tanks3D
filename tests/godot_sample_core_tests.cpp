@@ -1090,6 +1090,120 @@ void testNativePad()
     }
 }
 
+// Production stage 1 geometry plus the actual Godot controller mapper. These
+// are input-driven movement checks, not a visual or physical latency claim.
+void testPrecisePlayerTurns()
+{
+    constexpr float tolerance = 0.00001f;
+    for (int inputSource : {0, 1, 2}) // keyboard commands, D-pad, stick
+    {
+        for (int playerSlot : {0, 1})
+        {
+            auto handle = create();
+            const auto reset = [&](XZ position) -> Game3D &
+            {
+                require(tanks_sample_reset(handle.get(), 731, 1, 2, 0) == 0,
+                        "precise turn reset failed");
+                Game3D &game = *sample(handle).game;
+                require(Game3DTestAccess::prepareGameEventScenario(game, false),
+                        "precise turn fixture preparation failed");
+                Game3DTestAccess::player(game, playerSlot).position = position;
+                Game3DTestAccess::player(game, 1 - playerSlot).position = {9.0f, 25.0f};
+                require(!game.map().collidesWithTank(position, 0.875f),
+                        "precise turn fixture starts inside terrain");
+                return game;
+            };
+            const auto drive = [&](unsigned direction, bool fire = false)
+            {
+                int command = static_cast<int>(direction | (fire ? 16U : 0U));
+                if (inputSource != 0)
+                {
+                    const float x = direction == 8 ? 1.0f : direction == 4 ? -1.0f : 0.0f;
+                    const float y = direction == 2 ? 1.0f : direction == 1 ? -1.0f : 0.0f;
+                    command = tanks_sample_map_pad(
+                        handle.get(), playerSlot,
+                        inputSource == 2 ? x : 0.0f, inputSource == 2 ? y : 0.0f,
+                        (inputSource == 1 ? direction : 0U) | (fire ? 16U : 0U), 0);
+                }
+                require(command >= 0 && tanks_sample_step(
+                            handle.get(), kStep, playerSlot == 0 ? command : 0,
+                            playerSlot == 1 ? command : 0) == 0,
+                        "precise turn input step failed");
+            };
+            {
+                Game3D &game = reset({1.0f, 25.0f});
+                drive(8);
+                const XZ east = game.players()[playerSlot].position;
+                drive(1, true);
+                const Player &player = game.players()[playerSlot];
+                require(std::fabs(east.x - (1.0f + 5.0f * kStep)) < tolerance &&
+                            std::fabs(player.position.x - east.x) < tolerance &&
+                            std::fabs(player.position.z - (25.0f - 5.0f * kStep)) < tolerance &&
+                            player.driveDirection == CardinalDirection::North && player.moving,
+                        "wall-corner micro-turn erased a short step or delayed movement");
+                require(!game.shells().empty() && game.shells()[0].ownerIndex == playerSlot &&
+                            game.shells()[0].velocity.x == 0.0f && game.shells()[0].velocity.z < 0.0f,
+                        "micro-turn/fire did not use the new direction and player slot");
+                require(game.players()[1 - playerSlot].position.x == 9.0f &&
+                            game.players()[1 - playerSlot].position.z == 25.0f,
+                        "precise movement leaked into the other player");
+            }
+            {
+                Game3D &game = reset({1.2f, 25.0f});
+                drive(1);
+                require(game.players()[playerSlot].position.x == 1.2f,
+                        "clear entry rounded position before assistance was needed");
+                for (int tick = 0; tick < 3; ++tick)
+                {
+                    const float previousZ = game.players()[playerSlot].position.z;
+                    drive(1);
+                    const Player &player = game.players()[playerSlot];
+                    require(player.position.z < previousZ &&
+                                !game.map().collidesWithTank(player.position, 0.875f),
+                            "held direction stalled or crossed terrain at the narrow lane entry");
+                }
+                require(game.players()[playerSlot].position.x == 1.0f &&
+                            std::fabs(game.players()[playerSlot].position.z -
+                                      (25.0f - 4.0f * 5.0f * kStep)) < tolerance,
+                        "lane assistance changed forward movement speed");
+            }
+            {
+                Game3D &game = reset({1.35f, 25.0f});
+                drive(1);
+                const XZ before = game.players()[playerSlot].position;
+                drive(1);
+                require(game.players()[playerSlot].position.x == before.x &&
+                            game.players()[playerSlot].position.z == before.z &&
+                            !game.players()[playerSlot].moving,
+                        "lane assistance pulled the tank beyond the 5/16-tile range");
+            }
+            {
+                Game3D &game = reset({1.125f, 23.0f});
+                drive(8, true);
+                const Player &player = game.players()[playerSlot];
+                const bool firedEast = std::any_of(
+                    game.eventsThisUpdate().begin(), game.eventsThisUpdate().end(),
+                    [playerSlot](const auto &event) {
+                        return event.type == GameEventType::ShellFired &&
+                            event.sourcePlayerId == playerSlot &&
+                            event.direction == CardinalDirection::East;
+                    });
+                require(player.position.x == 1.125f && player.position.z == 23.0f &&
+                            player.driveDirection == CardinalDirection::East && !player.moving && firedEast,
+                        "turning against a solid wall moved the tank or prevented immediate fire");
+            }
+            {
+                Game3D &game = reset({1.2f, 25.0f});
+                Game3DTestAccess::player(game, 1 - playerSlot).position = {1.0f, 23.25f};
+                drive(1);
+                const Player &player = game.players()[playerSlot];
+                require(player.position.x == 1.2f && player.position.z == 25.0f && !player.moving,
+                        "failed lane assistance moved sideways or overlapped the other player");
+            }
+        }
+    }
+}
+
 void testMenuSessionContinuation()
 {
     auto handle = create();
@@ -1197,6 +1311,12 @@ int main(int argc, char **argv)
             std::cout << "PASS canonical tank occupancy: overlap recovery, creation gates, respawn, spawn reservations\n";
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--precise-turns")
+        {
+            testPrecisePlayerTurns();
+            std::cout << "PASS precise turns: real stage 1 walls, micro-steps, held lane entry, collision, turn/fire, both player slots, keyboard/D-pad/stick\n";
+            return 0;
+        }
         if (argc == 2 && std::string(argv[1]) == "--lan-sockets")
         {
             testLanSocketBridge();
@@ -1217,10 +1337,11 @@ int main(int argc, char **argv)
         testLanBridge(Nation::Germany);
         testLanBridge(Nation::UnitedStates);
         testNativePad();
+        testPrecisePlayerTurns();
         testMenuSessionContinuation();
         std::cout << "PASS Godot C bridge: 35-stage production parity, read-only snapshots, "
                      "overlap recovery/creation occupancy, full setup/restart, solo/human/AI opponent nations, input validation, native AI/P2 isolation, pause, reports, "
-                     "same/different-nation LAN handshake/state/RNG/events and native controller mapping\n";
+                     "same/different-nation LAN handshake/state/RNG/events native controller mapping and precise wall-corner turns\n";
     }
     catch (const std::exception &exception)
     {

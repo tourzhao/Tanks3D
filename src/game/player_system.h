@@ -206,9 +206,12 @@ struct PlayerMovementUpdate
 using PlayerPositionAvailable = std::function<bool(core::XZ)>;
 
 // Commits only scalar movement state after the caller has passed lifecycle
-// gates and debited per-frame clocks. Availability queries retain the legacy
-// optional-lane-snap then forward-candidate order. A blocked forward move keeps
-// an accepted snap but cancels ice carry. Dust is detached; the caller owns FX
+// gates and debited per-frame clocks. Try the unsnapped forward move first so
+// changing direction preserves short steps. A blocked driven move may align
+// to a nearby cardinal lane only when both its anchor and forward step are
+// available; a failed attempt leaves position unchanged and cancels ice carry.
+// Alignment is retried for held input but never redirects ice momentum.
+// Dust is detached; the caller owns FX
 // and commits kPlayerTrackDustCooldown after presentation. Invalid elapsed
 // time, speed, overflowing distance, or an empty callback leaves state
 // untouched and issues no query.

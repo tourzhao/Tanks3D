@@ -148,6 +148,129 @@ static func joy_button_event(app: Node, button: JoyButton, pressed: bool) -> voi
     await app.get_tree().process_frame
 
 
+static func joy_motion_event(app: Node, axis: JoyAxis, value: float) -> void:
+    var event := InputEventJoypadMotion.new()
+    event.device = 15
+    event.axis = axis
+    event.axis_value = value
+    Input.parse_input_event(event)
+    Input.flush_buffered_events()
+    await app.get_tree().process_frame
+
+
+static func controller_menu_checks(app: Node) -> bool:
+    var configuration: Dictionary = app.configuration.duplicate(true)
+    var initial := read_state(app)
+    var elapsed: float = app.elapsed
+    var heard: Dictionary = app.get_meta("ui_audio_requests", {}).duplicate(true)
+    var frontend: CanvasLayer = app.frontend
+    frontend.show_menu()
+    frontend.controls.deploy.grab_focus()
+    await joy_motion_event(app, JOY_AXIS_LEFT_Y, 1.0)
+    if not check(frontend.controls.row_stage.has_focus(), "stick first moves to the stage row"):
+        return false
+    # Simulate the OS connection notifications, not a physical Bluetooth test.
+    # Retain a held direction across a disconnect and reuse the same device ID.
+    Input.joy_connection_changed.emit(15, false)
+    frontend.controls.deploy.grab_focus()
+    frontend.device_help.text = "GAMEPADS -1" # the pre-discovery display is stale
+    Input.joy_connection_changed.emit(15, true)
+    if not check(frontend.device_help.text.begins_with("GAMEPADS %d " % Input.get_connected_joypads().size()) and
+            frontend.controls.deploy.has_focus() and read_state(app) == initial,
+            "late controller discovery refreshes the count without moving focus or advancing gameplay"):
+        return false
+    await joy_motion_event(app, JOY_AXIS_LEFT_Y, 1.0)
+    if not check(frontend.controls.row_stage.has_focus(), "reconnected controller's first direction is not swallowed"):
+        return false
+    await joy_motion_event(app, JOY_AXIS_LEFT_Y, 0.0)
+    Input.joy_connection_changed.emit(15, false)
+    for mode in range(3):
+        for button in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_START]:
+            frontend.show_menu()
+            frontend.controls.mode.select(mode)
+            frontend.refresh_menu()
+            frontend.controls.deploy.grab_focus()
+            await joy_button_event(app, button, true)
+            if not check(not frontend.menu_open,
+                    "controller deploy on press: mode=%d button=%d" % [mode, button]):
+                return false
+            var state := read_state(app)
+            if not check(int(state.player_count) == (1 if mode == 0 else 2) and
+                    bool(state.ai_p2) == (mode == 2), "controller deployment preserves crew selection"):
+                return false
+            await joy_button_event(app, button, false)
+            if not check((int(app.input_bits(0)) & 64) == 0 and not read_state(app).paused,
+                    "menu confirmation does not immediately pause the battle"):
+                return false
+    for page in ["setup", "advanced"]:
+        frontend.show_menu()
+        frontend.set_menu_page(page)
+        # Start deploys even when a submenu/option row currently has focus.
+        if page == "setup": frontend.controls.row_advanced.grab_focus()
+        await joy_button_event(app, JOY_BUTTON_START, true)
+        if not check(not frontend.menu_open, "Start deploys directly from setup and Advanced"):
+            return false
+        await joy_button_event(app, JOY_BUTTON_START, false)
+    # A late OS event must reach the very next native update. Deliberately
+    # buffer a complete tap without the test helpers' explicit input flush.
+    var solo := Frontend.DEFAULTS.duplicate()
+    app.start_from_menu(solo)
+    for tick in range(300):
+        if not advance(app): return false
+    refresh(app)
+    var before := read_state(app)
+    var accumulated: bool = Input.use_accumulated_input
+    Input.use_accumulated_input = true
+    for key in [KEY_LEFT, KEY_SPACE]:
+        Input.parse_input_event(key_event(key, KEY_LOCATION_UNSPECIFIED, true))
+        Input.parse_input_event(key_event(key, KEY_LOCATION_UNSPECIFIED, false))
+    app.ui_self_test = false
+    app._process(STEP)
+    app.ui_self_test = true
+    Input.use_accumulated_input = accumulated
+    var after := read_state(app)
+    if not check(int(after.tick) == int(before.tick) + 1 and
+            float(after.players[0].x) < float(before.players[0].x) and
+            float(after.players[0].yaw) != float(before.players[0].yaw) and
+            float(after.players[0].fire_cooldown) > 0,
+            "late buffered move/turn/fire taps reach the next native update"):
+        return false
+    if not advance_commands(app): return false
+    if not check(not read_state(app).players[0].moving and app.queued_players == [0, 0],
+            "released taps do not remain latched on a following frame"):
+        return false
+    # The new right-face alias must work on GUI-owned pause confirmation too.
+    if not advance(app, 64): return false
+    # The initiating pause pulse must release before a separate resume pulse.
+    if not advance(app): return false
+    refresh(app)
+    await joy_button_event(app, JOY_BUTTON_B, true)
+    if not check((int(app.queued_commands) & 64) != 0,
+            "right-face pause confirmation activates on press, not release"):
+        return false
+    if not advance_commands(app): return false
+    await joy_button_event(app, JOY_BUTTON_B, false)
+    if not check(not read_state(app).paused, "right face resumes the focused pause button"):
+        return false
+    app.configuration = configuration
+    app.stage = int(configuration.stage)
+    app.player_count = int(configuration.players)
+    app.ai_p2 = bool(configuration.ai_p2)
+    app.elapsed = elapsed
+    var restored: bool = app.core.reset_config(app.seed_value, configuration)
+    app.clear_effects()
+    app.clear_battle_input()
+    frontend.configure(configuration, app.pixel_style, app.audio_volume)
+    frontend.show_menu()
+    app.state = read_state(app)
+    app.update_world(0.0, true)
+    app.set_meta("ui_audio_requests", heard)
+    if not check(restored and read_state(app) == initial,
+            "controller checks restore the initial native session"):
+        return false
+    return true
+
+
 static func background_gui_checks(app: Node, button: Button, phase: String, activate: bool) -> bool:
     # Notify the production focus handler, then exercise real GUI dispatch with
     # synthetic pad events. This is not an OS focus or physical controller test.
@@ -163,8 +286,9 @@ static func background_gui_checks(app: Node, button: Button, phase: String, acti
     for direction in [JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_UP]:
         await joy_button_event(app, direction, true)
         await joy_button_event(app, direction, false)
-    await joy_button_event(app, JOY_BUTTON_A, true)
-    await joy_button_event(app, JOY_BUTTON_A, false)
+    for confirm in [JOY_BUTTON_A, JOY_BUTTON_B, JOY_BUTTON_START]:
+        await joy_button_event(app, confirm, true)
+        await joy_button_event(app, confirm, false)
     var unchanged: bool = activations[0] == 0 and app.frontend.menu_open == menu_before and \
         read_state(app).digest == before.digest and int(app.queued_commands) == 0 and \
         app.get_viewport().gui_get_focus_owner() == button
@@ -361,6 +485,30 @@ static func renderer_cache_checks(app: Node) -> bool:
     steel.map[brick_row] = line.left(brick_col) + "@" + line.substr(brick_col + 1)
     if not render_fixture(app, original, steel, brick_index, brick, "brick to steel row change"):
         return false
+
+    var warmup := app.world.get_node_or_null("WaterShaderWarmup") as Node3D
+    if not check(warmup != null and not warmup.is_visible_in_tree() and
+            not app.tile_nodes.values().has(warmup), "startup water is hidden and outside map cells"):
+        return false
+    var water_body := warmup.get_node("Body") as MeshInstance3D
+    var water := original.duplicate(true)
+    water.map[brick_row] = line.left(brick_col) + "~" + line.substr(brick_col + 1)
+    app.state = water
+    app.update_map()
+    var water_mesh := tile_mesh(app, brick_index)
+    if not check(water_mesh == water_body.mesh and
+            water_mesh.surface_get_material(0) is ShaderMaterial,
+            "first visible water reuses the startup mesh and material"):
+        return false
+    water = water.duplicate(true)
+    water.brick_masks[brick_index] = 0
+    app.state = water
+    app.update_map()
+    if not check(tile_mesh(app, brick_index) == water_mesh,
+            "water geometry does not depend on irrelevant brick damage"):
+        return false
+    app.state = original.duplicate(true)
+    app.update_map()
 
     var wall_cell: Vector2i = app.BASE_CELLS[0]
     var wall_index := wall_cell.y * 26 + wall_cell.x
@@ -682,11 +830,11 @@ static func coop_camera_scenarios(app: Node) -> bool:
 static func visibility_native_scenarios(app: Node) -> bool:
     # Normal inputs bring P1 behind a building and then into genuine forest
     # cover in a new game. No renderer fixture edits the native map or players.
-    # The stage-1 world trace includes the spawn-reservation fix: tick 313
-    # defers a second enemy at the occupied (13,1) warning. P1's final pose is
-    # unchanged; assert it directly as well as retaining the full-world digest.
+    # The stage-1 clear turn must preserve its actual z (9.99995518), not
+    # round it to 10. The full-world digest includes that position and its
+    # camera follow; terrain, enemies, events and the forest trace are unchanged.
     var cases := [
-        {"stage":1,"elevation":40,"commands":[[434,17],[24,8],[30,0]],"position":Vector2(11,10),"hint":true,"digest":"d1bdf1f0ffe43d7d"},
+        {"stage":1,"elevation":40,"commands":[[434,17],[24,8],[30,0]],"position":Vector2(11,10),"hint":true,"digest":"fa2b03477944e84d"},
         {"stage":10,"elevation":50,"commands":[[300,17]],"position":Vector2(9,21.1666374),"hint":false,"digest":"7666e172236f7619"}]
     var receipts: Array = []
     for fixture in cases:
@@ -695,11 +843,16 @@ static func visibility_native_scenarios(app: Node) -> bool:
             "camera_yaw":0,"camera_elevation":fixture.elevation},true)
         if not check(app.core.reset_config(20260916,settings),"visibility native deployment"): return false
         app.clear_effects()
+        var turn_origin: Dictionary = {}
         for command in fixture.commands:
+            if int(command[1]) == 8:
+                turn_origin = read_state(app).players[0].duplicate()
             for tick in int(command[0]):
                 if not check(app.core.step(STEP,int(command[1]),0),"visibility native input tape"): return false
         app.state = read_state(app)
         var before: Dictionary = app.state.duplicate(true)
+        if not turn_origin.is_empty() and not check(before.players[0].z == turn_origin.z,
+                "clear perpendicular turn preserves the unsnapped lane position"): return false
         if not check(before.digest == fixture.digest and before.players[0].active and float(before.players[0].creating) <= 0,
                 "visibility scenario reaches the expected real native position"): return false
         var native_position := Vector2(float(before.players[0].x),float(before.players[0].z))
@@ -1161,6 +1314,8 @@ static func run(app: Node) -> bool:
         return false
     if not await focus_lifecycle_checks(app):
         return false
+    if not await controller_menu_checks(app):
+        return false
     if not check(Input.is_ignoring_joypad_on_unfocused_application(),
             "native hardware controller input is disabled while the application is unfocused"):
         return false
@@ -1267,8 +1422,9 @@ static func run(app: Node) -> bool:
         return false
     # Isolate the real pickup/report tape from RNG consumed by earlier UI
     # scenarios. Reset only the hidden preview; Enter still performs ordinary
-    # menu deployment. This seed yields an actual AI-collected Clock and expiry.
-    if not check(app.core.reset_config(20260916,app.configuration),
+    # menu deployment. With precise turns, seed 4 gives P1 an actual Clock at
+    # tape tick 1189; its message expires at 1322, before the clear at 3513.
+    if not check(app.core.reset_config(4,app.configuration),
             "seeded menu preview for native pickup and report coverage"): return false
     app.core.drain_audio() # Discard the reset preview's unheard StageStart cue.
     frontend.controls.mode.select(2)
@@ -1426,7 +1582,7 @@ static func run(app: Node) -> bool:
                 "real native play/count/terminal path requests " + AudioBank.CUES[cue]):
             return false
     print("TANKS_UI_AUDIO resources=22 requests=" + JSON.stringify(heard))
-    print("TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/" +
+    print("TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/" +
         "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/" +
         "game-over/record/record-timeout/session-record/audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity")
     return true

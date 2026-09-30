@@ -10,6 +10,7 @@ No export-template download is needed. Build/import with make godot-sample first
 
 import argparse
 import json
+import os
 from pathlib import Path, PurePosixPath
 import plistlib
 import re
@@ -29,6 +30,10 @@ EXECUTABLE = "Tanks3D-Godot"
 BUNDLE_ID = "io.github.tourzhao.tanks3d.godot.local"
 RELEASE_BUNDLE_ID = "io.github.tourzhao.tanks3d.godot"
 SYSTEM_PREFIXES = ("/System/Library/", "/usr/lib/")
+# Prefer Apple's GameController path for the original Nintendo Switch Pro.
+# Filter this VID/PID from SDL's raw HID backend, not from gamepad input.
+# Other controllers (including Joy-Cons) keep Godot/SDL's normal driver choice.
+MACOS_RUNTIME_ENV = {"SDL_HIDAPI_IGNORE_DEVICES": "0x057e/0x2009"}
 
 PACK_SCRIPT = '''extends SceneTree
 func _initialize() -> void:
@@ -224,6 +229,8 @@ def verify(app, identity=None):
         raise RuntimeError("Local app deployment target differs from its manifest")
     if not info.get("NSLocalNetworkUsageDescription", "").strip():
         raise RuntimeError("Local app is missing its local-network permission explanation")
+    if info.get("LSEnvironment") != MACOS_RUNTIME_ENV:
+        raise RuntimeError("Local app controller environment must target only Switch Pro")
     minimum_versions = []
     for binary in [app / f"Contents/MacOS/{EXECUTABLE}", *sorted((app / "Contents/Frameworks").glob("*.dylib"))]:
         if run(["lipo", "-archs", binary]).strip() != "arm64":
@@ -243,6 +250,9 @@ def smoke(app):
     logs = WORK / "packaged-validation"
     logs.mkdir(parents=True, exist_ok=True)
     outputs = {}
+    # Direct executable launches bypass LaunchServices' LSEnvironment. Exercise
+    # the same defaults Finder uses, while retaining the caller's other env.
+    runtime_env = plistlib.loads((app / "Contents/Info.plist").read_bytes())["LSEnvironment"]
     for label, arguments in (
         ("native", ["--fixed-fps", "60", "--", "--demo", "--frames=180", "--seed=20260916"]),
         ("ui", ["--", "--ui-self-test"]),
@@ -252,11 +262,11 @@ def smoke(app):
         command = [str(app / f"Contents/MacOS/{EXECUTABLE}"), "--headless",
                    "--log-file", str(engine_log), *arguments]
         result = subprocess.run(command, cwd="/private/tmp", text=True, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, timeout=120)
+                                stderr=subprocess.STDOUT, timeout=120, env={**os.environ, **runtime_env})
         (logs / f"{label}.console.log").write_text(result.stdout)
         engine_output = engine_log.read_text(errors="replace") if engine_log.exists() else ""
         gate.validate_output(result.stdout + "\n" + engine_output, result.returncode, f"Packaged {label}")
-        outputs[label] = {"command": command, "cwd": "/private/tmp",
+        outputs[label] = {"command": command, "cwd": "/private/tmp", "runtime_environment": runtime_env,
                           "result": gate.validate_report(result.stdout, 180) if label == "native"
                                     else gate.validate_ui_report(result.stdout)}
     return outputs
@@ -314,6 +324,7 @@ def build(godot, project, identity=None):
             "LSMinimumSystemVersion": minimum, "LSApplicationCategoryType": "public.app-category.games",
             "NSHighResolutionCapable": True, "NSPrincipalClass": "NSApplication",
             "NSRequiresAquaSystemAppearance": False, "Tanks3DLocalDevelopmentBuild": identity is None,
+            "LSEnvironment": MACOS_RUNTIME_ENV,
             "NSLocalNetworkUsageDescription": plistlib.loads((ROOT / "macos/Info.plist").read_bytes())[
                 "NSLocalNetworkUsageDescription"]}
     if identity:

@@ -24,8 +24,12 @@ mechanical file move must not update either.
   footprints. Artificial steering, Boat, and ice cases live in test fixtures,
   never in an original stage.
 - Simulation `dt` is clamped to 0.05 seconds. Tanks move only north, south, west,
-  or east. Ice momentum lasts 0.380 seconds; lane snapping is allowed within
-  5/16 tile of the cardinal lane.
+  or east. Ice momentum lasts 0.380 seconds. Player movement tries the direct
+  route first: short steps survive immediate direction changes. When a driven
+  step is blocked, lane assistance is allowed strictly within 5/16 tile, only
+  if both the aligned origin and forward destination are available. Held input
+  retries this assistance at narrow entries; failed assistance never moves the
+  tank sideways. Enemy lane-snapping behavior is unchanged.
 - A tank has a 0.875-tile half-extent. Tank centers overlap only when both axis
   separations are strictly below 1.75; exact edge contact is not collision.
 - A tank already overlapping another tank may move outward in ordinary small
@@ -175,10 +179,12 @@ the tank center; visual muzzle length must not change gameplay spawn position.
   negative-zero distance retain the legacy query, accepted-move, and dust gates.
 - Valid movement commits drive direction unconditionally and yaw only while
   propelling, then applies the existing ice transition. `None` and invalid
-  directions `5`/`255` retain zero-vector movement parity. When lane correction
-  is eligible, the exact snapped position is queried before the forward
-  candidate. A rejected snap advances from the original position; an accepted
-  snap remains committed even if the following forward candidate is blocked.
+  directions `5`/`255` retain zero-vector movement parity. Query the unsnapped
+  forward candidate first. Only a blocked, positive-distance, propelled move
+  in the drive direction may try a distinct aligned origin followed by its
+  forward candidate. Both must be available before committing either. This
+  applies to held directions as well as fresh turns, and does not redirect
+  unexpired ice momentum or move during a zero-time turn.
 - Blocking stops movement, clears `iceSlipTimer`, restores movement direction
   to drive direction, emits no dust, and does not prevent same-frame firing.
   Otherwise ice carries the prior travel direction until expiry. Dust crosses
@@ -879,13 +885,14 @@ transition planning are now transactional or detached. PR 3.5 remains partial.
 The headless audio-output checks additionally lock stage-entry, engine, and
 pause/resume calls at the injected raylib-free boundary; the settlement suite
 locks its final stop request there as well. Neither claims hardware or concrete
-voice-policy coverage. Thirty-one standalone PlayerSystem suites contain 64 checks;
+voice-policy coverage. Thirty-two standalone PlayerSystem suites contain 69 checks;
 independent literal tables exercise 2,560 input combinations (not 2,560 checks)
 plus atomic invalid frame/death elapsed, signed-zero and entry-snapshot phase
 policy, death entry/cross-zero/malformed timer behavior, `INT_MIN` life
 saturation, ordered malformed-clock clamps, invalid `5`/`255`
 control/movement/launch parity,
-atomic invalid and overflowing movement, exact snap/forward query transcripts,
+atomic invalid and overflowing movement, one-frame perpendicular turns at
+30/60/144 Hz, direct-first movement and collision-gated lane-assistance transcripts,
 ice/block states, detached dust, request/cooldown gates, reset-before-cap
 behavior, explicit reload/spawn scalars, slot-owned payloads, level-derived
 speed, cap, and power, plus complete Preserve/Reset spawn write masks,

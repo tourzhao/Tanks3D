@@ -37,6 +37,7 @@ class GodotPackageTests(unittest.TestCase):
             path.write_text("fixture " + name)
         (app / "Contents/Info.plist").write_bytes(plistlib.dumps({
             "CFBundleExecutable": PACKAGE.EXECUTABLE, "CFBundleIdentifier": PACKAGE.BUNDLE_ID,
+            "LSEnvironment": dict(PACKAGE.MACOS_RUNTIME_ENV),
             "LSMinimumSystemVersion": "26.0", "NSLocalNetworkUsageDescription": "Connect peers for cooperative play."}))
         self.seal(app)
         return app
@@ -112,6 +113,42 @@ class GodotPackageTests(unittest.TestCase):
         (app / f"Contents/Resources/{PACKAGE.EXECUTABLE}.pck").write_text("tampered")
         with self.assertRaisesRegex(RuntimeError, "manifest"):
             PACKAGE.verify(app)
+
+    def test_controller_driver_scope_cannot_expand_or_disappear(self):
+        app = self.create_app()
+        path = app / "Contents/Info.plist"
+        original = plistlib.loads(path.read_bytes())
+        for value in [None, {}, {"SDL_JOYSTICK_HIDAPI": "0"},
+                      {"SDL_JOYSTICK_HIDAPI_SWITCH": "0"},
+                      {"SDL_HIDAPI_IGNORE_DEVICES": "0x057e/0x0000"}]:
+            with self.subTest(value=value):
+                info = dict(original)
+                if value is None:
+                    info.pop("LSEnvironment")
+                else:
+                    info["LSEnvironment"] = value
+                path.write_bytes(plistlib.dumps(info))
+                self.seal(app)
+                with mock.patch.object(PACKAGE, "run", side_effect=self.command_fixture):
+                    with self.assertRaisesRegex(RuntimeError, "only Switch Pro"):
+                        PACKAGE.verify(app)
+
+    def test_packaged_smoke_uses_launchservices_controller_environment(self):
+        app = self.create_app()
+        result = mock.Mock(returncode=0, stdout="fixture output")
+        with mock.patch.object(PACKAGE, "WORK", self.root), \
+                mock.patch.object(PACKAGE.subprocess, "run", return_value=result) as launch, \
+                mock.patch.object(PACKAGE.gate, "validate_output"), \
+                mock.patch.object(PACKAGE.gate, "validate_report", return_value={}), \
+                mock.patch.object(PACKAGE.gate, "validate_ui_report", return_value=[]), \
+                mock.patch.dict(PACKAGE.os.environ, {"TANKS3D_TEST_ENV": "preserved"}):
+            checks = PACKAGE.smoke(app)
+        self.assertEqual(launch.call_count, 2)
+        for call in launch.call_args_list:
+            self.assertEqual(call.kwargs["env"]["SDL_HIDAPI_IGNORE_DEVICES"], "0x057e/0x2009")
+            self.assertEqual(call.kwargs["env"]["TANKS3D_TEST_ENV"], "preserved")
+        for check in checks.values():
+            self.assertEqual(check["runtime_environment"], PACKAGE.MACOS_RUNTIME_ENV)
 
     def test_legacy_raylib_runtime_cannot_return_even_with_resealed_manifest(self):
         app = self.create_app()

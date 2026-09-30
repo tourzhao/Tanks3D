@@ -91,18 +91,57 @@ the separate, candidate-specific human/hardware QA required before publication.
 During battle, Godot supplies controller samples to the existing native pad
 mapper, preserving its dead zone, dominant-axis hysteresis, D-pad priority,
 camera-relative steering and button edges. Left stick or D-pad moves; A, X, right shoulder or right trigger
-fires; Start pauses; A confirms reports; Back returns to deployment. Button names
-follow Godot's standard mapping. Physical Bluetooth latency and controller feel
-have not yet been accepted. The frontend explicitly binds controller A to GUI
-confirmation, blocks background GUI/gamepad input, and restores controls when
-focus returns. Native session/network ticking is unchanged by the focus guard.
+fires; Start pauses; bottom/right face confirms reports; Back returns to deployment.
+Godot's face-button names describe positions: its A is **B on a Switch Pro**.
+Both bottom and right face buttons now confirm menus, pause and reports, so
+**Switch A or B** works; neither face button cancels or quits. Resume activates
+on press, without waiting for release. Fire bindings remain bottom/left face,
+right shoulder and right trigger (Switch B/Y/R/ZR).
+
+On macOS, the packaged app and `make run-godot` prefer Apple's GameController
+backend for the original Switch Pro (`057e:2009`). They set
+[`SDL_HIDAPI_IGNORE_DEVICES`](https://wiki.libsdl.org/SDL3/SDL_HINT_HIDAPI_IGNORE_DEVICES)
+to `0x057e/0x2009`, excluding just this device from SDL's raw HID backend;
+Godot's built-in MFi backend still receives its input. Other controller models
+keep their usual backend selection. The `.app` carries this process-local
+default in `Info.plist`'s `LSEnvironment`; no system Bluetooth setting changes.
+Connection notifications refresh the menu's gamepad count and discard stale
+per-device stick state, including discovery that completes after menu setup.
+
+For driver comparison, `SDL_HIDAPI_IGNORE_DEVICES= make run-godot` restores
+SDL's normal device selection for that launch. Direct execution of the binary
+inside the bundle bypasses `LSEnvironment`: supply the same environment variable
+to reproduce a normal Finder launch. Native fullscreen (F11) also makes the
+game eligible for [macOS Game Mode](https://support.apple.com/en-us/105118) on
+supported Macs. Human feedback on an M2 with Switch Pro over Bluetooth found
+the system backend more responsive; it is not a measured button-to-display
+latency guarantee. USB, reconnects and other controllers still need hardware
+acceptance for each release candidate.
+
+The frontend disables input accumulation and flushes pending events before its
+frame's menu guard and native input sample. Buffered move/turn/fire taps are
+checked against the very next native update, without extra simulation steps or
+changes to movement speed, dead zone, fire cooldown, camera or rendering queues.
+This checks software dispatch, not physical button-to-display latency: Bluetooth
+and USB latency still require hardware comparison. Background GUI/gamepad input
+remains blocked; controls restore when focus returns. Native session/network
+ticking is unchanged by the focus guard.
+Player turning preserves small movements instead of rounding every turn back
+onto a grid lane. If a wall corner blocks forward movement, nearby lane
+alignment is attempted only when both its origin and destination are clear;
+held directions retry at narrow entries. The 5/16-tile assistance limit,
+collision footprint, movement speeds, and 0.380-second ice momentum remain.
+Keyboard, D-pad, stick, and both local player slots share this native rule.
 There is no F1 crew shortcut; choose the crew in setup.
 
 The setup, Advanced and Local Network pages follow the raylib row-selection
 workflow. Up/down selects a row; left/right changes its value. Shift or a
 shoulder button changes stage/lives by ten. Keys **1** and **2** select solo or
-two human players. Enter, Space, the controller's bottom face button or Start
-starts the game from an ordinary setup row, or opens the selected submenu.
+two human players. Enter, Space or either bottom/right face button starts the
+game from an ordinary setup row, or opens the selected submenu. **Start / +**
+deploys directly from setup or Advanced, regardless of the focused row. In the
+Local Network page Start still activates its selected row; it cannot launch an
+offline battle over a pending connection.
 Escape/Back returns from a submenu; at the main setup it quits. Advanced uses
 **R** or the top face button to reset gameplay/view/Pixel settings; it keeps
 volume unchanged. The selected row has gold chevrons, and setup shows the four
@@ -643,6 +682,41 @@ commands are in
 and its linked performance summary. The earlier short runs and deliberately
 interrupted soak before the LAN pause-guide correction are retained separately
 and are not the final matrix.
+
+## First-water transition preparation, 2026-09-30
+
+The frontend now registers one hidden water instance in its normal world during
+scene setup. The material alone did not prepare the instance's surface pipeline.
+All water cells share that instance's mesh/material; lot coordinates and brick
+damage do not change water geometry. The hidden node is outside the tile map,
+never draws, and survives restarts without adding more warmup instances.
+This follows Godot's [pipeline instancing guidance](https://docs.godotengine.org/en/stable/tutorials/performance/pipeline_compilations.html#pipeline-precompilation-instancing).
+
+On the M2, two stage 3-to-4 diagnostic pairs used the same 1280×720 window,
+default camera, seed, native input and Mobile/Metal renderer. Godot's shader
+disk cache was disabled only in isolated test projects; the Metal driver cache
+was not cleared. The second pair reversed execution order. Maximum callback
+intervals around the transition were 84.34 / 81.72 ms before and 33.01 / 20.28 ms
+after. Surface pipeline counts increased by one at the old transition and zero
+after the change. These are process intervals, not display-present measurements
+or a frame-budget guarantee. Preparation moves work to startup; it does not
+eliminate the compilation cost.
+
+Normal and Pixel Style stage-4 captures are byte-identical before/after, with
+identical native snapshots and camera metadata. The existing 1.42-second
+long-session outlier did not recur in the cached baseline, so its full cause
+is still unassigned. This scoped improvement does not attest a new candidate or
+transfer the old candidate's 30-minute QA to modified source. Raw diagnostics,
+source bindings and captures are under
+`build/release-evidence/water-stall-20260930/`.
+
+The rebuilt development app also completed a separate 240-second normal
+stage-progression run with four clears, 100% observed window focus and nominal
+thermal pressure. Actual Metal display intervals after the declared 30-second
+startup exclusion averaged 59.94 FPS, with a 54.39 FPS 1% low; the maximum across
+the entire run was 50.00 ms. Peak sampled RSS was 335.5 MiB, with 8.9 MiB growth
+using the recorded median-window method. This short, Pixel-off workload is
+regression evidence, not the candidate-specific extended-session gate.
 
 ## Earlier diagnostics and remaining acceptance work
 

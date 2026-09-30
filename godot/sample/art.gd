@@ -2020,6 +2020,10 @@ static func make_tile(tile: String, brick_mask: int, row: int, col: int) -> Node
     var tree_variant := (tree_code^(tree_code>>16))&15
     if tile == "%":
         key = "forest_%s" % tree_variant
+    elif tile == "~":
+        # Water shape is independent of lot, parity and brick damage. Sharing
+        # the startup instance's mesh also retains its prepared material.
+        key = "water"
     var cached := _cached(key)
     if cached:
         return cached

@@ -59,22 +59,31 @@ class GodotImportGateTests(unittest.TestCase):
             GATE.validate_ui_report("TANKS_UI_CHECKS_PASSED settings/menu\n")
         with self.assertRaises(RuntimeError):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu\n")
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu\n")
         with self.assertRaises(RuntimeError):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/enter-start/render-cache\n")
         self.assertEqual(len(GATE.validate_ui_report(
-            "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+            "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
             "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
             "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
-            "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")), 28)
+            "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")), 30)
+
+    def test_ui_requires_controller_menu_and_same_frame_input(self):
+        text = ("TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
+                "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
+                "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
+                "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")
+        for required in ["controller-menu", "frame-input"]:
+            with self.subTest(required=required), self.assertRaisesRegex(RuntimeError, "all required"):
+                GATE.validate_ui_report(text.replace(required + "/", ""))
 
     def test_ui_requires_raylib_presentation_parity(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud\n")
@@ -82,7 +91,7 @@ class GodotImportGateTests(unittest.TestCase):
     def test_ui_requires_arcade_hud_integration(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/raylib-ui-parity\n")
@@ -90,7 +99,7 @@ class GodotImportGateTests(unittest.TestCase):
     def test_ui_requires_real_native_fire_integration(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/arcade-hud/raylib-ui-parity\n")
@@ -98,7 +107,7 @@ class GodotImportGateTests(unittest.TestCase):
     def test_ui_requires_real_player_visibility_integration(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")
@@ -106,7 +115,7 @@ class GodotImportGateTests(unittest.TestCase):
     def test_ui_requires_real_coop_camera_integration(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")
@@ -114,7 +123,7 @@ class GodotImportGateTests(unittest.TestCase):
     def test_ui_requires_focus_lifecycle_contract(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")
@@ -122,13 +131,13 @@ class GodotImportGateTests(unittest.TestCase):
     def test_ui_requires_background_gui_dispatch_contract(self):
         with self.assertRaisesRegex(RuntimeError, "all required"):
             GATE.validate_ui_report(
-                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+                "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/player-visibility/running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity\n")
 
     def test_ui_requires_running_gear_lifecycle(self):
-        text = ("TANKS_UI_CHECKS_PASSED settings/nations/two-player/camera/quick-pause/pixel/menu/"
+        text = ("TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/quick-pause/pixel/menu/"
                 "restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
                 "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/record-timeout/session-record/"
                 "audio-resources/native-audio/coop-camera/player-visibility/native-fire-effects/arcade-hud/raylib-ui-parity\n")

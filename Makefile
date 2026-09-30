@@ -1641,7 +1641,8 @@ test-godot-import: godot-sample
 	python3 -B scripts/test_godot_import.py --skip-stage
 
 run-godot: godot-sample
-	$(GODOT) --path build/godot/project --rendering-method $(GODOT_RENDERER) \
+	SDL_HIDAPI_IGNORE_DEVICES="$${SDL_HIDAPI_IGNORE_DEVICES-0x057e/0x2009}" \
+		$(GODOT) --path build/godot/project --rendering-method $(GODOT_RENDERER) \
 		--rendering-driver metal --log-file $(abspath build/godot/game.log) -- $(GODOT_ARGS)
 
 .PHONY: godot-app run-godot-app test-godot-bundle

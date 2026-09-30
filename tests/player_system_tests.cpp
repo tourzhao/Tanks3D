@@ -1215,96 +1215,135 @@ int main()
            "cardinal movement mismatch at direction " +
                firstCardinalMovementMismatch);
 
-    reporter.beginSuite("player-movement-lane-snap-query-order");
-    PlayerMovementState acceptedSnapState = movementStateFixture();
-    PlayerMovementParameters snapParameters = movementParametersFixture();
-    std::vector<XZ> acceptedSnapQueries;
-    const PlayerMovementUpdate acceptedSnap = advanceActivePlayerMovement(
-        acceptedSnapState, snapParameters,
+    reporter.beginSuite("player-movement-short-turns-preserve-progress");
+    bool shortTurnsPreserveProgress = true;
+    for (float elapsed : {1.0f / 30.0f, 1.0f / 60.0f, 1.0f / 144.0f})
+    {
+        for (float speed : {5.0f, 6.5f})
+        {
+            for (CardinalDirection first : kDirections)
+            {
+                if (first == CardinalDirection::None ||
+                    static_cast<unsigned>(first) > 4U)
+                    continue;
+                for (CardinalDirection second : kDirections)
+                {
+                    const XZ firstVector = tanks3d::core::cardinalVector(first);
+                    const XZ secondVector = tanks3d::core::cardinalVector(second);
+                    if (second == CardinalDirection::None ||
+                        static_cast<unsigned>(second) > 4U ||
+                        firstVector.x * secondVector.x +
+                            firstVector.z * secondVector.z != 0.0f)
+                        continue;
+                    PlayerMovementState state;
+                    state.position = {9.0f, 13.0f};
+                    PlayerMovementParameters parameters = movementParametersFixture();
+                    parameters.elapsed = elapsed;
+                    parameters.movementSpeed = speed;
+                    XZ expected = state.position;
+                    for (CardinalDirection direction : {first, second, first, second})
+                    {
+                        parameters.driveDirection = direction;
+                        const PlayerMovementUpdate update = advanceActivePlayerMovement(
+                            state, parameters, [](XZ) { return true; });
+                        expected = expected + tanks3d::core::cardinalVector(direction) *
+                            (elapsed * speed);
+                        shortTurnsPreserveProgress = shortTurnsPreserveProgress &&
+                            update.movementAccepted && samePosition(state.position, expected) &&
+                            nearlyEqual(state.yaw, tanks3d::core::cardinalYaw(direction));
+                    }
+                }
+            }
+        }
+    }
+    expect(shortTurnsPreserveProgress,
+           "a one-frame turn erased the preceding short step or delayed heading");
+
+    reporter.beginSuite("player-movement-blocked-lane-assistance");
+    const PlayerMovementParameters snapParameters = movementParametersFixture();
+    PlayerMovementState directState = movementStateFixture();
+    std::vector<XZ> directQueries;
+    const PlayerMovementUpdate direct = advanceActivePlayerMovement(
+        directState, snapParameters,
         [&](XZ candidate) {
-            acceptedSnapQueries.push_back(candidate);
+            directQueries.push_back(candidate);
             return true;
         });
-    expect(acceptedSnap.valid && !acceptedSnap.blocked &&
-               acceptedSnap.movementAccepted &&
-               acceptedSnapQueries.size() == 2U &&
-               samePosition(acceptedSnapQueries[0], {4.18f, 8.0f}) &&
-               samePosition(acceptedSnapQueries[1], {4.68f, 8.0f}) &&
-               samePosition(acceptedSnapState.position, {4.68f, 8.0f}),
-           "accepted lane snap did not precede the forward query");
+    expect(direct.movementAccepted && directQueries.size() == 1U &&
+               samePosition(directQueries[0], {4.68f, 7.73f}) &&
+               samePosition(directState.position, {4.68f, 7.73f}),
+           "a clear turn rounded away the previous movement");
 
-    PlayerMovementState secondarySnapState = movementStateFixture();
-    secondarySnapState.movementDirection = CardinalDirection::East;
-    std::vector<XZ> secondarySnapQueries;
-    const PlayerMovementUpdate secondarySnap = advanceActivePlayerMovement(
-        secondarySnapState, snapParameters,
-        [&](XZ candidate) {
-            secondarySnapQueries.push_back(candidate);
-            return true;
-        });
-    expect(secondarySnap.valid && secondarySnap.movementAccepted &&
-               secondarySnapQueries.size() == 2U &&
-               samePosition(secondarySnapQueries[0], {4.18f, 8.0f}) &&
-               samePosition(secondarySnapQueries[1], {4.68f, 8.0f}),
-           "drive-change snap branch was lost when travel already matched");
-
-    PlayerMovementState rejectedSnapState = movementStateFixture();
-    std::vector<XZ> rejectedSnapQueries;
-    const PlayerMovementUpdate rejectedSnap = advanceActivePlayerMovement(
-        rejectedSnapState, snapParameters,
-        [&](XZ candidate) {
-            rejectedSnapQueries.push_back(candidate);
-            return rejectedSnapQueries.size() != 1U;
-        });
-    expect(rejectedSnap.valid && !rejectedSnap.blocked &&
-               rejectedSnap.movementAccepted &&
-               rejectedSnapQueries.size() == 2U &&
-               samePosition(rejectedSnapQueries[0], {4.18f, 8.0f}) &&
-               samePosition(rejectedSnapQueries[1], {4.68f, 7.73f}) &&
-               samePosition(rejectedSnapState.position, {4.68f, 7.73f}),
-           "rejected snap did not advance from the original position");
-
-    PlayerMovementState blockedAfterSnapState = movementStateFixture();
-    blockedAfterSnapState.iceSlipTimer = 0.33f;
-    std::vector<XZ> blockedAfterSnapQueries;
-    const PlayerMovementUpdate blockedAfterSnap =
-        advanceActivePlayerMovement(
-            blockedAfterSnapState, snapParameters,
+    // Test both a fresh turn and a held direction that reaches a narrow entry
+    // later. Only the aligned route clears this fixture's wall corner.
+    for (bool alreadyTurning : {false, true})
+    {
+        PlayerMovementState state = movementStateFixture();
+        if (alreadyTurning)
+        {
+            state.driveDirection = CardinalDirection::East;
+            state.movementDirection = CardinalDirection::East;
+        }
+        std::vector<XZ> queries;
+        const PlayerMovementUpdate update = advanceActivePlayerMovement(
+            state, snapParameters,
             [&](XZ candidate) {
-                blockedAfterSnapQueries.push_back(candidate);
-                return blockedAfterSnapQueries.size() == 1U;
+                queries.push_back(candidate);
+                return candidate.z >= 7.875f;
             });
-    expect(blockedAfterSnap.valid && blockedAfterSnap.blocked &&
-               !blockedAfterSnap.movementAccepted &&
-               !blockedAfterSnap.dust.has_value() &&
-               blockedAfterSnapQueries.size() == 2U &&
-               samePosition(blockedAfterSnapQueries[0],
-                            {4.18f, 8.0f}) &&
-               samePosition(blockedAfterSnapQueries[1],
-                            {4.68f, 8.0f}) &&
-               samePosition(blockedAfterSnapState.position,
-                            {4.18f, 8.0f}) &&
-               !blockedAfterSnapState.moving &&
-               blockedAfterSnapState.movementDirection ==
-                   CardinalDirection::East &&
-               nearlyEqual(blockedAfterSnapState.iceSlipTimer, 0.0f),
-           "blocked forward move rolled back snap or retained ice carry");
+        expect(update.movementAccepted && queries.size() == 3U &&
+                   samePosition(queries[0], {4.68f, 7.73f}) &&
+                   samePosition(queries[1], {4.18f, 8.0f}) &&
+                   samePosition(queries[2], {4.68f, 8.0f}) &&
+                   samePosition(state.position, {4.68f, 8.0f}),
+               "blocked turn/held input failed to enter an available nearby lane");
+    }
 
-    PlayerMovementState noSnapState = movementStateFixture();
-    noSnapState.driveDirection = CardinalDirection::East;
-    noSnapState.movementDirection = CardinalDirection::East;
-    std::vector<XZ> noSnapQueries;
-    const PlayerMovementUpdate noSnap = advanceActivePlayerMovement(
-        noSnapState, snapParameters,
-        [&](XZ candidate) {
-            noSnapQueries.push_back(candidate);
-            return true;
-        });
-    expect(noSnap.valid && noSnap.movementAccepted &&
-               noSnapQueries.size() == 1U &&
-               samePosition(noSnapQueries[0], {4.68f, 7.73f}) &&
-               samePosition(noSnapState.position, {4.68f, 7.73f}),
-           "straight movement introduced an opportunistic lane snap");
+    // Neither a blocked aligned origin nor a blocked exit may move the tank
+    // sideways. The direction still changes immediately so it can shoot.
+    for (bool anchorAvailable : {false, true})
+    {
+        PlayerMovementState state = movementStateFixture();
+        state.iceSlipTimer = 0.33f;
+        std::vector<XZ> queries;
+        const PlayerMovementUpdate update = advanceActivePlayerMovement(
+            state, snapParameters,
+            [&](XZ candidate) {
+                queries.push_back(candidate);
+                return anchorAvailable && samePosition(candidate, {4.18f, 8.0f});
+            });
+        expect(update.blocked && !update.movementAccepted && !update.dust &&
+                   queries.size() == (anchorAvailable ? 3U : 2U) &&
+                   samePosition(state.position, {4.18f, 7.73f}) && !state.moving &&
+                   state.movementDirection == CardinalDirection::East &&
+                   nearlyEqual(state.yaw, tanks3d::core::cardinalYaw(CardinalDirection::East)) &&
+                   nearlyEqual(state.iceSlipTimer, 0.0f),
+               "failed lane assistance changed position or retained momentum");
+    }
+
+    // Keep the strict 5/16-tile limit; do not jump to a distant route, align
+    // zero-time commands, or re-query an already aligned blocked position.
+    for (float laneOffset : {0.0f, 0.3125f, 0.40f})
+    {
+        PlayerMovementState state = movementStateFixture();
+        state.position.z = 8.0f + laneOffset;
+        int queries = 0;
+        const PlayerMovementUpdate update = advanceActivePlayerMovement(
+            state, snapParameters, [&](XZ) { ++queries; return false; });
+        expect(update.blocked && queries == 1 &&
+                   samePosition(state.position, {4.18f, 8.0f + laneOffset}),
+               "blocked movement exceeded lane assistance range");
+    }
+    PlayerMovementState zeroTurnState = movementStateFixture();
+    PlayerMovementParameters zeroTurnParameters = snapParameters;
+    zeroTurnParameters.elapsed = 0.0f;
+    int zeroTurnQueries = 0;
+    const PlayerMovementUpdate zeroTurn = advanceActivePlayerMovement(
+        zeroTurnState, zeroTurnParameters,
+        [&](XZ) { ++zeroTurnQueries; return false; });
+    expect(zeroTurn.blocked && zeroTurnQueries == 1 &&
+               samePosition(zeroTurnState.position, {4.18f, 7.73f}),
+           "zero elapsed turning caused lane movement");
 
     reporter.beginSuite("player-movement-ice-carry-and-expiry");
     const auto iceState = [] {
@@ -1375,14 +1414,13 @@ int main()
             return true;
         });
     expect(turningExpiry.valid && turningExpiry.movementAccepted &&
-               turningExpiryQueries.size() == 2U &&
-               samePosition(turningExpiryQueries[0], {4.0f, 5.0f}) &&
-               samePosition(turningExpiryQueries[1], {4.15f, 5.0f}) &&
+               turningExpiryQueries.size() == 1U &&
+               samePosition(turningExpiryQueries[0], {4.15f, 5.0f}) &&
                samePosition(turningExpiryState.position, {4.15f, 5.0f}) &&
                turningExpiryState.movementDirection ==
                    CardinalDirection::East && turningExpiryState.moving &&
                nearlyEqual(turningExpiryState.iceSlipTimer, 0.0f),
-           "expired turn carry did not snap then move in the drive direction");
+           "expired turn carry did not immediately move in the drive direction");
 
     PlayerMovementState releaseExpiryState = iceState();
     releaseExpiryState.driveDirection = CardinalDirection::East;

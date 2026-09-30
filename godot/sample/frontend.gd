@@ -169,6 +169,18 @@ func _ready() -> void:
     menu.hide()
     pause_panel.hide()
     report_panel.hide()
+    Input.joy_connection_changed.connect(pad_connection_changed)
+
+func pad_connection_changed(device: int, _connected: bool) -> void:
+    # Bluetooth discovery can finish after the deployment menu is built.
+    # Device IDs may also be reused: a held direction from the previous
+    # connection must not swallow the new controller's first menu movement.
+    pad_axes.erase(device)
+    pad_directions.erase(device)
+    input_axes.erase(device)
+    input_active.erase(device)
+    input_active.erase("trigger_%d" % device)
+    refresh_menu()
 
 func make_theme() -> Theme:
     var theme := Theme.new()
@@ -343,7 +355,7 @@ func build_menu() -> void:
     menu_help.offset_bottom = -51
     menu_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     menu_help.add_theme_color_override("font_color",Color("ffe05e"))
-    menu_confirm = label("BOTTOM FACE / ENTER: START OR OPEN",menu,25)
+    menu_confirm = label("START / +: PLAY   A / B / ENTER: SELECT",menu,25)
     menu_confirm.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
     menu_confirm.offset_top = -94
     menu_confirm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -403,14 +415,15 @@ func refresh_menu() -> void:
         tech_labels[index].text = "P%d TECH  %s"%[index+1," > ".join(TECH[nation])]
     menu_subtitle.text = {"setup":"TILTED TOP-DOWN ARMORED COMBAT","advanced":"ADVANCED SETTINGS","network":"LOCAL NETWORK CO-OP"}[menu_page]
     menu_panel.offset_bottom = 570 if menu_page == "setup" else (548 if menu_page == "advanced" else 480)
-    menu_confirm.visible = menu_page == "setup"
+    menu_confirm.visible = menu_page in ["setup", "advanced"]
+    menu_confirm.offset_top = -76 if menu_page == "advanced" else -94
     crew_help.visible = menu_page == "setup"
     if menu_page == "setup":
         menu_help.text = "D-PAD / STICK OR KEYS: SELECT / CHANGE   SHOULDER / SHIFT: x10"
         crew_help.text = "P1 YOU: PAD / ARROWS   P2 AI TEAMMATE" if mode == 2 else "PLAYERS: 1 PLAYER / 2 PLAYERS / AI AS P2"
         device_help.text = "GAMEPADS %d   %s   F11 FULLSCREEN   MINUS / ESC QUIT"%[Input.get_connected_joypads().size(),"1P/AI: EITHER PAD" if mode != 1 else "FIRST=P1 SECOND=P2"]
     elif menu_page == "advanced":
-        menu_help.text = "HP 1-6   RATES -30% TO +30% (STEP 5%)\nVIEW LEFT 45 TO RIGHT 45 / ELEVATION 40 TO 70 (STEP 5 DEG)\nBOTTOM FACE / ENTER: SELECT   MINUS / ESC: RETURN   TOP FACE / R: RESET"
+        menu_help.text = "HP 1-6   RATES -30% TO +30% (STEP 5%)\nVIEW LEFT 45 TO RIGHT 45 / ELEVATION 40 TO 70 (STEP 5 DEG)\nMINUS / ESC: RETURN   TOP FACE / R: RESET"
         device_help.text = "F11 FULLSCREEN"
     else:
         menu_help.text = "YOUR NATION: %s   HOST STAGE: %d   LIVES: %d\nChoose your nation and host rules in the main setup menu.\n%s"%[NATIONS[controls.nation_p1.selected],int(controls.stage.value),int(controls.lives.value),"ESC / MINUS: CANCEL" if network_pending else "ARROWS / PAD: SELECT   ENTER: OPEN   ESC: BACK"]
@@ -472,6 +485,10 @@ func menu_action(action: String, coarse: bool = false) -> void:
         else: quit_requested.emit()
         return
     if network_pending: return
+    if action == "start" and menu_page in ["setup", "advanced"]:
+        settings = read_settings()
+        start_requested.emit(settings.duplicate())
+        return
     if action == "reset" and menu_page == "advanced": reset_advanced(); return
     if action in ["one","two"] and menu_page == "setup":
         controls.mode.select(0 if action == "one" else 1)
@@ -523,7 +540,8 @@ func _input(event: InputEvent) -> void:
             JOY_BUTTON_DPAD_DOWN: action = "down"
             JOY_BUTTON_DPAD_LEFT: action = "left"
             JOY_BUTTON_DPAD_RIGHT: action = "right"
-            JOY_BUTTON_A, JOY_BUTTON_START: action = "accept"
+            JOY_BUTTON_A, JOY_BUTTON_B: action = "accept"
+            JOY_BUTTON_START: action = "start" if menu_page in ["setup", "advanced"] else "accept"
             JOY_BUTTON_BACK: action = "cancel"
             JOY_BUTTON_Y: action = "reset"
         coarse = Input.is_joy_button_pressed(event.device,JOY_BUTTON_LEFT_SHOULDER) or Input.is_joy_button_pressed(event.device,JOY_BUTTON_RIGHT_SHOULDER)
@@ -826,6 +844,7 @@ func build_pause() -> void:
     pause_controls = label("",column,14)
     pause_controls.add_theme_constant_override("line_spacing",8)
     resume_button = button("ENTER: RESUME",column,func(): resume_requested.emit())
+    resume_button.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
     restart_button = button("R: RESTART STAGE",column,func(): restart_requested.emit())
     setup_button = button("ESC: SETUP",column,func(): menu_requested.emit())
     for action in [resume_button,restart_button,setup_button]:
@@ -859,7 +878,7 @@ func note_input(event: InputEvent, allow_pad: bool = true) -> void:
         if key in accepted: input_device = "keyboard"
     elif allow_pad and event is InputEventJoypadButton:
         if event.pressed and event.button_index in [JOY_BUTTON_DPAD_UP,JOY_BUTTON_DPAD_DOWN,
-            JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_RIGHT,JOY_BUTTON_A,JOY_BUTTON_X,
+            JOY_BUTTON_DPAD_LEFT,JOY_BUTTON_DPAD_RIGHT,JOY_BUTTON_A,JOY_BUTTON_B,JOY_BUTTON_X,
             JOY_BUTTON_RIGHT_SHOULDER,JOY_BUTTON_START,JOY_BUTTON_BACK]:
             input_device = "gamepad"
         elif menu_open and event.pressed and event.button_index==JOY_BUTTON_Y:
@@ -912,7 +931,7 @@ func refresh_control_hints(value: Dictionary, network: Dictionary) -> void:
     var height := maxf(340.0,260.0+22.0*pause_controls.text.split("\n").size())
     pause_panel.offset_top = -height*.5
     pause_panel.offset_bottom = height*.5
-    resume_button.text = ">  PLUS / BOTTOM FACE: RESUME" if pad else ">  ENTER: RESUME"
+    resume_button.text = ">  PLUS / A / B: RESUME" if pad else ">  ENTER: RESUME"
     restart_button.text = ">  R: RESTART STAGE"
     setup_button.text = ">  MINUS: SETUP" if pad else ">  ESC: SETUP"
 
