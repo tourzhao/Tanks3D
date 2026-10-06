@@ -10,6 +10,9 @@ gameplay, AI and networking core.** It is still in development and available by
 [Alpha 4 download](#download-alpha-4) is the older raylib version; it does not
 contain the Godot features and visuals shown here.
 
+<a id="current-main-preview"></a>
+<a id="current-development-preview"></a>
+
 ## October 6 development preview
 
 ![Godot gameplay with P1 and an AI teammate](build/release-evidence/github-preview-20261006/game/clean.png)
