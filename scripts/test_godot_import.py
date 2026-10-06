@@ -10,6 +10,7 @@ It does not validate GPU rendering, input devices or performance.
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import subprocess
@@ -159,13 +160,31 @@ def validate_running_gear_report(text):
     return report
 
 
-def validate_audio_report(text):
+def validate_audio_report(text, require_mixer=False):
     reports = re.findall(r"^TANKS_AUDIO_CHECKS_PASSED (.+)$", text, flags=re.MULTILINE)
     if len(reports) != 1:
         raise RuntimeError("Expected exactly one completed audio resource report")
-    report = json.loads(reports[0])
-    if report.get("resources") != 22 or "resources" not in report.get("checks", []):
+    try:
+        report = json.loads(reports[0])
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Audio report must contain valid JSON") from error
+    if not isinstance(report, dict) or type(report.get("resources")) is not int or report["resources"] != 22:
         raise RuntimeError("Audio resource checks did not validate every native cue")
+    checks = report.get("checks")
+    required = {"resources", "lazy-pool", "reuse", "voice-limit", "single", "priority",
+                "engine-exclusive", "disabled", "zero-gain"}
+    if (not isinstance(checks, list) or not all(isinstance(value, str) for value in checks)
+            or len(checks) != len(set(checks)) or not required.issubset(set(checks))):
+        raise RuntimeError("Audio checks did not complete every lazy voice-pool contract")
+    if require_mixer:
+        required_mixer = {"decoded-mixer", "routing", "overlap-limit", "zero-mute", "volume-restore", "stop"}
+        mixed = report.get("mixed_cues")
+        expected = {path.stem for path in (ROOT / "resources/sounds").glob("*.ogg")}
+        if (not required_mixer.issubset(set(checks)) or not isinstance(mixed, dict)
+                or len(expected) != 22 or set(mixed) != expected
+                or not all(type(value) in (int, float) and math.isfinite(value) and value > 0.00001
+                           for value in mixed.values())):
+            raise RuntimeError("Audio mixer did not confirm decoded samples and routing for all 22 recordings")
     return report
 
 
@@ -246,14 +265,15 @@ def scene_probe(output):
     return scenes
 
 
-def run_check(godot, project, logs, label, arguments, timeout):
+def run_check(godot, project, logs, label, arguments, timeout, headless=True, cwd=None):
     engine_log = logs / f"{label}.engine.log"
     console_log = logs / f"{label}.console.log"
     engine_log.unlink(missing_ok=True)
-    command = [str(godot), "--headless", "--path", str(project),
+    command = [str(godot), *(["--headless"] if headless else []),
+               *(["--path", str(project)] if project is not None else []),
                "--log-file", str(engine_log), *arguments]
     try:
-        result = subprocess.run(command, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+        result = subprocess.run(command, cwd=ROOT if cwd is None else cwd, text=True, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, timeout=timeout)
     except subprocess.TimeoutExpired as error:
         output = error.stdout or b""
@@ -267,16 +287,73 @@ def run_check(godot, project, logs, label, arguments, timeout):
     return ANSI.sub("", result.stdout)
 
 
-def main():
+def imported_files(project, staged):
+    """Fingerprint import products without editor layouts or GPU caches."""
+    metadata = [project / ".godot" / name for name in
+                ("extension_list.cfg", "global_script_class_cache.cfg", "uid_cache.bin")]
+    imported = project / ".godot/imported"
+    if not imported.is_dir() or any(not path.is_file() for path in metadata):
+        return None
+    products = metadata + [path for path in imported.rglob("*") if path.is_file()]
+    for name in staged:
+        products += [path for suffix in (".import", ".uid")
+                     if (path := project / (name + suffix)).exists()]
+    result = {}
+    for path in products:
+        if any(part.is_symlink() for part in [path, *path.parents] if part.is_relative_to(project)):
+            raise RuntimeError(f"Linked import product: {path}")
+        result[path.relative_to(project).as_posix()] = digest(path)
+    return result
+
+
+def prepare_import(godot, project, logs, timeout, dependencies, staged, force=False):
+    """Reuse only an import whose engine, staged inputs and products still match."""
+    receipt = logs / "prepare-result.json"
+    if receipt.is_symlink():
+        raise RuntimeError("Import preparation receipt must not be a symlink")
+    expected = {"schema": "tanks3d-godot-preparation-v2", "scope": "staging/import",
+                "dependencies": dependencies, "godot_sha256": digest(godot), "staged_sha256": staged}
+    products = imported_files(project, staged)
+    try:
+        previous = json.loads(receipt.read_text())
+    except (OSError, ValueError):
+        previous = None
+    if not force and products is not None and previous == expected | {"imported_sha256": products}:
+        print("PASS cached import (staged inputs and import products unchanged)", flush=True)
+        return
+    receipt.unlink(missing_ok=True)
+    # Godot's editor scan trusts mtimes, while staging intentionally preserves
+    # them. Rescan content on cache misses (including old v1 receipts, which
+    # could attest a changed source alongside its stale imported resource).
+    # Keep importer settings, resource UIDs and compiled products intact.
+    editor = project / ".godot/editor"
+    if any(path.is_symlink() for path in [editor, *editor.parents] if path.is_relative_to(project)):
+        raise RuntimeError(f"Linked editor cache directory: {editor}")
+    for cache in editor.glob("filesystem_cache*"):
+        if cache.is_symlink():
+            raise RuntimeError(f"Linked editor filesystem cache: {cache}")
+        cache.unlink()
+    run_check(godot, project, logs, "import", ["--editor", "--import", "--quit"], timeout)
+    products = imported_files(project, staged)
+    if products is None:
+        raise RuntimeError("Godot import did not produce required discovery and resource metadata")
+    receipt.write_text(json.dumps(expected | {"imported_sha256": products}, indent=2) + "\n")
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--godot", type=Path, default=ROOT / "build/godot-tools/Godot.app/Contents/MacOS/Godot")
     parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
     parser.add_argument("--log-dir", type=Path, default=ROOT / "build/godot/validation")
     parser.add_argument("--skip-stage", action="store_true")
-    parser.add_argument("--import-only", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--prepare-only", action="store_true",
+                       help="Stage resources and import changed inputs without running regression checks")
+    modes.add_argument("--import-only", action="store_true",
+                       help="Run all import/presentation contracts without native/UI gameplay smoke checks")
     parser.add_argument("--frames", type=int, default=180)
     parser.add_argument("--timeout", type=int, default=120)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     project, logs = args.project.resolve(), args.log_dir.resolve()
     if not project.is_relative_to(ROOT / "build") or not logs.is_relative_to(ROOT / "build"):
         parser.error("The staged project and logs must be inside this repository's build/ directory")
@@ -286,12 +363,17 @@ def main():
         parser.error("Frames and timeout must be positive")
     logs.mkdir(parents=True, exist_ok=True)
     receipt = logs / "result.json"
-    receipt.unlink(missing_ok=True)
+    if not args.prepare_only:
+        receipt.unlink(missing_ok=True)
     if not args.skip_stage:
         subprocess.run([sys.executable, str(ROOT / "scripts/prepare_godot_sample.py")], cwd=ROOT, check=True)
     verified_dependencies = validate_dependencies()
     staged = validate_staged(project)
-    run_check(args.godot, project, logs, "import", ["--editor", "--import", "--quit"], args.timeout)
+    prepare_import(args.godot, project, logs, args.timeout, verified_dependencies, staged,
+                   force=not args.prepare_only)
+    if args.prepare_only:
+        print(f"Godot project prepared: {project.relative_to(ROOT)}", flush=True)
+        return
     for source in sorted((ROOT / "godot/sample").rglob("*.gd")):
         relative = source.relative_to(ROOT / "godot/sample")
         run_check(args.godot, project, logs, "parse-" + relative.with_suffix("").as_posix().replace("/", "__"),

@@ -47,6 +47,10 @@ int tanks_sample_restart(void *handle);
 int tanks_sample_reset(void *handle, int seed, int stage, int players, int ai_p2);
 int tanks_sample_step(void *handle, double dt, unsigned p1_bits, unsigned p2_bits);
 const char *tanks_sample_snapshot(void *handle);
+// The same read-only presentation fields as snapshot, with digest omitted.
+// Rendering can avoid serializing/hashing the complete deterministic world;
+// tests, LAN diagnostics and final reports retain the full snapshot above.
+const char *tanks_sample_presentation_snapshot(void *handle);
 // Ordered native audio commands, outside the simulation snapshot/RNG/digest.
 // Returns a JSON array of play(cue: AudioCue ordinal), engine(active,moving),
 // and stop operations, then clears the queue. No world state is advanced.

@@ -28,7 +28,12 @@ with `LICENSE`, `ASSET_LICENSES.md` and this notice. Raylib and its embedded
 dependencies remain used by the original application; their historical records
 are retained rather than removed: `LICENSES/Zlib-raylib.txt`,
 `LICENSES/Raylib-6.0-dependencies.txt` and their referenced license texts. The
-local app is ad-hoc signed and is not a notarized or attested release candidate.
+complete notice collection remains external to the project PCK. Development
+staging retains both texture sources, while the production Godot PCK uses only
+the grass texture through its import mapping and output. The 22 OGG recordings
+use the same mapping approach; raw grass PNG and OGG copies remain in development
+staging rather than being duplicated inside the PCK. The local app is ad-hoc signed
+and is not a notarized or attested release candidate.
 SCons is a build dependency, not an application runtime. These optional targets
 do not change the original raylib app's release-resource manifest.
 

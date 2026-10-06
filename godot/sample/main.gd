@@ -1,6 +1,7 @@
 extends Node
 
 const Art = preload("res://art.gd")
+const SceneLighting = preload("res://scene_lighting.gd")
 const Frontend = preload("res://frontend.gd")
 const AudioBank = preload("res://audio_bank.gd")
 const EffectPool = preload("res://effect_pool.gd")
@@ -53,6 +54,7 @@ var capture_dir := ""
 var frame_limit := 0
 var capture_at := 300
 var render_size := Vector2i(1280, 720)
+var fixed_render_size := Vector2i.ZERO
 var timings: Array[float] = []
 var update_times: Array[float] = []
 var capturing := false
@@ -192,10 +194,16 @@ func _ready() -> void:
             var dimensions: PackedStringArray = arg.get_slice("=", 1).split("x")
             if dimensions.size() == 2:
                 render_size = Vector2i(dimensions[0].to_int(), dimensions[1].to_int())
+                fixed_render_size = render_size
     if render_size.x < 640 or render_size.y < 360 or render_size.x > 3840 or render_size.y > 2160 or render_size.x * 9 != render_size.y * 16:
         push_error("Sample camera comparison requires a 16:9 render size from 640x360 through 3840x2160.")
         get_tree().quit(2)
         return
+    # Diagnostic captures and timed runs keep their established dimensions even
+    # when the host window changes; an explicit --render-size takes precedence.
+    if fixed_render_size == Vector2i.ZERO and (benchmark or capture_menu or
+            not capture_dir.is_empty() or frame_limit > 0):
+        fixed_render_size = render_size
     if not ClassDB.class_exists("TanksSampleCore"):
         push_error("Native gameplay extension missing. Run make godot-sample.")
         get_tree().quit(2)
@@ -260,6 +268,7 @@ func _ready() -> void:
 
 
 func create_scene() -> void:
+    render_size = desired_render_size(get_window().size)
     viewport = SubViewport.new()
     viewport.size = render_size
     viewport.own_world_3d = true
@@ -272,33 +281,8 @@ func create_scene() -> void:
     terrain = Node3D.new()
     world.add_child(terrain)
 
-    var environment_node := WorldEnvironment.new()
-    var environment := Environment.new()
-    environment.background_mode = Environment.BG_COLOR
-    environment.background_color = Color("243c43")
-    environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    environment.ambient_light_color = Color("a1bcc2")
-    environment.ambient_light_energy = 0.48
-    environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-    environment.tonemap_exposure = 1.0
-    environment.glow_enabled = true
-    environment.glow_intensity = 0.25
-    if RenderingServer.get_current_rendering_method() == "forward_plus":
-        environment.ssao_enabled = true
-        environment.ssao_radius = 0.75
-        environment.ssao_intensity = 1.7
-    environment_node.environment = environment
-    world.add_child(environment_node)
-    var sun := DirectionalLight3D.new()
-    sun.rotation_degrees = Vector3(-54, -28, 0)
-    sun.light_color = Color("fff0cf")
-    sun.light_energy = 1.45
-    sun.shadow_enabled = true
-    sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-    sun.directional_shadow_max_distance = 70.0
-    sun.shadow_bias = 0.04
-    sun.shadow_normal_bias = 0.8
-    world.add_child(sun)
+    world.add_child(SceneLighting.make_environment())
+    world.add_child(SceneLighting.make_sun())
 
     # Runtime-created materials are invisible to the editor's 3D texture
     # detector. Generate a mip chain explicitly to prevent distant grass crawl.
@@ -344,7 +328,9 @@ func create_scene() -> void:
     camera.keep_aspect = Camera3D.KEEP_HEIGHT
     camera.size = 18.5
     camera.near = 0.1
-    camera.far = 150.0
+    # Godot uses camera.far for orthographic directional shadows. Keep enough
+    # depth for the widest co-op view without spreading the shadow map to 150.
+    camera.far = 70.0
     world.add_child(camera)
     player_visibility = PlayerVisibility.new(world)
 
@@ -375,17 +361,44 @@ func create_scene() -> void:
     frontend.restart_requested.connect(request_restart)
     frontend.menu_requested.connect(return_to_menu)
     frontend.confirm_requested.connect(func(): queued_commands |= 32)
-    frontend.pixel_changed.connect(func(value: bool):
-        pixel_style = value
-        presentation_dirty = true
-        pixel_material.set_shader_parameter("pixel_style", value))
-    get_viewport().size_changed.connect(func(): presentation_dirty = true)
+    frontend.pixel_changed.connect(set_pixel_style)
+    get_viewport().size_changed.connect(update_render_size)
     frontend.volume_changed.connect(set_audio_volume)
     frontend.network_requested.connect(start_network)
     frontend.network_cancel_requested.connect(return_to_menu)
     frontend.quit_requested.connect(func():
         save_profile()
         get_tree().quit())
+
+
+func desired_render_size(window_pixels: Vector2i) -> Vector2i:
+    if fixed_render_size != Vector2i.ZERO:
+        return fixed_render_size
+    # Fit the letterboxed 16:9 scene in actual window pixels. Window.size already
+    # accounts for high DPI; the stretched 1280x720 canvas is not a pixel budget.
+    # Preserve the existing Pixel grid and bound normal rendering to 1080p.
+    var units := clampi(floori(minf(window_pixels.x / 16.0, window_pixels.y / 9.0)),
+        40, 80 if pixel_style else 120)
+    return Vector2i(units * 16, units * 9)
+
+
+func update_render_size() -> void:
+    presentation_dirty = true
+    var desired := desired_render_size(get_window().size)
+    if desired == render_size:
+        return
+    render_size = desired
+    viewport.size = render_size
+    # Menus freeze simulation and reuse the last scene frame. A resized render
+    # target needs one fresh draw even while process_game_frame returns early.
+    viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+    pixel_material.set_shader_parameter("scene_size", Vector2(render_size))
+
+
+func set_pixel_style(value: bool) -> void:
+    pixel_style = value
+    pixel_material.set_shader_parameter("pixel_style", value)
+    update_render_size()
 
 
 func create_audio() -> void:
@@ -425,7 +438,7 @@ func restart(reset_stage: int = -1) -> void:
     queued_commands = 0
     queued_players = [0, 0]
     previous_active = false
-    state = JSON.parse_string(core.snapshot())
+    state = JSON.parse_string(core.presentation_snapshot())
     update_world(0.0, true)
 
 
@@ -454,7 +467,7 @@ func start_from_menu(value: Dictionary) -> void:
     clear_effects()
     queued_commands = 0
     queued_players = [0, 0]
-    state = JSON.parse_string(core.snapshot())
+    state = JSON.parse_string(core.presentation_snapshot())
     update_world(0.0, true)
 
 
@@ -465,7 +478,7 @@ func request_restart() -> void:
         clear_effects()
         queued_commands = 0
         queued_players = [0, 0]
-        state = JSON.parse_string(core.snapshot())
+        state = JSON.parse_string(core.presentation_snapshot())
         configuration.stage = int(state.stage)
         update_world(0.0, true)
 
@@ -570,7 +583,7 @@ func update_network(local_bits: int) -> bool:
     frontend.set_status(status + "\nEsc cancels the connection.")
     if network_state.get("phase", "") == "playing" and not network_started:
         network_started = true
-        var connected_snapshot: Dictionary = JSON.parse_string(core.snapshot())
+        var connected_snapshot: Dictionary = JSON.parse_string(core.presentation_snapshot())
         configuration = connected_snapshot.get("settings", configuration).duplicate()
         for key in configuration:
             configuration[key] = bool(configuration[key]) if key == "ai_p2" else int(configuration[key])
@@ -797,7 +810,7 @@ func process_game_frame(delta: float, begin: int) -> void:
         frontend.show_menu(core.error())
         return
     if frame_trace: frame_trace.mark("native", Time.get_ticks_usec())
-    state = JSON.parse_string(core.snapshot())
+    state = JSON.parse_string(core.presentation_snapshot())
     if frame_trace: frame_trace.mark("snapshot", Time.get_ticks_usec())
     if state.get("menu_requested", false) and not benchmark and not demo:
         return_to_menu()
@@ -890,25 +903,28 @@ func update_world(dt: float, reset_gear: bool = false) -> void:
     presented_vehicle_tick = native_tick
     presented_vehicle_intro = native_intro
     var live: Dictionary = {}
+    var shell_data: Array = state.get("shells", [])
+    var has_shells := not shell_data.is_empty()
+    var shell_sources: Dictionary = {}
+    # Collect identities before visibility filters: inactive/destroyed owners
+    # can still have shells in flight. Position/yaw/body animation stay unused.
     for player in state.get("players", []):
+        var key := "p%d" % int(player.id)
+        if has_shells:
+            shell_sources[key] = player
         if player.active:
-            update_vehicle("p%d" % int(player.id), player, false, live, dt, reset_gear)
+            update_vehicle(key, player, false, live, dt, reset_gear)
     for enemy in state.get("enemies", []):
+        var key := "e%d" % int(enemy.id)
+        if has_shells:
+            shell_sources[key] = enemy
         if not enemy.get("destroyed", false):
-            update_vehicle("e%d" % int(enemy.id), enemy, true, live, dt, reset_gear)
+            update_vehicle(key, enemy, true, live, dt, reset_gear)
     for key in vehicles.keys():
         if not live.has(key):
             vehicles[key].queue_free()
             vehicles.erase(key)
             vehicle_keys.erase(key)
-    # Retain identity lookup for destroyed owners whose in-flight shells remain.
-    # No current position, yaw or animated body transform enters shell flight.
-    var shell_sources: Dictionary = {}
-    for player in state.get("players", []):
-        shell_sources["p%d" % int(player.id)] = player
-    for enemy in state.get("enemies", []):
-        shell_sources["e%d" % int(enemy.id)] = enemy
-    var shell_data: Array = state.get("shells", [])
     while shells.size() < shell_data.size():
         var node := Art.make_shell()
         world.add_child(node)
@@ -1133,9 +1149,8 @@ static func shell_flight_presentation(item: Dictionary, source: Dictionary = {})
     var muzzle := Vector3(0, .56, -.625)
     if not source.is_empty():
         var enemy := int(item.get("owner", 0)) == 1
-        var profile: Dictionary = Art._vehicle_profile(int(source.get("nation", 0)), enemy,
+        muzzle = Art.vehicle_muzzle(int(source.get("nation", 0)), enemy,
             int(source.get("type", 0)), int(source.get("level", 0)))
-        muzzle = profile.muzzle
     var speed := Vector2(float(item.get("vx", 0)), float(item.get("vz", 0))).length()
     var traveled := maxf(0.0, 4.0 - float(item.get("life", 0.0))) * speed
     var emerged := traveled + .625 + muzzle.z
@@ -1165,6 +1180,9 @@ func clear_effects() -> void:
 func capture_pair() -> void:
     capturing = true
     paused_for_capture = true
+    # Diagnostics retain this frame's complete world/RNG fingerprint.
+    var captured_frame := frame_number
+    var captured_snapshot: Dictionary = JSON.parse_string(core.snapshot())
     clear_battle_input()
     DirAccess.make_dir_recursive_absolute(capture_dir)
     var initial := pixel_style
@@ -1182,7 +1200,7 @@ func capture_pair() -> void:
         if capture_crop.has_area():
             image.get_region(capture_crop).save_png(capture_dir.path_join("tank-native-%s.png" % suffix))
     var metadata := {"window": get_viewport().get_visible_rect().size,
-        "render_size": render_size, "frame": frame_number, "snapshot": state,
+        "render_size": render_size, "frame": captured_frame, "snapshot": captured_snapshot,
         "camera_position": camera.position, "camera_size": camera.size,
         "camera_rotation": camera.rotation_degrees, "close_up": close_up,
         "tank_crop_pixels": [capture_crop.size.x, capture_crop.size.y],
@@ -1219,6 +1237,8 @@ func tank_screen_bounds(image_size: Vector2i) -> Rect2i:
 
 
 func write_report() -> void:
+    # Only diagnostics need the complete world/RNG digest; rendering omits it.
+    var final_snapshot: Dictionary = JSON.parse_string(core.snapshot())
     var steady: Array[float] = timings.slice(mini(120, timings.size()))
     var update_steady: Array[float] = update_times.slice(mini(120, update_times.size()))
     steady.sort()
@@ -1234,7 +1254,7 @@ func write_report() -> void:
         "p99_wall_frame_ms": percentile(wall_steady, 0.99), "wall_timing_samples": wall_steady.size(),
         "wall_sample_clock": "Time.get_ticks_usec", "wall_observed_seconds": (Time.get_ticks_usec() - first_process_us) / 1000000.0,
         "max_draw_calls": max_draw_calls, "max_objects": max_objects, "max_static_bytes": max_memory,
-        "final_digest": state.get("digest", ""), "stage": stage, "seed": seed_value,
+        "final_digest": final_snapshot.get("digest", ""), "stage": stage, "seed": seed_value,
         "demo_fixed_step": demo, "active_gameplay_frames": active_frames, "benchmark_resets": benchmark_resets,
         "timing_samples": steady.size(), "terrain_scans": terrain_scans,
         "note": "Process delta includes vsync; not GPU timing. Excludes first 120 samples. Benchmark collects active combat only, resets on end."}
@@ -1307,9 +1327,7 @@ func _input(event: InputEvent) -> void:
         if event.keycode == KEY_TAB and event.pressed and not event.echo and \
                 not frontend.menu_open and not capturing and not paused_for_capture and \
                 not get_viewport().gui_disable_input:
-            pixel_style = not pixel_style
-            presentation_dirty = true
-            pixel_material.set_shader_parameter("pixel_style", pixel_style)
+            set_pixel_style(not pixel_style)
             get_viewport().set_input_as_handled()
             return
         # Always observe releases, including one consumed by a focused Control

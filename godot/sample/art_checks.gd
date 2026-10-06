@@ -65,7 +65,7 @@ func _initialize() -> void:
         "meshes_checked": checked_meshes.size(),
         "national_shapes": national_shape_results,
         "checks": ["geometry", "winding", "budgets", "cache", "material-isolation",
-            "identity", "national-color", "national-shape", "armor-planes", "cast-surfaces", "enemy-status-patches", "muzzle", "footprints", "tier-proportions", "motion", "effects", "rng"],
+            "identity", "national-color", "national-shape", "armor-planes", "cast-surfaces", "gun-surfaces", "enemy-status-patches", "muzzle", "footprints", "tier-proportions", "motion", "effects", "rng"],
     }))
     quit()
 
@@ -221,6 +221,7 @@ func check_recognition_landmarks(tank: Node3D, label: String) -> void:
 
 
 func check_vehicles() -> void:
+    check_vehicle_profiles()
     for nation in 3:
         for enemy in [false, true]:
             for tier in 4:
@@ -295,7 +296,36 @@ func check_vehicles() -> void:
     check_national_shapes()
     check_armor_planes()
     check_cast_surfaces()
+    check_gun_surfaces()
     completed_groups.append("vehicles")
+
+
+func check_vehicle_profiles() -> void:
+    var cases := 0
+    for nation in [-1,0,1,2,3]:
+        var normalized_nation := clampi(nation,0,2)
+        for enemy in [false,true]:
+            for role in [-1,0,1,2,3,4]:
+                for level in [-1,0,1,2,3,4]:
+                    var tier: int = [1,0,2,3][clampi(role,0,3)] if enemy else clampi(level,0,3)
+                    var profile: Dictionary = Art._vehicle_profile(nation,enemy,role,level)
+                    var normalized: Dictionary = Art._vehicle_profile(normalized_nation,enemy,clampi(role,0,3),clampi(level,0,3))
+                    # Role metadata retains the supplied value; only the visual
+                    # model selection clamps it, as with the original profile.
+                    normalized.role = role
+                    var label := "profile/%d/%s/%d/%d" % [nation,enemy,role,level]
+                    expect(profile == normalized,label + ": out-of-range selection changed authored dimensions")
+                    expect(profile.nation == normalized_nation and profile.tier == tier
+                        and profile.enemy == enemy and profile.role == role,
+                        label + ": wrong nation/player-tier/enemy-role mapping")
+                    expect(profile.name == PLAYER_NAMES[normalized_nation][tier],label + ": wrong model name")
+                    var attachment: Vector2 = PLAYER_MUZZLES[normalized_nation][tier]
+                    var expected := Vector3(0,attachment.x,attachment.y)
+                    expect(profile.muzzle.is_equal_approx(expected),label + ": profile changed the authored gun mount")
+                    expect(Art.vehicle_muzzle(nation,enemy,role,level).is_equal_approx(expected),
+                        label + ": lightweight gun query disagrees with the authored mount")
+                    cases += 1
+    expect(cases == 360,"vehicle profile checks skipped selection/clamping cases")
 
 
 func check_armor_planes() -> void:
@@ -399,6 +429,57 @@ func check_cast_surfaces() -> void:
                     shared[position] = index
         for index in range(side_vertices,vertices.size()):
             expect(absf(normals[index].y) > .9999,d.shape+": roof or underside lost its hard normal")
+
+
+func check_gun_surfaces() -> void:
+    # A rotated taper catches radial-only cone normals. Smoothing must keep
+    # the submitted positions and caps identical to the existing flat tube.
+    var a := Vector3(.2,.3,.4)
+    var b := Vector3(-.4,.8,-.7)
+    var axis := (b-a).normalized()
+    for end_radius in [.12,.07]:
+        var flat = Art.Geometry.new()
+        flat.tube(a,b,.12,end_radius,Color.WHITE,"armor",10,.17)
+        var smooth = Art.Geometry.new()
+        smooth.tube(a,b,.12,end_radius,Color.WHITE,"armor",10,.17,true)
+        var before: Array = flat.surfaces.armor.commit().surface_get_arrays(0)
+        var arrays: Array = smooth.surfaces.armor.commit().surface_get_arrays(0)
+        var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+        var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+        expect(vertices == before[Mesh.ARRAY_VERTEX],"tube smoothing changed geometry or triangle count")
+        for index in vertices.size():
+            if index%12 >= 6:
+                expect(normals[index].dot(-axis if index%12 < 9 else axis) > .9999,
+                    "tube cap lost its outward hard normal")
+                continue
+            var radial := vertices[index]-a-axis*(vertices[index]-a).dot(axis)
+            var generator: Vector3 = (b-a)+radial.normalized()*(end_radius-.12)
+            expect(normals[index].dot(radial) > 0.0 and absf(normals[index].length()-1.0) < .001
+                and absf(normals[index].dot(generator.normalized())) < .001,
+                "smooth taper normal is inverted or not perpendicular to the side")
+            var next := ((index/12+1)%10)*12
+            if index%12 == 5:
+                expect(normals[index].is_equal_approx(normals[next]),"tube has a split circumferential normal")
+    # Actual cannon sections keep continuous circumferential shading and hard
+    # steps. The existing vehicle checks cover muzzle positions and budgets.
+    var cannon = Art.Geometry.new()
+    Art._cannon(cannon,Vector3(0,.6,-1.4),-.2,.06,Color.WHITE,true)
+    for group in ["armor","metal"]:
+        var arrays: Array = cannon.surfaces[group].commit().surface_get_arrays(0)
+        var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+        var sections := 3 if group == "armor" else 2
+        for section in sections:
+            var start := section*60
+            for side in 10:
+                var index := start+side*6
+                var next := start+((side+1)%10)*6
+                expect(normals[index+4].is_equal_approx(normals[next])
+                    and normals[index+1].is_equal_approx(normals[next+2]),
+                    "cannon side has a split circumferential normal")
+        expect(not normals[2].is_equal_approx(normals[60]),"cannon shoulder lost its hard edge")
+        if group == "metal":
+            for index in range(120,normals.size()):
+                expect(normals[index].dot(Vector3.FORWARD) > .9999,"muzzle lip lost its hard front normal")
 
 
 func armor_vertices(part: MeshInstance3D) -> PackedVector3Array:
@@ -774,7 +855,7 @@ func check_camouflage(tank: Node3D, nation: int, label: String) -> void:
             else:
                 expect(green_pixels > pixels*.08,label + ": Soviet whitewash has no exposed green region")
                 expect(base_peak < .95 and material.diffuse_mode == BaseMaterial3D.DIFFUSE_LAMBERT
-                    and material.metallic_specular <= .10,
+                    and material.metallic == 0.0 and material.roughness >= .75 and material.metallic_specular <= .20,
                     label + ": winter roofs reverted to a white/highlight-washed material")
             expect(adjacent_matches > (image.get_width()-1)*image.get_height()*.85,
                 label + ": camouflage collapsed into fine per-pixel noise")
@@ -990,6 +1071,7 @@ func check_environment_edges() -> void:
 
 func check_world() -> void:
     check_environment_edges()
+    check_uniform_tile_cache()
     # Neighboring half-lots meet at the same height along every roof crease.
     for kind in 4:
         for variant in 2:
@@ -1042,7 +1124,8 @@ func check_world() -> void:
             forest_meshes[mesh.get_instance_id()] = mesh
             tree.free()
             counts.forest_cases += 1
-    expect(forest_meshes.size() <= 16,"forest cache grows with map coordinates")
+    expect(forest_meshes.size() > 1 and forest_meshes.size() <= 16,
+        "forest cache lost authored variants or grows with map coordinates")
     for health in 5:
         for steel in [false, true]:
             var wall: Node3D = Art.make_base_wall(health, steel)
@@ -1086,6 +1169,35 @@ func check_world() -> void:
     shell.free()
     shell_peer.free()
     completed_groups.append("world")
+
+
+func check_uniform_tile_cache() -> void:
+    var cases := 0
+    var uniform_meshes: Array[ArrayMesh] = []
+    for tile_type in ["@","-","~"]:
+        var reference: ArrayMesh
+        for row in 26:
+            for col in 26:
+                # Non-brick geometry ignores damage masks as well as the lot
+                # and cell parity. Exercise every coordinate and mask value.
+                var tile: Node3D = Art.make_tile(tile_type,(row*26+col)%16,row,col)
+                var mesh := body(tile).mesh as ArrayMesh
+                if reference == null: reference = mesh
+                expect(mesh == reference,"terrain/%s/%d/%d: identical tile geometry was duplicated" % [tile_type,row,col])
+                tile.free()
+                cases += 1
+        uniform_meshes.append(reference)
+    expect(uniform_meshes[0] != uniform_meshes[1] and uniform_meshes[0] != uniform_meshes[2]
+        and uniform_meshes[1] != uniform_meshes[2],"steel, ice and water cache keys alias different geometry")
+    var brick: Node3D = Art.make_tile("#",15,0,0)
+    var neighboring_brick: Node3D = Art.make_tile("#",15,0,1)
+    var damaged_brick: Node3D = Art.make_tile("#",7,0,0)
+    expect(body(brick).mesh != body(neighboring_brick).mesh,"brick cell parity lost its authored roof/facade variant")
+    expect(body(brick).mesh != body(damaged_brick).mesh,"brick cache ignores destroyed quadrants")
+    brick.free()
+    neighboring_brick.free()
+    damaged_brick.free()
+    expect(cases == 2028,"uniform terrain cache checks skipped a tile type or coordinate")
 
 
 func check_directional_flash() -> void:

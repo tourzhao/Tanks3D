@@ -1,15 +1,25 @@
 """The optional renderer gate must reject silent editor failures."""
 
 import importlib.util
+import hashlib
 import json
+import os
 from pathlib import Path
+import re
+import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("godot_import_gate", ROOT / "scripts/test_godot_import.py")
 GATE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GATE)
+
+AUDIO_POLICY_CHECKS = ["resources", "lazy-pool", "reuse", "voice-limit", "single",
+                       "priority", "engine-exclusive", "disabled", "zero-gain"]
+AUDIO_MIXER_CHECKS = ["decoded-mixer", "routing", "overlap-limit", "zero-mute",
+                      "volume-restore", "stop"]
 
 
 class GodotImportGateTests(unittest.TestCase):
@@ -375,8 +385,59 @@ class GodotImportGateTests(unittest.TestCase):
             GATE.validate_audio_report('TANKS_AUDIO_CHECKS_PASSED {"resources":21,"checks":["resources"]}')
 
     def test_complete_audio_resource_report_passes(self):
-        report = {"resources": 22, "checks": ["resources"], "mixed_cues": {}}
+        report = {"resources": 22, "checks": AUDIO_POLICY_CHECKS, "mixed_cues": {}}
         self.assertEqual(GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps(report)), report)
+
+    def test_audio_requires_each_pool_contract(self):
+        for missing in AUDIO_POLICY_CHECKS:
+            report = {"resources": 22, "checks": [value for value in AUDIO_POLICY_CHECKS if value != missing]}
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, "every lazy"):
+                GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps(report))
+
+    def test_audio_rejects_duplicate_or_invalid_contracts(self):
+        for checks in (None, "resources", AUDIO_POLICY_CHECKS + ["resources"], AUDIO_POLICY_CHECKS + [True]):
+            with self.subTest(checks=checks), self.assertRaisesRegex(RuntimeError, "every lazy"):
+                GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps({"resources": 22, "checks": checks}))
+
+    def test_audio_rejects_malformed_or_repeated_reports(self):
+        with self.assertRaisesRegex(RuntimeError, "valid JSON"):
+            GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED {")
+        for report in ([], None, {"resources": 22.0}, {"resources": True}):
+            with self.subTest(report=report), self.assertRaisesRegex(RuntimeError, "every native cue"):
+                GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps(report))
+        line = "TANKS_AUDIO_CHECKS_PASSED " + json.dumps({"resources": 22, "checks": AUDIO_POLICY_CHECKS}) + "\n"
+        with self.assertRaisesRegex(RuntimeError, "exactly one"):
+            GATE.validate_audio_report(line + line)
+
+    def mixer_report(self):
+        return {"resources": 22, "checks": AUDIO_POLICY_CHECKS + AUDIO_MIXER_CHECKS,
+                "mixed_cues": {path.stem: 0.125 for path in (ROOT / "resources/sounds").glob("*.ogg")}}
+
+    def test_complete_decoded_audio_report_passes(self):
+        report = self.mixer_report()
+        self.assertEqual(GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps(report),
+                                                  require_mixer=True), report)
+
+    def test_audio_mixer_rejects_resource_only_or_partial_reports(self):
+        report = self.mixer_report()
+        partial = [{"resources": 22, "checks": AUDIO_POLICY_CHECKS, "mixed_cues": {}}]
+        for missing in AUDIO_MIXER_CHECKS:
+            partial.append(dict(report, checks=[value for value in report["checks"] if value != missing]))
+        cues = dict(report["mixed_cues"])
+        cues.pop(next(iter(cues)))
+        partial.append(dict(report, mixed_cues=cues))
+        wrong_cues = dict(cues, unknown_cue=0.125)
+        partial.append(dict(report, mixed_cues=wrong_cues))
+        for invalid in partial:
+            with self.subTest(report=invalid), self.assertRaisesRegex(RuntimeError, "decoded samples"):
+                GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps(invalid), require_mixer=True)
+
+    def test_audio_mixer_rejects_silent_or_invalid_samples(self):
+        for sample in (0, -0.1, 0.000001, True, None, "0.125", float("nan"), float("inf")):
+            report = self.mixer_report()
+            report["mixed_cues"][next(iter(report["mixed_cues"]))] = sample
+            with self.subTest(sample=sample), self.assertRaisesRegex(RuntimeError, "decoded samples"):
+                GATE.validate_audio_report("TANKS_AUDIO_CHECKS_PASSED " + json.dumps(report), require_mixer=True)
 
     def effect_pool_report(self):
         return {"status": "passed", "live_limit": 48, "retained_limit": 96,
@@ -413,6 +474,291 @@ class GodotImportGateTests(unittest.TestCase):
         report = self.effect_pool_report()
         self.assertEqual(GATE.validate_effect_pool_report(
             "TANKS_EFFECT_POOL_CHECKS_PASSED " + json.dumps(report)), report)
+
+
+class GodotPreparationTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="godot-preparation-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name).resolve()
+        self.project = self.root / "build/project"
+        self.logs = self.root / "build/logs"
+        self.project.mkdir(parents=True)
+        self.logs.mkdir(parents=True)
+        self.engine = self.root / "engine-bin"
+        self.engine.write_bytes(b"engine-v1")
+        self.dependencies = {"godot": {"sha256": "pinned-toolchain"}}
+        self.staged = {"main.gd": "script-v1", "native/libtanks_sample.dylib": "native-v1"}
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(GATE, "ROOT", self.root).start()
+        mock.patch.object(GATE, "DEFAULT_PROJECT", self.project).start()
+
+    def write_products(self, *args):
+        imported = self.project / ".godot/imported"
+        imported.mkdir(parents=True, exist_ok=True)
+        (imported / "texture.ctex").write_bytes(b"imported-texture")
+        for name in ("extension_list.cfg", "global_script_class_cache.cfg", "uid_cache.bin"):
+            (self.project / ".godot" / name).write_bytes(b"import-metadata")
+        (self.project / "main.gd.uid").write_bytes(b"script-uid")
+        return ""
+
+    def prepare(self, force=False):
+        GATE.prepare_import(self.engine, self.project, self.logs, 120,
+                            self.dependencies, self.staged, force=force)
+
+    def test_unchanged_preparation_reuses_verified_import(self):
+        with mock.patch.object(GATE, "run_check", side_effect=self.write_products) as run:
+            self.prepare()
+            self.prepare()
+        self.assertEqual(run.call_count, 1)
+        self.assertFalse((self.logs / "result.json").exists())
+        receipt = json.loads((self.logs / "prepare-result.json").read_text())
+        self.assertEqual(receipt["scope"], "staging/import")
+
+    def test_engine_inputs_and_import_products_invalidate_preparation(self):
+        def change_staged(name):
+            self.staged[name] += "-changed"
+
+        mutations = {
+            "engine": lambda: self.engine.write_bytes(b"engine-v2"),
+            "script": lambda: change_staged("main.gd"),
+            "native": lambda: change_staged("native/libtanks_sample.dylib"),
+            "imported-resource": lambda: (self.project / ".godot/imported/texture.ctex").write_bytes(b"corrupt"),
+            "missing-resource": lambda: (self.project / ".godot/imported/texture.ctex").unlink(),
+            "missing-discovery": lambda: (self.project / ".godot/extension_list.cfg").unlink(),
+            "uid": lambda: (self.project / "main.gd.uid").write_bytes(b"changed-uid"),
+            "invalid-receipt": lambda: (self.logs / "prepare-result.json").write_text("{"),
+        }
+        with mock.patch.object(GATE, "run_check", side_effect=self.write_products) as run:
+            self.prepare()
+            for name, mutate in mutations.items():
+                with self.subTest(name=name):
+                    before = run.call_count
+                    mutate()
+                    self.prepare()
+                    self.assertEqual(run.call_count, before + 1)
+                    self.prepare()
+                    self.assertEqual(run.call_count, before + 1)
+
+    def test_failed_forced_import_cannot_reuse_a_previous_receipt(self):
+        with mock.patch.object(GATE, "run_check", side_effect=self.write_products):
+            self.prepare()
+        with mock.patch.object(GATE, "run_check", side_effect=RuntimeError("parse failure")):
+            with self.assertRaisesRegex(RuntimeError, "parse failure"):
+                self.prepare(force=True)
+        self.assertFalse((self.logs / "prepare-result.json").exists())
+        with mock.patch.object(GATE, "run_check", side_effect=self.write_products) as run:
+            self.prepare()
+            self.assertEqual(run.call_count, 1)
+
+    def test_old_receipt_cannot_reuse_potentially_stale_imports(self):
+        with mock.patch.object(GATE, "run_check", side_effect=self.write_products) as run:
+            self.prepare()
+            receipt = self.logs / "prepare-result.json"
+            previous = json.loads(receipt.read_text())
+            previous["schema"] = "tanks3d-godot-preparation-v1"
+            receipt.write_text(json.dumps(previous))
+            self.prepare()
+            self.assertEqual(run.call_count, 2)
+            self.prepare()
+            self.assertEqual(run.call_count, 2)
+
+    def test_linked_editor_cache_fails_without_writing_a_receipt(self):
+        editor = self.project / ".godot/editor"
+        editor.mkdir(parents=True)
+        outside = self.root / "outside-cache"
+        outside.write_text("external")
+        (editor / "filesystem_cache10").symlink_to(outside)
+        with self.assertRaisesRegex(RuntimeError, "Linked editor filesystem cache"):
+            self.prepare()
+        self.assertEqual(outside.read_text(), "external")
+        self.assertFalse((self.logs / "prepare-result.json").exists())
+
+    def test_linked_editor_directory_cannot_delete_external_caches(self):
+        outside = self.root / "outside-editor"
+        outside.mkdir()
+        cache = outside / "filesystem_cache10"
+        cache.write_text("external")
+        (self.project / ".godot").mkdir()
+        (self.project / ".godot/editor").symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(RuntimeError, "Linked editor cache directory"):
+            self.prepare()
+        self.assertEqual(cache.read_text(), "external")
+
+    def test_missing_products_after_successful_exit_are_rejected(self):
+        with mock.patch.object(GATE, "run_check", return_value=""):
+            with self.assertRaisesRegex(RuntimeError, "required discovery"):
+                self.prepare()
+        self.assertFalse((self.logs / "prepare-result.json").exists())
+
+    def engine_output(self, godot, project, logs, label, arguments, timeout):
+        reports = GodotImportGateTests()
+        values = {
+            "art-contracts": "TANKS_ART_CHECKS_PASSED " + json.dumps(reports.art_report()),
+            "shell-flight": "TANKS_SHELL_FLIGHT_CHECKS_PASSED 12-models/four-directions/owner-lifecycle/native-impact",
+            "coop-camera": reports.coop_camera_marker(),
+            "battlefield-camera": "TANKS_BATTLEFIELD_CAMERA_PASSED " + json.dumps(reports.battlefield_camera_report()),
+            "player-visibility": "TANKS_PLAYER_VISIBILITY_PASSED " + json.dumps(reports.visibility_report()),
+            "running-gear": "TANKS_RUNNING_GEAR_PASSED " + json.dumps(reports.gear_report()),
+            "effect-pool": "TANKS_EFFECT_POOL_CHECKS_PASSED " + json.dumps(reports.effect_pool_report()),
+            "frame-metrics": "TANKS_FRAME_METRICS_PASSED warmup/full-run/windows/bounds/overflow",
+            "frame-trace": "TANKS_FRAME_TRACE_PASSED prior-callback/all-phases/bounds/ownership/counter-reset/"
+                           "finalization/window-draw-coverage/window-transition-bounds",
+            "audio-resources": "TANKS_AUDIO_CHECKS_PASSED " + json.dumps({"resources": 22, "checks": AUDIO_POLICY_CHECKS}),
+            "smoke": 'TANKS_SAMPLE_READY renderer=dummy\nTANKS_SAMPLE_REPORT '
+                     '{"frames":180,"demo_fixed_step":true,"final_digest":"complete"}',
+            "ui-smoke": "TANKS_UI_CHECKS_PASSED settings/nations/two-player/controller-menu/frame-input/camera/"
+                        "quick-pause/pixel/menu/restart/native-report/gui-accept-press-hold-release/keyboard-fire-locations/"
+                        "focus-clear/background-gui/focus-lifecycle/enter-start/render-cache/game-over/record/"
+                        "record-timeout/session-record/audio-resources/native-audio/coop-camera/player-visibility/"
+                        "running-gear-lifecycle/native-fire-effects/arcade-hud/raylib-ui-parity",
+        }
+        if label == "import":
+            return self.write_products()
+        return values.get(label, "")
+
+    def test_preparation_and_both_validation_modes_preserve_their_scope(self):
+        sample = self.root / "godot/sample"
+        sample.mkdir(parents=True)
+        (sample / "main.gd").write_text("extends Node\n")
+        (sample / "main.tscn").write_text("[gd_scene format=3]\n")
+        arguments = ["--godot", str(self.engine), "--skip-stage", "--log-dir", str(self.logs)]
+        contracts = {"art-contracts", "shell-flight", "coop-camera", "battlefield-camera",
+                     "player-visibility", "running-gear", "effect-pool", "frame-metrics",
+                     "frame-trace", "audio-resources"}
+        with mock.patch.object(GATE, "validate_dependencies", return_value=self.dependencies), \
+                mock.patch.object(GATE, "validate_staged", return_value=self.staged):
+            for mode in ("--prepare-only", "--import-only", None):
+                with self.subTest(mode=mode), mock.patch.object(GATE, "run_check", side_effect=self.engine_output) as run:
+                    GATE.main(arguments + ([mode] if mode else []))
+                    labels = {call.args[3] for call in run.call_args_list}
+                    if mode == "--prepare-only":
+                        self.assertEqual(labels, {"import"})
+                        self.assertFalse((self.logs / "result.json").exists())
+                    else:
+                        expected = contracts | {"import", "parse-main", "scenes"}
+                        if mode is None:
+                            expected |= {"smoke", "ui-smoke"}
+                        self.assertEqual(labels, expected)
+                        self.assertEqual(sum(call.args[3] == "import" for call in run.call_args_list), 1)
+                        result = json.loads((self.logs / "result.json").read_text())
+                        self.assertEqual(result["status"], "passed")
+                        self.assertEqual(result["headless_report"] is None, mode == "--import-only")
+
+
+@unittest.skipUnless((ROOT / "build/godot-tools/Godot.app/Contents/MacOS/Godot").is_file(),
+                     "Requires the pinned engine from make godot-setup")
+class GodotRealImportTests(unittest.TestCase):
+    def test_same_mtime_edits_and_old_receipts_reimport_resource_content(self):
+        # Retain isolated projects/logs under the existing CI diagnostic path.
+        logs_root = ROOT / "build/godot/validation"
+        logs_root.mkdir(parents=True, exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix="import-cache-", dir=logs_root))
+        project = root / "build/godot/project"
+        source = root / "source"
+        source.mkdir()
+        (source / "project.godot").write_text(
+            'config_version=5\n[application]\nconfig/name="Import cache regression"\n'
+            'config/use_custom_user_dir=true\nconfig/custom_user_dir_name="Tanks3D-Godot"\n')
+        (source / "probe.gd").write_text("class_name ImportCacheProbe\nextends RefCounted\n")
+        texture = source / "tile.svg"
+        texture.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
+                           '<rect width="8" height="8" fill="blue"/></svg>')
+        fixed_time = 1_700_000_000_000_000_000
+        os.utime(texture, ns=(fixed_time, fixed_time))
+        files = {path.name: path for path in source.iterdir()}
+        engine = ROOT / "build/godot-tools/Godot.app/Contents/MacOS/Godot"
+        logs = root / "logs"
+        logs.mkdir()
+
+        def fixture_products(project, staged):
+            # This resource-only fixture has no native discovery metadata.
+            # Fingerprint its real Godot products, importer settings and UID;
+            # the full game's metadata checks remain unchanged in production.
+            paths = list((project / ".godot/imported").glob("*"))
+            paths += [project / "tile.svg.import", project / "probe.gd.uid"]
+            if any(not path.is_file() for path in paths):
+                return None
+            return {path.relative_to(project).as_posix(): GATE.digest(path) for path in paths}
+
+        with mock.patch.dict(os.environ, {"SDL_HIDAPI_IGNORE_DEVICES":
+                                          os.environ.get("SDL_HIDAPI_IGNORE_DEVICES", "0x057e/0x2009")}), \
+                mock.patch.object(GATE, "imported_files", side_effect=fixture_products), \
+                mock.patch.object(GATE.staging, "ROOT", root), \
+                mock.patch.object(GATE.staging, "TARGET", project), \
+                mock.patch.object(GATE.staging, "source_files", return_value=files):
+            GATE.staging.main()
+            GATE.prepare_import(engine, project, logs, 60, {}, GATE.validate_staged(project))
+            imported = next((project / ".godot/imported").glob("tile.svg-*.ctex"))
+            md5_record = next((project / ".godot/imported").glob("tile.svg-*.md5"))
+            settings = (project / "tile.svg.import").read_bytes()
+            script_uid = (project / "probe.gd.uid").read_bytes()
+            products = [GATE.digest(imported)]
+            for mode, color in (("changed", "lime"), ("old-receipt", "blue"), ("forced", "lime")):
+                with self.subTest(mode=mode):
+                    texture.write_text(re.sub(r'fill="[a-z]+"', f'fill="{color}"', texture.read_text()))
+                    os.utime(texture, ns=(fixed_time, fixed_time))
+                    GATE.staging.main()
+                    self.assertEqual((project / "tile.svg").stat().st_mtime_ns, fixed_time)
+                    staged = GATE.validate_staged(project)
+                    receipt = logs / "prepare-result.json"
+                    if mode == "old-receipt":
+                        # Model an old gate falsely accepting new bytes + old products.
+                        previous = json.loads(receipt.read_text())
+                        previous.update(schema="tanks3d-godot-preparation-v1", staged_sha256=staged)
+                        receipt.write_text(json.dumps(previous))
+                    GATE.prepare_import(engine, project, logs, 60, {}, staged, force=mode == "forced")
+                    source_md5 = hashlib.md5(texture.read_bytes()).hexdigest()
+                    self.assertIn(f'source_md5="{source_md5}"', md5_record.read_text())
+                    products.append(GATE.digest(imported))
+                    self.assertNotEqual(products[-1], products[-2])
+                    self.assertEqual((project / "tile.svg.import").read_bytes(), settings)
+                    self.assertEqual((project / "probe.gd.uid").read_bytes(), script_uid)
+                    with mock.patch.object(GATE, "run_check") as run:
+                        GATE.prepare_import(engine, project, logs, 60, {}, staged)
+                        run.assert_not_called()
+            self.assertEqual(products[0], products[2])
+            self.assertEqual(products[1], products[3])
+
+
+class GodotStagingTests(unittest.TestCase):
+    def test_unchanged_bytes_preserve_destination_mtime_and_changed_bytes_recopy(self):
+        with tempfile.TemporaryDirectory(prefix="godot-staging-") as temporary:
+            root = Path(temporary).resolve()
+            source = root / "source.gd"
+            target = root / "build/godot/project"
+            source.write_bytes(b"original")
+            with mock.patch.object(GATE.staging, "ROOT", root), mock.patch.object(GATE.staging, "TARGET", target), \
+                    mock.patch.object(GATE.staging, "source_files", return_value={"main.gd": source}):
+                GATE.staging.main()
+                destination = target / "main.gd"
+                os.utime(destination, ns=(1_000_000_000, 1_000_000_000))
+                GATE.staging.main()
+                self.assertEqual(destination.stat().st_mtime_ns, 1_000_000_000)
+                metadata = source.stat()
+                source.write_bytes(b"modified")
+                os.utime(source, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+                GATE.staging.main()
+                self.assertEqual(destination.read_bytes(), b"modified")
+                destination.write_bytes(b"tampered")
+                GATE.staging.main()
+                self.assertEqual(destination.read_bytes(), b"modified")
+
+    def test_removed_source_removes_staged_file_and_generated_sidecars(self):
+        with tempfile.TemporaryDirectory(prefix="godot-staging-") as temporary:
+            root = Path(temporary).resolve()
+            source = root / "source.gd"
+            target = root / "build/godot/project"
+            source.write_text("source")
+            files = {"old.gd": source}
+            with mock.patch.object(GATE.staging, "ROOT", root), mock.patch.object(GATE.staging, "TARGET", target), \
+                    mock.patch.object(GATE.staging, "source_files", return_value=files):
+                GATE.staging.main()
+                for suffix in (".import", ".uid"):
+                    (target / ("old.gd" + suffix)).write_text("generated")
+                files.clear()
+                GATE.staging.main()
+                self.assertFalse(any(target.iterdir()))
 
 
 if __name__ == "__main__":

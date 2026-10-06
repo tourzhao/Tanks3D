@@ -14,7 +14,8 @@ does not constitute a published replacement release.
 Use Apple Silicon, Xcode Command Line Tools and Python 3. Godot-only builds
 need no Homebrew raylib. The extension and godot-cpp target macOS 13.0, matching
 [Godot's Metal requirement](https://docs.godotengine.org/en/stable/about/system_requirements.html).
-Runtime QA so far is on the development M2, not macOS 13 or every supported Mac.
+Runtime QA includes development M2 and M5 Pro machines, not macOS 13 or every
+supported Mac.
 From the repository root:
 
 ```sh
@@ -28,7 +29,24 @@ project upload is involved. The first build takes longer than cached builds.
 See [toolchain details](../godot/TOOLCHAIN.md) for versions, caches, macOS
 application-support access and retained third-party notices.
 
+`godot-sample` and the play targets stage changed resources and run the editor
+import only when the engine, staged content or generated import products have
+changed. Unchanged staged files keep their timestamps. These preparation steps
+do not run the regression suite or create a validation result. Run
+`make test-godot-import` for the full script, scene, art, camera, audio and
+native/UI checks; it always performs a fresh import and executes every check.
+The script's `--prepare-only` selects preparation, while the existing
+`--import-only` still runs all presentation contracts and omits only the final
+native/UI gameplay smoke checks.
+
 The default is the setup menu, using Mobile rendering through native Metal.
+Normal clear rendering fits the window's actual pixels at 16:9, up to
+1920×1080; Pixel Style keeps a 1280×720 ceiling. The minimum internal size is
+640×360. Resizing or changing Pixel Style updates the viewport and redraws a
+frozen menu background once. Diagnostic captures, benchmarks and fixed-frame
+runs retain their original 1280×720 default; `--render-size=WIDTHxHEIGHT`
+explicitly fixes a diagnostic size (16:9, up to 3840×2160).
+
 A new interactive profile starts with **1 PLAYER**, matching the raylib setup;
 existing saved crew preferences are retained. **2 PLAYERS** and **AI AS P2**
 remain available. Setup offers nations, stages 1–35, and 1–99 lives per player.
@@ -72,6 +90,17 @@ Package size and actual Mach-O minimum OS requirements are recorded in each
 build receipt. This is an ad-hoc signed local development app, not a notarized
 release. No export-template download is needed. The default `Tanks3D.app` is
 separate and unchanged by these targets.
+
+Development staging keeps every managed source and diagnostic. The production
+PCK omits the unused `urban_masonry.png`, `art_review.gd` and the 11 standalone
+check scripts, together with their sidecars and unused import products. It
+retains `report_preview.gd` and the UI smoke scripts loaded by `main.gd`, as well
+as the grass, font and audio imports. Audio and grass resolve through their
+validated `.import` remaps; duplicate raw OGG/grass PNG payloads stay in development
+staging rather than the PCK. Both original bitmap font files remain packaged.
+All original notices remain in
+`Contents/Resources/licenses/`; their duplicate PCK copies are omitted. Source
+hash checks and candidate notice verification still use the full staging map.
 
 For a clean tagged source snapshot, `make godot-candidate` now builds an
 immutable Alpha candidate and records its regression gates and package hashes.
@@ -189,7 +218,8 @@ two-Mac play and local-network permission prompts still need manual validation.
   one 3D frame; the static deployment menu reuses the last texture. Paused battles
   still render each frame.
 - `godot/sample/audio_bank.gd` consumes native play/stop/engine requests for all
-  22 existing recordings. It preserves cue gains, 12-voice limits for overlapping
+  22 existing recordings. Recordings are preloaded; players are created on first
+  use and retained for reuse. It preserves cue gains, 12-voice limits for overlapping
   effects, overlap attenuation, stage/record/respawn jingle priority, exclusive
   idle/moving engines and pause-entry silence. Resuming does not replay Pause;
   report counting, boundary hits and new records use their native cues. Volume
@@ -254,6 +284,16 @@ two-Mac play and local-network permission prompts still need manual validation.
   there. `scripts/package_godot_app.py` creates the local standalone app and
   verifies its resources, signatures and native library paths. The original
   raylib `.app` resource manifest is unchanged.
+
+`make test-godot-audio-mixer` optionally checks all 22 recordings through the
+real Metal runtime and audio mixer, writing
+`build/godot/audio-validation/result.json`. It does not measure physical speaker
+output or playback latency.
+`make test-godot-audio-mixer-bundle` runs the same decoded-sample checks against
+the standalone app PCK from `/private/tmp`, without a source-project path. Its
+external test script also checks that the raw OGG sources are absent; the signed
+app and test-script hashes must remain unchanged. Its receipt is
+`build/godot/audio-package-validation/result.json`.
 
 The default camera uses the original 0° yaw, 50° elevation and 18.5-unit
 minimum vertical span. In co-op, `coop_camera.gd` constrains the native shared
@@ -339,7 +379,9 @@ It verifies nonzero decoded samples for all 22 cues, priority/engine behavior,
 overlap limits, volume, stop and disabled output through `AudioEffectCapture`.
 A muted downstream bus prevents test sounds reaching speakers. This proves
 mixing and routing, not audible listening or hardware latency. Without
-`--capture-audio`, the script only checks resource validity and gain plumbing.
+`--capture-audio`, the script checks resources, lazy allocation, reuse, voice
+bounds, gain and priority policy with a simulated playback lifecycle. It does
+not queue decoded streams into the headless audio driver.
 
 After `make godot-sample`, capture the actual Metal renderer with a fixed
 seed and input tape:
@@ -469,6 +511,11 @@ semantics. Use the diagnostic phase labels when separating those intervals.
 
 ## Engine-independent session and terminal/audio checks, 2026-09-17
 
+The historical evidence paths shown as text below refer to **historical local
+evidence, not included in this checkout**. Their original paths and reported
+results are preserved for provenance; they do not establish current release
+acceptance.
+
 The shared session builds independently of raylib; both frontends reuse its
 rules. Packaging prohibits a raylib runtime. Actual headless and Mobile/Metal
 UI runs passed all 20 checks: stage-clear reached tick 4,511; a solo defeat ended
@@ -481,9 +528,9 @@ fit completely.
 All 22 recordings produced actual decoded samples in the separate muted
 capture-bus check, including priority, engine, overlap, true-zero volume and stop
 behavior. Native UI play also observed boundary, score-count and record cues,
-and exactly one Pause request on entry. Receipts and screenshots are under
-[`godot-completion-20260917/ui/`](../build/release-evidence/godot-completion-20260917/ui/README.md)
-and [`audio/`](../build/release-evidence/godot-completion-20260917/audio/mixer.json).
+and exactly one Pause request on entry. Receipts and screenshots were indexed in
+`build/release-evidence/godot-completion-20260917/ui/README.md`
+and `build/release-evidence/godot-completion-20260917/audio/mixer.json`.
 The historical measurements in the following sections belong to earlier
 revisions. The latest M2 matrix is recorded in
 [the September 19 arcade pass](#arcade-pass-m2-measurement-2026-09-19).
@@ -499,8 +546,8 @@ all 12 player tiers at the normal game's world-units-per-pixel scale.
 Stage 1, stage 10, diagnostic closeup and both camera boundaries match every
 native snapshot field and camera parameter against the retained Godot baseline.
 Full 1280×720 clean/pixel images, original-size crops, enlarged and game-size
-rosters, and both art iterations are in the
-[polish evidence](../build/release-evidence/godot-polish-20260917/README.md).
+rosters, and both art iterations were indexed in
+`build/release-evidence/godot-polish-20260917/README.md`.
 
 After `make clean`, the full test, AI and 35-stage bridge suites passed, followed
 by ASan/UBSan, real localhost TCP, strict import and local app packaging checks.
@@ -527,8 +574,8 @@ This is a short-run observation, not a sustained performance guarantee or an
 isolated measurement of the cache change. Compared with the earlier run below,
 frame pacing differs and sampled RSS is higher; the difference cannot all be
 attributed to this patch. Forward+ was not rebenchmarked in this pass. Exact
-commands, source hashes and measurements are retained in
-[`benchmark-final/`](../build/release-evidence/godot-polish-20260917/benchmark-final/summary.json).
+commands, source hashes and measurements were recorded in
+`build/release-evidence/godot-polish-20260917/benchmark-final/summary.json`.
 
 ## Historical migration baseline results, 2026-09-17
 
@@ -547,8 +594,8 @@ Actual Mobile / Metal captures at native frame 300 match every pre-existing
 snapshot field and camera parameter against the retained prototype for stages
 1 and 10. Their digests are `afba842a6ef93d11` and `4791a8591a26e36b`. Full
 1280×720 images, native-size crops, Pixel Style pairs, all four headings,
-representative camera limits and real deployment/pause/report captures are in
-the [migration baseline evidence](../build/release-evidence/godot-migration-20260917/README.md).
+representative camera limits and real deployment/pause/report captures were indexed in
+`build/release-evidence/godot-migration-20260917/README.md`.
 The normal camera's scale and framing were not enlarged for the comparison.
 
 Two sequential standalone runs used native Metal, stage 10, seed 20260916,
@@ -569,15 +616,15 @@ or sustained thermal performance. Forward+ has substantial frame-time spikes;
 their cause has not been isolated. The difference between engine delta and the
 monotonic clock is why current comparisons use actual callback intervals. RSS
 is sampled once per second and can miss brief peaks; neither frame clock is
-GPU-only timing. Exact commands, source hashes and receipts are in
-[`benchmark-final/`](../build/release-evidence/godot-migration-20260917/benchmark-final/summary.json).
+GPU-only timing. Exact commands, source hashes and receipts were recorded in
+`build/release-evidence/godot-migration-20260917/benchmark-final/summary.json`.
 
 One UI-only change after this benchmark clears stale deployment connection text
 when returning to the menu; it does not execute during the measured combat.
 Final import and standalone package checks cover that change. The local app
 is separately tested from `/private/tmp`, without a source-project path, using
 the native smoke and UI integration checks; its signed-file/resource receipts
-are retained with the [package evidence](../build/release-evidence/godot-migration-20260917/package/).
+were recorded under `build/release-evidence/godot-migration-20260917/package/`.
 
 ## Historical sample results, 2026-09-16
 
@@ -618,8 +665,8 @@ in general. Mobile remains the conservative starting configuration while the
 variation is investigated.
 
 The clean full test run, AI tests, bridge parity, ASan/UBSan, strict import and
-benchmark fixtures passed. Logs, full screenshots, crops and receipts are in
-[`build/release-evidence/godot-sample-20260916/`](../build/release-evidence/godot-sample-20260916/README.md).
+benchmark fixtures passed. Logs, full screenshots, crops and receipts were indexed in
+`build/release-evidence/godot-sample-20260916/README.md`.
 These are local experimental evidence, not a release candidate attestation.
 
 Historical window checks confirmed R restart, the then-present F1 AI shortcut, Tab Pixel on/off and
@@ -628,7 +675,7 @@ key events; strict import and the native smoke run passed again afterward.
 This input-only fix followed the saved visual/performance captures and did not
 change their art, camera or demo commands. Full control feel remains unverified.
 
-The retained [actual video excerpt](../build/release-evidence/godot-sample-20260916/video/tanks-godot-demo.mp4)
+The recorded video excerpt at `build/release-evidence/godot-sample-20260916/video/tanks-godot-demo.mp4`
 is 7.37 seconds, 1280×720 and silent. A longer PNG recording reached its time
 limit; the 442 complete consecutive frames were encoded and fully decoded to
 verify their timestamps. Many pictures are static, so 60 fps playback does
@@ -677,8 +724,8 @@ Wall intervals include pacing, scheduling and rendering, not GPU completion
 or display-present timestamps. Measurements validate these local workloads,
 not a release frame-budget guarantee or other Macs. Full per-minute data,
 slow-frame contexts, thermal observations, source bindings and reproduction
-commands are in
-[`arcade-upgrade-20260919/FINAL_REVIEW.md`](../build/release-evidence/arcade-upgrade-20260919/FINAL_REVIEW.md)
+commands were recorded in
+`build/release-evidence/arcade-upgrade-20260919/FINAL_REVIEW.md`
 and its linked performance summary. The earlier short runs and deliberately
 interrupted soak before the LAN pause-guide correction are retained separately
 and are not the final matrix.
@@ -720,8 +767,8 @@ regression evidence, not the candidate-specific extended-session gate.
 
 ## Earlier diagnostics and remaining acceptance work
 
-The final local completion run and actual captures are indexed in
-[`godot-finish-20260917`](../build/release-evidence/godot-finish-20260917/README.md).
+The final local completion run and actual captures were indexed in
+`build/release-evidence/godot-finish-20260917/README.md`.
 On the development M2, a 20-minute Mobile/Metal run at 1920×1080 internal render
 resolution completed 134,490 active wall-frame measurements: p95 12.58 ms,
 p99 14.74 ms, maximum 43.269 ms, with 240 nominal thermal-pressure samples and
@@ -731,8 +778,8 @@ intro/reset phases are excluded, so this is not combined hardware-input/audio
 latency or a display-present 60 FPS release attestation.
 
 Those measurements predate the subsequent forest/smoke refinement. Its actual
-captures and checks are indexed in
-[`godot-refinement-20260917`](../build/release-evidence/godot-refinement-20260917/README.md).
+captures and checks were indexed in
+`build/release-evidence/godot-refinement-20260917/README.md`.
 The later three-minute stage 10 stress run with diagnostics enabled measured
 wall p95 16.90 ms, p99 18.12 ms and a 328.622 ms maximum. The corresponding
 callback took 8.679 ms; the remaining time is unassigned engine/render/pacing
@@ -742,8 +789,9 @@ workloads do not isolate trace overhead or an art-related performance change;
 neither included thermal observations. The optional trace improves evidence,
 but does not resolve the intermittent stall.
 
-The next [forest/effect continuation](../build/release-evidence/godot-continuation-20260918/README.md)
-reduces foliage from 208 to 156 triangles per cell and reuses transient effects.
+The next forest/effect continuation, recorded in
+`build/release-evidence/godot-continuation-20260918/README.md`, reduces foliage
+from 208 to 156 triangles per cell and reuses transient effects.
 Its separate 18,000-frame pooling comparison kept the same art, native library,
 input and final digest. It created 11 instances and reused them 3,393 times;
 the final observed surface/specialization pipeline counters were 18/11, versus
@@ -752,8 +800,8 @@ the pool alone preserved the sampled rendered image. A 1018.386 ms interval
 still occurred while the window was unfocused, with only 1.739 ms inside the
 measured callback. Focus and thermal conditions were not matched, and the
 remaining delay is unassigned. This establishes resource reuse, not a resolved
-long-frame problem or a stable 60 FPS claim. See the linked comparison for
-the complete timing distributions and limitations.
+long-frame problem or a stable 60 FPS claim. The complete timing distributions
+and limitations were recorded with that comparison.
 
 The later battlefield-readability trace separates foreground/drawable frames
 from background callbacks. Its largest observed interval was 83.344 ms, of

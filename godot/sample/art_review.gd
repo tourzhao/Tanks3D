@@ -4,6 +4,7 @@ extends SceneTree
 ## Godot --path ... --script art_review.gd -- --review=roster --output=/.../sheet.png
 
 const Art = preload("res://art.gd")
+const SceneLighting = preload("res://scene_lighting.gd")
 const CELL := Vector2i(320,272)
 const HEADER := 52
 const LABEL := 39
@@ -16,6 +17,7 @@ var elevation := 29.6
 var camera_yaw := -145.8
 var animation_frames := 0
 var neutral_materials := false
+var review_view := "oblique"
 
 func _initialize() -> void:
     for arg in OS.get_cmdline_user_args():
@@ -27,6 +29,20 @@ func _initialize() -> void:
             animation_frames = clampi(int(arg.get_slice("=",1)),0,600)
         elif arg == "--neutral-materials":
             neutral_materials = true
+        elif arg.begins_with("--view="):
+            review_view = arg.get_slice("=",1)
+    if review_view == "front":
+        camera_position = camera_target+Vector3(0,0,-8)
+        elevation = 0.0
+        camera_yaw = 180.0
+    elif review_view == "side":
+        camera_position = camera_target+Vector3(-8,0,0)
+        elevation = 0.0
+        camera_yaw = -90.0
+    elif review_view != "oblique":
+        push_error("Unknown review view: "+review_view)
+        quit(2)
+        return
     call_deferred("make_sheet")
 
 func label(text: String, position: Vector2, width: float, size: int = 14) -> Label:
@@ -142,23 +158,8 @@ func make_sheet() -> void:
         container.add_child(view)
         var world := Node3D.new()
         view.add_child(world)
-        var environment := WorldEnvironment.new()
-        environment.environment = Environment.new()
-        environment.environment.background_mode = Environment.BG_COLOR
-        environment.environment.background_color = Color("405757")
-        environment.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-        environment.environment.ambient_light_color = Color("a1bcc2")
-        environment.environment.ambient_light_energy = .48
-        environment.environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-        world.add_child(environment)
-        var sun := DirectionalLight3D.new()
-        sun.rotation_degrees = Vector3(-54,-28,0)
-        sun.light_color = Color("fff0cf")
-        sun.light_energy = 1.45
-        sun.shadow_enabled = true
-        sun.shadow_bias = .06
-        sun.directional_shadow_max_distance = 12
-        world.add_child(sun)
+        world.add_child(SceneLighting.make_environment())
+        world.add_child(SceneLighting.make_sun())
         var ground := MeshInstance3D.new()
         var plane := PlaneMesh.new()
         plane.size = Vector2(20,20)
@@ -177,6 +178,9 @@ func make_sheet() -> void:
             pose_effect(model,float(subject.age),float(subject.effect_size))
         var camera := Camera3D.new()
         camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+        # Orthographic directional shadows use camera.far, not the sun's
+        # shadow distance. Include the ground at the top of game-scale views.
+        camera.far = 14.0
         camera.keep_aspect = Camera3D.KEEP_HEIGHT
         camera.size = subject.span
         world.add_child(camera)

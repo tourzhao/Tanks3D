@@ -34,6 +34,16 @@ SYSTEM_PREFIXES = ("/System/Library/", "/usr/lib/")
 # Filter this VID/PID from SDL's raw HID backend, not from gamepad input.
 # Other controllers (including Joy-Cons) keep Godot/SDL's normal driver choice.
 MACOS_RUNTIME_ENV = {"SDL_HIDAPI_IGNORE_DEVICES": "0x057e/0x2009"}
+# Development staging retains these standalone diagnostics and historical
+# texture. None is loaded by the active frontend or the packaged UI smoke.
+# Keep ui_checks, arcade_ui_checks, parity_checks and report_preview in the PCK.
+PRODUCTION_EXCLUDED_SOURCES = frozenset({
+    "art_review.gd", "art_checks.gd", "audio_checks.gd", "battlefield_camera_checks.gd",
+    "coop_camera_checks.gd", "effect_pool_checks.gd", "frame_metrics_checks.gd",
+    "frame_trace_checks.gd", "lan_checks.gd", "player_visibility_checks.gd",
+    "running_gear_checks.gd", "shell_flight_checks.gd", "resources/textures/urban_masonry.png",
+})
+PACK_METADATA = {".godot/extension_list.cfg", ".godot/global_script_class_cache.cfg", ".godot/uid_cache.bin"}
 
 PACK_SCRIPT = '''extends SceneTree
 func _initialize() -> void:
@@ -110,29 +120,152 @@ def safe_relative(name):
     return value
 
 
+def production_sources(managed):
+    """Select runtime sources from the full, still-authoritative staging map."""
+    return {name for name in managed if name not in PRODUCTION_EXCLUDED_SOURCES
+            and not name.startswith(("native/", "licenses/"))}
+
+
+def imported_source_payloads(sources):
+    """Raw audio/grass stay in staging; their validated imports serve the PCK."""
+    return {name for name in sources if name == "resources/textures/battlefield_grass.png"
+            or (name.startswith("resources/sounds/") and name.endswith(".ogg"))}
+
+
+def resource_name(value):
+    if not isinstance(value, str) or not value.startswith("res://"):
+        raise RuntimeError(f"Invalid imported resource reference: {value}")
+    name = value.removeprefix("res://")
+    if not name or safe_relative(name).as_posix() != name:
+        raise RuntimeError(f"Unsafe package resource path: {value}")
+    return name
+
+
+def import_section(text, section, path):
+    matches = re.findall(rf"(?ms)^\[{section}\]\s*\n(.*?)(?=^\[|\Z)", text)
+    if len(matches) != 1:
+        raise RuntimeError(f"Invalid [{section}] in import sidecar: {path}")
+    return matches[0]
+
+
+def import_value(section, key, path):
+    matches = list(re.finditer(rf"(?m)^\s*{key}\s*=\s*", section))
+    if len(matches) != 1:
+        raise RuntimeError(f"Invalid {key} in import sidecar: {path}")
+    try:
+        return json.JSONDecoder().raw_decode(section[matches[0].end():])[0]
+    except ValueError as error:
+        raise RuntimeError(f"Invalid {key} in import sidecar: {path}") from error
+
+
+def imported_resources(project, sources, files):
+    """Keep only generated products declared by retained source sidecars."""
+    retained = set()
+    remapped = set()
+    for name in sorted(sources):
+        sidecar = name + ".import"
+        if sidecar not in files:
+            if PurePosixPath(name).suffix in (".png", ".ogg", ".fnt"):
+                raise RuntimeError(f"Imported staged asset is missing its sidecar: {name}")
+            continue
+        path = project / sidecar
+        text = path.read_text()
+        deps = import_section(text, "deps", path)
+        if import_value(deps, "source_file", path) != "res://" + name:
+            raise RuntimeError(f"Import sidecar source differs from its staged asset: {path}")
+        outputs = import_value(deps, "dest_files", path)
+        if not isinstance(outputs, list) or not outputs:
+            raise RuntimeError(f"Invalid dest_files in import sidecar: {path}")
+        destinations = {resource_name(value) for value in outputs}
+        if any(not value.startswith(".godot/imported/") for value in destinations):
+            raise RuntimeError(f"Import output is outside the generated resource directory: {path}")
+        remap = import_section(text, "remap", path)
+        paths = re.findall(r'(?m)^path(?:\.[^\s=]+)?\s*=\s*("[^"\n]*")\s*$', remap)
+        if not paths or not {resource_name(json.loads(value)) for value in paths}.issubset(destinations):
+            raise RuntimeError(f"Import remap differs from its declared outputs: {path}")
+        if not destinations.issubset(files):
+            raise RuntimeError(f"Imported staged asset is missing generated outputs: {path}")
+        remapped.add(name)
+        retained.update(destinations)
+        for destination in destinations:
+            checksum = str(PurePosixPath(destination).with_suffix(".md5"))
+            if checksum in files:
+                retained.add(checksum)
+    return retained, remapped
+
+
+def validate_pack_references(project, sources, files, remapped):
+    """Static dependencies resolve to packed sources or validated import remaps."""
+    available = sources | remapped
+    for name in sorted(sources):
+        suffix = PurePosixPath(name).suffix
+        if suffix == ".gd":
+            references = re.findall(r'''\b(?:preload|load)\(\s*(["'])(res://[^"']+)\1\s*\)''',
+                                    (project / name).read_text())
+            references = [value for _, value in references]
+        elif suffix in (".tscn", ".tres", ".godot", ".gdshader"):
+            references = re.findall(r'"(res://[^"\n]+)"', (project / name).read_text())
+        else:
+            continue
+        for reference in references:
+            if resource_name(reference) not in available:
+                raise RuntimeError(f"Production resource {name} references an excluded or missing source: {reference}")
+    for name in PACK_METADATA - {".godot/uid_cache.bin"}:
+        if name not in files:
+            continue
+        for reference in re.findall(r'"?(res://[^"\s]+)"?', (project / name).read_text()):
+            if resource_name(reference) not in available:
+                raise RuntimeError(f"Production metadata {name} references an excluded or missing source: {reference}")
+    # ResourceUID caches are kept byte-for-byte. Unused UID entries need no
+    # rewriting; real resource dependencies above must resolve in the PCK.
+
+
 def pack_entries(project, managed=None):
-    entries = []
+    # Every source is checked against the full development map before applying
+    # production exclusions. Unknown files cannot hide in licenses/native or
+    # beside a deliberately excluded diagnostic.
+    if managed is None:
+        managed = {name: gate.digest(source) for name, source in gate.staging.source_files().items()}
+    files = {}
     for source in sorted(project.rglob("*")):
         if source.is_symlink():
             raise RuntimeError(f"Staged project contains a symlink: {source}")
         if not source.is_file():
             continue
         relative = source.relative_to(project)
-        if relative.parts[0] == "native":
-            continue  # Native code must be real files in Contents/Frameworks.
-        if relative.parts[0] == ".godot" and (len(relative.parts) < 2 or relative.parts[1] not in
-                ("imported", "extension_list.cfg", "global_script_class_cache.cfg", "uid_cache.bin")):
-            continue  # Never package editor layouts or GPU shader caches.
+        name = relative.as_posix()
+        safe_relative(name)
         if source.name in (".DS_Store", ".gdignore"):
             continue
-        name = relative.as_posix()
-        if managed is not None and relative.parts[0] != ".godot" and name not in managed:
-            original = name.removesuffix(".import").removesuffix(".uid")
+        if relative.parts[0] != ".godot" and name not in managed:
+            original = name[:-7] if name.endswith(".import") else name[:-4] if name.endswith(".uid") else name
             if original == name or original not in managed:
-                raise RuntimeError(f"Unmanaged staged resource would enter the app: {relative}")
-        safe_relative(relative.as_posix())
-        entries.append({"target": "res://" + relative.as_posix(), "source": str(source),
-                        "sha256": gate.digest(source)})
+                raise RuntimeError(f"Unmanaged staged resource in the imported project: {relative}")
+        files[name] = source
+    if not set(managed).issubset(files):
+        raise RuntimeError("Staged project is missing managed source resources")
+    # Validate the full development map, including raw assets, diagnostics,
+    # native code and notices whose payloads are not stored in the PCK.
+    source_hashes = {name: gate.digest(files[name]) for name in managed}
+    if isinstance(managed, dict):
+        for name, digest in source_hashes.items():
+            if digest != managed[name]:
+                raise RuntimeError(f"Staged resource changed since validation: {name}")
+    sources = production_sources(managed)
+    imported, remapped = imported_resources(project, sources, files)
+    raw_payloads = imported_source_payloads(sources)
+    if not raw_payloads.issubset(remapped):
+        raise RuntimeError("Raw source payloads require validated import remaps before omission")
+    packed_sources = sources - raw_payloads
+    validate_pack_references(project, packed_sources, files, remapped)
+    names = packed_sources | imported | (PACK_METADATA & files.keys())
+    names.update(name for name in files if (name.endswith(".import") and name[:-7] in sources)
+                 or (name.endswith(".uid") and name[:-4] in sources))
+    entries = []
+    for name in sorted(names):
+        source = files[name]
+        digest = source_hashes[name] if name in source_hashes else gate.digest(source)
+        entries.append({"target": "res://" + name, "source": str(source), "sha256": digest})
     required = {"res://project.godot", "res://native.gdextension", "res://.godot/extension_list.cfg"}
     if not required.issubset({entry["target"] for entry in entries}):
         raise RuntimeError("Imported staged project is missing settings or GDExtension discovery data")

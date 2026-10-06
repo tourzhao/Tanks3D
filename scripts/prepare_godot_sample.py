@@ -31,6 +31,18 @@ def source_files():
     return result
 
 
+def same_content(source, destination):
+    if not destination.is_file() or source.stat().st_size != destination.stat().st_size:
+        return False
+    with source.open("rb") as original, destination.open("rb") as staged:
+        while True:
+            block = original.read(1024 * 1024)
+            if block != staged.read(1024 * 1024):
+                return False
+            if not block:
+                return True
+
+
 def main():
     files = source_files()
     missing = [str(source) for source in files.values() if not source.is_file()]
@@ -54,7 +66,10 @@ def main():
                                       if path.is_relative_to(TARGET)):
             raise RuntimeError(f"Refusing linked staging source/destination: {relative}")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        # Compare bytes rather than timestamps: git checkouts can change source
+        # mtimes, and an edited resource can retain its original size/mtime.
+        if not same_content(source, destination):
+            shutil.copy2(source, destination)
     previous_manifest.write_text(json.dumps(sorted(files), indent=2) + "\n")
     print(f"Godot sample staged at {TARGET}")
 

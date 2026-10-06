@@ -81,6 +81,7 @@ protected:
         ClassDB::bind_method(D_METHOD("reset_pad", "slot", "suppress_stick"), &TanksSampleCore::reset_pad);
         ClassDB::bind_method(D_METHOD("step", "dt", "p1", "p2"), &TanksSampleCore::step);
         ClassDB::bind_method(D_METHOD("snapshot"), &TanksSampleCore::snapshot);
+        ClassDB::bind_method(D_METHOD("presentation_snapshot"), &TanksSampleCore::presentation_snapshot);
         ClassDB::bind_method(D_METHOD("drain_audio"), &TanksSampleCore::drain_audio);
         ClassDB::bind_method(D_METHOD("error"), &TanksSampleCore::error);
     }
@@ -176,6 +177,11 @@ public:
     String snapshot() const
     {
         const char *value = tanks_sample_snapshot(core_);
+        return value ? String::utf8(value) : String();
+    }
+    String presentation_snapshot() const
+    {
+        const char *value = tanks_sample_presentation_snapshot(core_);
         return value ? String::utf8(value) : String();
     }
     String drain_audio() const
