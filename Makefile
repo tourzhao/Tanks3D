@@ -62,15 +62,17 @@ LAN_SOURCES := src/net/lan_protocol.cpp src/net/lan_channel.cpp
 LAN_HEADERS := src/net/lan_protocol.h src/net/lan_channel.h \
 	src/app/lan_session.h src/app/lan_game_bridge.h
 LAN_SESSION_SOURCE := src/app/lan_session.cpp
-APP_SOURCES := src/app/ai_player.cpp $(LAN_SESSION_SOURCE) $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
+SHARED_APP_SOURCES := src/app/ai_player.cpp $(LAN_SESSION_SOURCE) $(COMMAND_SIDE_EFFECT_DISPATCH_SOURCE) \
 	$(INPUT_ADAPTER_SOURCE) \
-	$(ATOMIC_OUTPUT_FILE_SOURCE) \
-	$(RELEASE_PERFORMANCE_CAPABILITY_SOURCE) \
-	$(RELEASE_PERFORMANCE_LOG_SOURCE) \
-	$(RELEASE_SCREENSHOT_FILE_SOURCE) \
 	$(SHELL_CANCELLATION_PRESENTATION_SOURCE) \
 	$(SHELL_MAP_CORE_PRESENTATION_SOURCE) \
 	$(SHELL_TANK_PRESENTATION_SOURCE)
+LEGACY_APP_SOURCES := \
+	$(ATOMIC_OUTPUT_FILE_SOURCE) \
+	$(RELEASE_PERFORMANCE_CAPABILITY_SOURCE) \
+	$(RELEASE_PERFORMANCE_LOG_SOURCE) \
+	$(RELEASE_SCREENSHOT_FILE_SOURCE)
+APP_SOURCES := $(SHARED_APP_SOURCES) $(LEGACY_APP_SOURCES)
 BONUS_SYSTEM_SOURCE := src/game/bonus_system.cpp
 COMBAT_SYSTEM_SOURCE := src/game/combat_system.cpp
 ENEMY_SYSTEM_SOURCE := src/game/enemy_system.cpp
@@ -690,7 +692,7 @@ $(DIST_APP_STAMP): $(DIST_TARGET) macos/Info.plist $(RUNTIME_RESOURCES) \
 $(DIST_ARCHIVE): $(DIST_APP_STAMP)
 	$(RM) $(DIST_ARCHIVE) $(DIST_CHECKSUM)
 	cd $(DIST_STAGING_DIR) && ditto -c -k --keepParent --norsrc \
-		--noextattr --noqtn --noacl Tanks3D.app $(abspath $(DIST_ARCHIVE))
+		--noextattr --noqtn --noacl Tanks3D.app "$(abspath $(DIST_ARCHIVE))"
 
 $(DIST_CHECKSUM): $(DIST_ARCHIVE)
 	cd $(DIST_DIR) && shasum -a 256 $(notdir $(DIST_ARCHIVE)) \
@@ -699,12 +701,12 @@ $(DIST_CHECKSUM): $(DIST_ARCHIVE)
 test-dist: $(DIST_CHECKSUM) $(DIST_RESOURCE_MANIFEST) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) $(DIST_VERIFY_SCRIPT) \
 		$(DIST_VERIFY_NEGATIVE_TEST)
-	sh $(DIST_VERIFY_SCRIPT) $(abspath .) $(abspath $(DIST_ARCHIVE)) \
-		$(abspath $(DIST_CHECKSUM)) $(DIST_ARCH) $(DIST_MACOS_MIN) \
+	sh $(DIST_VERIFY_SCRIPT) "$(abspath .)" "$(abspath $(DIST_ARCHIVE))" \
+		"$(abspath $(DIST_CHECKSUM))" $(DIST_ARCH) $(DIST_MACOS_MIN) \
 		$(APP_VERSION) $(DIST_BASENAME) $(DIST_SOURCE_COMMIT) \
 		$(DIST_SOURCE_TAG)
-	sh $(DIST_VERIFY_NEGATIVE_TEST) $(abspath .) \
-		$(abspath $(DIST_ARCHIVE)) $(DIST_ARCH) $(DIST_MACOS_MIN) \
+	sh $(DIST_VERIFY_NEGATIVE_TEST) "$(abspath .)" \
+		"$(abspath $(DIST_ARCHIVE))" $(DIST_ARCH) $(DIST_MACOS_MIN) \
 		$(APP_VERSION) $(DIST_SOURCE_COMMIT) $(DIST_SOURCE_TAG)
 
 dist: test test-dist
@@ -885,7 +887,7 @@ test-release-screenshot: all
 	$(RM) -r $(RELEASE_SCREENSHOT_SMOKE_DIR)
 	mkdir -p $(RELEASE_SCREENSHOT_SMOKE_DIR)
 	./$(TARGET) --quick-start --tank-showcase \
-		--release-screenshot=$(abspath $(RELEASE_SCREENSHOT_SMOKE_FILE)) \
+		--release-screenshot="$(abspath $(RELEASE_SCREENSHOT_SMOKE_FILE))" \
 		--release-screenshot-frame=2
 	test -s $(RELEASE_SCREENSHOT_SMOKE_FILE)
 	LC_ALL=C file $(RELEASE_SCREENSHOT_SMOKE_FILE) | \
@@ -895,12 +897,12 @@ test-release-screenshot: all
 	test "$$(sips -g pixelHeight $(RELEASE_SCREENSHOT_SMOKE_FILE) | \
 		awk '/pixelHeight:/{print $$2}')" = 720
 	@if ./$(TARGET) --quick-start --tank-showcase \
-		--release-screenshot=$(abspath $(RELEASE_SCREENSHOT_SMOKE_FILE)) \
+		--release-screenshot="$(abspath $(RELEASE_SCREENSHOT_SMOKE_FILE))" \
 		--release-screenshot-frame=2; then \
 		echo 'existing screenshot was overwritten' >&2; exit 1; \
 	fi
 	@if ./$(TARGET) --quick-start \
-		--release-screenshot=$(abspath $(RELEASE_SCREENSHOT_SMOKE_DIR))/missing/shot.png \
+		--release-screenshot="$(abspath $(RELEASE_SCREENSHOT_SMOKE_DIR))/missing/shot.png" \
 		--release-screenshot-frame=2; then \
 		echo 'missing screenshot parent was accepted' >&2; exit 1; \
 	fi
@@ -911,7 +913,7 @@ test-release-performance-smoke: all
 	$(RM) -r $(RELEASE_PERFORMANCE_SMOKE_DIR)
 	mkdir -p $(RELEASE_PERFORMANCE_SMOKE_DIR)
 	./$(TARGET) --quick-start \
-		--release-performance-log=$(abspath $(RELEASE_PERFORMANCE_SMOKE_FILE)) \
+		--release-performance-log="$(abspath $(RELEASE_PERFORMANCE_SMOKE_FILE))" \
 		--release-candidate-sha256=0000000000000000000000000000000000000000000000000000000000000000 \
 		--release-session-nonce=11111111111111111111111111111111 \
 		--release-performance-duration-seconds=2
@@ -923,13 +925,14 @@ test-release-performance-smoke: all
 run-alpha-performance-qa: $(RELEASE_PERFORMANCE_QA_RUNNER) \
 		$(TAGGED_CANDIDATE_VERIFIER) \
 		$(RELEASE_PERFORMANCE_CONTRACT)
-	install -d -m 700 $(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)
+	install -d -m 700 "$(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)"
 	python3 -B $(RELEASE_PERFORMANCE_QA_RUNNER) \
 		--project-root "$(abspath .)" \
 		--candidate-dir "$(ALPHA_CANDIDATE_DIR)" \
 		--output-dir "$(RELEASE_PERFORMANCE_QA_OUTPUT_DIR)"
 
 test: all test-bundle test-rules test-app test-tank-drawing test-lan test-ai-native test-ai-player-native \
+		test-make-path-spaces \
 		test-release-performance-capabilities
 	./$(TARGET) --self-test
 
@@ -943,21 +946,27 @@ test-assets: $(TARGET) $(RUNTIME_RESOURCES)
 	./$(TARGET) --self-test=assets
 
 test-bundle: $(APP_EXECUTABLE) $(BUNDLE_RESOURCE_MANIFEST)
-	cd $(APP_RESOURCES) && find . -type f -print | LC_ALL=C sort | \
-		diff -u $(abspath $(BUNDLE_RESOURCE_MANIFEST)) -
-	plutil -lint $(APP)/Contents/Info.plist
+	cd "$(APP_RESOURCES)" && find . -type f -print | LC_ALL=C sort | \
+		diff -u "$(abspath $(BUNDLE_RESOURCE_MANIFEST))" -
+	plutil -lint "$(APP)/Contents/Info.plist"
 	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
-		'Print :LSMinimumSystemVersion' $(APP)/Contents/Info.plist)" = \
+		'Print :LSMinimumSystemVersion' "$(APP)/Contents/Info.plist")" = \
 		"$(MACOS_MIN)"
 	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
 		'Print :GCSupportsControllerUserInteraction' \
-		$(APP)/Contents/Info.plist)" = "true"
+		"$(APP)/Contents/Info.plist")" = "true"
 	test "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
 		'Print :GCSupportedGameControllers:0:ProfileName' \
-		$(APP)/Contents/Info.plist)" = "ExtendedGamepad"
+		"$(APP)/Contents/Info.plist")" = "ExtendedGamepad"
 	test -n "$$($(shell command -v /usr/libexec/PlistBuddy) -c \
-		'Print :NSLocalNetworkUsageDescription' $(APP)/Contents/Info.plist)"
-	codesign --verify --deep --strict --verbose=4 $(APP)
+		'Print :NSLocalNetworkUsageDescription' "$(APP)/Contents/Info.plist")"
+	codesign --verify --deep --strict --verbose=4 "$(APP)"
+
+.PHONY: test-make-path-spaces
+test-make-path-spaces: tests/test_make_path_spaces.sh Makefile \
+		tests/expected_bundle_resources.txt \
+		$(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) macos/Info.plist
+	sh tests/test_make_path_spaces.sh "$(abspath .)"
 
 # This exact, no-window handshake proves that the built executable exposes the
 # release-performance contract before any resource or raylib initialization.
@@ -967,28 +976,28 @@ test-release-performance-capabilities: $(TARGET) \
 	$(RM) $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_STDERR)
 	cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
-		$(abspath $(TARGET)) --self-test=release-performance-capabilities \
-			> $(abspath $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) \
-			2> $(abspath $(RELEASE_PERFORMANCE_CAPABILITY_STDERR))
+		"$(abspath $(TARGET))" --self-test=release-performance-capabilities \
+			> "$(abspath $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT))" \
+			2> "$(abspath $(RELEASE_PERFORMANCE_CAPABILITY_STDERR))"
 	test ! -s $(RELEASE_PERFORMANCE_CAPABILITY_STDERR)
 	cmp -s $(RELEASE_PERFORMANCE_CAPABILITY_CONTRACT) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)
 	python3 -m json.tool $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT) >/dev/null
 	@if cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
-		$(abspath $(TARGET)) --self-test=release-performance-capabilities \
+		"$(abspath $(TARGET))" --self-test=release-performance-capabilities \
 			--quick-start >/dev/null 2>&1; then \
 		echo 'performance capability probe accepted an extra argument' >&2; \
 		exit 1; \
 	fi
 	@if cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
-		$(abspath $(TARGET)) --quick-start \
+		"$(abspath $(TARGET))" --quick-start \
 			--self-test=release-performance-capabilities \
 			>/dev/null 2>&1; then \
 		echo 'performance capability probe was accepted out of position' >&2; \
 		exit 1; \
 	fi
 	@if cd $(dir $(RELEASE_PERFORMANCE_CAPABILITY_OUTPUT)) && \
-		$(abspath $(TARGET)) --self-test=release-performance-capabilities \
+		"$(abspath $(TARGET))" --self-test=release-performance-capabilities \
 			--self-test=release-performance-capabilities \
 			>/dev/null 2>&1; then \
 		echo 'performance capability probe accepted a duplicate argument' >&2; \
@@ -1466,10 +1475,10 @@ coverage: $(COVERAGE_TARGET) $(COVERAGE_TEST_TARGETS) $(RUNTIME_RESOURCES) \
 		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR) \
 		$(COVERAGE_TEST_RAW_PROFILES) $(COVERAGE_PROFILE) \
 		$(TANK_DRAW_COMPATIBILITY_COVERAGE_PROFILE)
-	LLVM_PROFILE_FILE=$(abspath $(COVERAGE_RAW_PROFILE)) \
+	LLVM_PROFILE_FILE="$(abspath $(COVERAGE_RAW_PROFILE))" \
 		./$(COVERAGE_TARGET) --self-test
-	LLVM_PROFILE_FILE=$(abspath \
-		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE)) \
+	LLVM_PROFILE_FILE="$(abspath \
+		$(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_RAW_PROFILE))" \
 		./$(COVERAGE_TARGET) --self-test=release-performance-capabilities \
 			> $(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_OUTPUT) \
 			2> $(RELEASE_PERFORMANCE_CAPABILITY_COVERAGE_STDERR)
@@ -1594,7 +1603,7 @@ GODOT_CPP_LIB := $(GODOT_CPP)/bin/libgodot-cpp.macos.template_release.arm64.a
 GODOT_CORE_DEPS := src/godot/sample_core.cpp src/godot/sample_core.h $(APP_HEADERS) $(PURE_HEADERS)
 GODOT_MACOS_MIN ?= 13.0
 GODOT_CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -arch arm64 -mmacosx-version-min=$(GODOT_MACOS_MIN)
-GODOT_SOURCES := $(APP_SOURCES) $(LAN_SOURCES) $(PURE_SOURCES)
+GODOT_SOURCES := $(SHARED_APP_SOURCES) $(LAN_SOURCES) $(PURE_SOURCES)
 GODOT_OBJECTS := $(patsubst src/%.cpp,build/godot/obj/%.o,$(GODOT_SOURCES))
 GODOT_SANITIZER_OBJECTS := $(patsubst src/%.cpp,build/godot/sanitize/%.o,$(GODOT_SOURCES))
 GODOT_SANITIZER_FLAGS := -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined
@@ -1633,17 +1642,21 @@ build/godot/libtanks_sample.dylib: build/godot/extension.o build/godot/sample_co
 	codesign --force --sign - --timestamp=none $@
 
 godot-sample: build/godot/libtanks_sample.dylib
-	python3 -B scripts/test_godot_import.py --import-only
+	python3 -B scripts/test_godot_import.py --prepare-only
 
 .PHONY: test-godot-import
-test-godot-import: godot-sample
+test-godot-import: build/godot/libtanks_sample.dylib
 	python3 -B tests/test_godot_import.py
-	python3 -B scripts/test_godot_import.py --skip-stage
+	python3 -B scripts/test_godot_import.py
+
+.PHONY: test-godot-audio-mixer
+test-godot-audio-mixer: godot-sample
+	python3 -B scripts/test_godot_audio.py
 
 run-godot: godot-sample
 	SDL_HIDAPI_IGNORE_DEVICES="$${SDL_HIDAPI_IGNORE_DEVICES-0x057e/0x2009}" \
 		$(GODOT) --path build/godot/project --rendering-method $(GODOT_RENDERER) \
-		--rendering-driver metal --log-file $(abspath build/godot/game.log) -- $(GODOT_ARGS)
+		--rendering-driver metal --log-file "$(abspath build/godot/game.log)" -- $(GODOT_ARGS)
 
 .PHONY: godot-app run-godot-app test-godot-bundle
 godot-app: godot-sample
@@ -1655,6 +1668,10 @@ run-godot-app: godot-app
 test-godot-bundle: godot-app
 	python3 -B tests/test_godot_package.py
 	python3 -B scripts/package_godot_app.py --verify-only
+
+.PHONY: test-godot-audio-mixer-bundle
+test-godot-audio-mixer-bundle: godot-app
+	python3 -B scripts/test_godot_audio.py --packaged
 
 build/tests/godot_sample_core_tests: tests/godot_sample_core_tests.cpp $(GODOT_CORE_DEPS) $(GODOT_OBJECTS)
 	mkdir -p $(dir $@)
@@ -1707,7 +1724,7 @@ GODOT_CANDIDATE_DIR ?= build/release/godot/v$(APP_VERSION)-godot.$(GODOT_CHANNEL
 GODOT_QA_STATUS ?= build/release-evidence/godot-qa-status.json
 .PHONY: test-godot-release godot-candidate verify-godot-candidate verify-tagged-godot-candidate init-godot-release-status verify-godot-release-ready
 test-godot-release:
-	python3 -B -m unittest tests.test_godot_release tests.test_godot_package tests.test_godot_benchmark
+	python3 -B -m unittest tests.test_godot_release tests.test_godot_package tests.test_godot_benchmark tests.test_godot_audio
 
 godot-candidate:
 	python3 -B scripts/godot_release.py build --version "$(APP_VERSION)" --channel "$(GODOT_CHANNEL)"

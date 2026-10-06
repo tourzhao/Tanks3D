@@ -43,6 +43,66 @@ static func read_state(app: Node) -> Dictionary:
     return {}
 
 
+static func presentation_snapshot_checks(app: Node) -> bool:
+    var before: String = app.core.snapshot()
+    var full: Dictionary = JSON.parse_string(before)
+    var presentation: Variant = JSON.parse_string(app.core.presentation_snapshot())
+    if not check(presentation is Dictionary and not presentation.has("digest") and
+            full.has("digest") and not app.state.has("digest"),
+            "normal rendering uses the presentation snapshot while diagnostics retain the digest"):
+        return false
+    full.erase("digest")
+    return check(presentation == full and app.core.snapshot() == before,
+        "presentation snapshot preserves every other field without advancing native state")
+
+
+static func render_resolution_checks(app: Node) -> bool:
+    var original_window: Vector2i = app.get_window().size
+    var original_fixed: Vector2i = app.fixed_render_size
+    var original_pixel: bool = app.pixel_style
+    var before: String = app.core.snapshot()
+    var passed := true
+    app.fixed_render_size = Vector2i.ZERO
+    app.pixel_style = false
+    for fixture in [
+            [Vector2i(960,540),Vector2i(960,540)],
+            [Vector2i(1920,1080),Vector2i(1920,1080)],
+            [Vector2i(3840,2160),Vector2i(1920,1080)],
+            [Vector2i(1920,720),Vector2i(1280,720)],
+            [Vector2i(800,1200),Vector2i(800,450)],
+            [Vector2i(320,180),Vector2i(640,360)]]:
+        passed = check(app.desired_render_size(fixture[0]) == fixture[1],
+            "adaptive 16:9 resolution, letterboxing and limits: " + str(fixture[0])) and passed
+    # Headless windows retain requested dimensions without a drawable resize.
+    # Emit the production resize signal explicitly; graphical image checks
+    # separately establish actual Retina/window output, not this synthetic event.
+    app.get_window().size = Vector2i(1920,1080)
+    app.get_viewport().size_changed.emit()
+    for pixel in [true,false]:
+        app.viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+        app.frontend.pixel_changed.emit(pixel)
+        var expected := Vector2i(1280,720) if pixel else Vector2i(1920,1080)
+        passed = check(app.render_size == expected and app.viewport.size == expected and
+                app.pixel_material.get_shader_parameter("scene_size") == Vector2(expected),
+            "Pixel toggle restores the corresponding viewport and shader resolution") and passed
+        passed = check(app.viewport.render_target_update_mode == SubViewport.UPDATE_ONCE,
+            "resizing a frozen menu background requests a fresh scene draw") and passed
+    app.viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+    app.get_viewport().size_changed.emit()
+    passed = check(app.viewport.render_target_update_mode == SubViewport.UPDATE_DISABLED,
+        "unchanged scene dimensions keep the menu background frozen") and passed
+    app.fixed_render_size = Vector2i(1600,900)
+    for pixel in [true,false]:
+        app.frontend.pixel_changed.emit(pixel)
+        app.get_viewport().size_changed.emit()
+        passed = check(app.render_size == Vector2i(1600,900) and app.viewport.size == app.render_size,
+            "explicit diagnostic render size survives Pixel changes and resize notifications") and passed
+    app.fixed_render_size = original_fixed
+    app.get_window().size = original_window
+    app.set_pixel_style(original_pixel)
+    return check(app.core.snapshot() == before, "resolution changes preserve the native session") and passed
+
+
 static func focus_lifecycle_checks(app: Node) -> bool:
     # A detached instance receives the same notification path as the macOS
     # startup race. It has no native core, window, or viewport yet.
@@ -740,9 +800,26 @@ static func coop_model_points_safe(app: Node, label: String) -> bool:
         points.append(ground-forward*3.0)
         for index in points.size():
             var projected: Vector2 = app.camera.unproject_position(points[index])/viewport_size
-            if not check(not app.camera.is_position_behind(points[index]) and safe.grow(.00002).has_point(projected),
-                    "%s: %s point %d projects to %s outside %s" % [label,key,index,projected,safe]):
+            var depth: float = (points[index]-app.camera.global_position).dot(-app.camera.global_basis.z)
+            if not check(depth >= app.camera.near and depth <= app.camera.far and safe.grow(.00002).has_point(projected),
+                    "%s: %s point %d projection %s / safe %s, depth %.3f / [%.3f, %.3f]" %
+                    [label,key,index,projected,safe,depth,app.camera.near,app.camera.far]):
                 return false
+    # Test actual rooftops and ground-facing terrain bounds in this view. Map
+    # corners outside the image or behind the camera are deliberately excluded.
+    for tile: Node3D in app.tile_nodes.values():
+        var body := tile.get_node_or_null("Body") as MeshInstance3D
+        if body == null: continue
+        var bounds := body.get_aabb()
+        for corner in 8:
+            var point := body.to_global(bounds.get_endpoint(corner))
+            var depth: float = (point-app.camera.global_position).dot(-app.camera.global_basis.z)
+            var projected: Vector2 = app.camera.unproject_position(point)/viewport_size
+            if depth > 0.0 and Rect2(0,0,1,1).has_point(projected):
+                if not check(depth >= app.camera.near and depth <= app.camera.far,
+                        "%s: visible terrain depth %.3f outside [%.3f, %.3f]" %
+                        [label,depth,app.camera.near,app.camera.far]):
+                    return false
     # Independently map normalized 3D coordinates through the real TextureRect
     # letterbox into the same canvas coordinates as the actual HUD control.
     var available: Rect2 = app.display.get_global_rect()
@@ -785,7 +862,7 @@ static func coop_camera_scenarios(app: Node) -> bool:
         [Vector2i(1280,720),Vector2i(1280,960),Vector2i(1920,720)]
     for dimensions in dimensions_to_check:
         app.get_window().size = dimensions
-        app.pixel_style = false
+        app.set_pixel_style(false)
         app.frontend.controls.pixel.set_pressed_no_signal(false)
         app.frontend.refresh(app.state,false,0.0)
         for frame in 3: await app.get_tree().process_frame
@@ -808,6 +885,25 @@ static func coop_camera_scenarios(app: Node) -> bool:
             "hud":str(app.frontend.hud_root.get_global_rect()),"safe":str(safe),"camera_span":span})
     app.get_window().size = Vector2i(1280,720)
     for frame in 3: await app.get_tree().process_frame
+    # Reuse the same native movement tape at the supported angle boundaries.
+    # The low-angle far-separated pair is the important depth-clipping case.
+    for angles in [Vector2i(-45,40),Vector2i(0,40),Vector2i(45,40),Vector2i(-45,70),Vector2i(45,70)]:
+        settings.camera_yaw = angles.x
+        settings.camera_elevation = angles.y
+        if not check(app.core.reset_config(20260916,settings),"camera depth native deployment"): return false
+        for tick in 525:
+            if not check(app.core.step(STEP,17,0),"camera depth native movement tape"): return false
+        app.state = read_state(app)
+        var before: String = app.core.snapshot()
+        app.frontend.refresh(app.state,app.pixel_style,0.0)
+        app.update_world(0.0)
+        if not check(app.state.players[0].active and app.state.players[1].active and
+                absf(float(app.state.players[0].z)-float(app.state.players[1].z)) > 10.0,
+                "angle boundary retains two real separated players"): return false
+        if not coop_model_points_safe(app,"native camera depth yaw/elevation "+str(angles)): return false
+        if not check(app.core.snapshot() == before,"depth checks preserve native state"): return false
+    settings.camera_yaw = 0
+    settings.camera_elevation = 50
     # A fresh native start must clear the previous distant zoom. At the map
     # edge, solo and close co-op now pan inward while retaining native scale.
     for players in [1,2]:
@@ -894,7 +990,7 @@ static func check_coop_camera(app: Node) -> bool:
     app.stage = stage
     app.player_count = players
     app.ai_p2 = ai_p2
-    app.pixel_style = pixel
+    app.set_pixel_style(pixel)
     app.close_up = close_up
     app.get_window().size = window_size
     var restored: bool = app.core.reset_config(seed,configuration)
@@ -1314,6 +1410,8 @@ static func run(app: Node) -> bool:
         return false
     if not await focus_lifecycle_checks(app):
         return false
+    if not render_resolution_checks(app):
+        return false
     if not await controller_menu_checks(app):
         return false
     if not check(Input.is_ignoring_joypad_on_unfocused_application(),
@@ -1353,6 +1451,7 @@ static func run(app: Node) -> bool:
     frontend.controls.camera_elevation.value = 65
     if not await background_gui_checks(app, frontend.controls.deploy, "menu", true): return false
     var state := read_state(app)
+    if not presentation_snapshot_checks(app): return false
     if not check(not frontend.menu_open and int(state.stage) == 10 and int(state.player_count) == 2,
             "deployment selects the requested stage and two-player mode"):
         return false

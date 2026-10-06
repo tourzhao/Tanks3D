@@ -5,6 +5,33 @@ is compiled from authored profiles at first use, cached, and shared by later
 instances. This is a visual layer; the C++ simulation owns movement, collision,
 damage, upgrades, map cells and random numbers.
 
+## Surface and daylight refinement — October 6
+
+The existing vehicle shapes, triangle budgets and muzzle mounts are retained.
+Only cannon sections, rounded gun mantlets and barrel evacuators use continuous
+side normals; end caps, muzzle lips and section shoulders remain hard. Tapered
+and oval sections use their own surface tangents. Road wheels and other small
+fixtures retain their previous normals. No additional geometry or texture is
+needed for this pass.
+
+Armor uses ordinary Lambert shading with restrained highlights, while winter
+paint remains rougher and exposed metal has a narrower highlight than paint.
+Rubber stays matte. `scene_lighting.gd` supplies the same daylight settings to
+the game and the art review, with lower ambient fill and a less yellow key light.
+The default Mobile renderer, light count and shadow-map size are unchanged.
+
+Orthographic shadow coverage follows `Camera3D.far`: the pinned Godot source
+[excludes orthographic cameras from the light's maximum-distance clamp](https://github.com/godotengine/godot/blob/ed1daf0bf/servers/rendering/renderer_scene_cull.cpp#L1965).
+The game uses a 70-unit far plane and close-up reviews use 14 units, including
+the ground at the upper edge of game-scale views. This concentrates the existing
+shadow map; changing the light's maximum distance alone cannot do so.
+`art_review.gd --view=front` / `--view=side` with `--neutral-materials` provides
+fixed-axis geometry checks alongside the default oblique view.
+
+Source baselines, model cards, actual Metal comparisons and validation results
+are kept under `build/release-evidence/visual-polish-20261006/`. They are local
+development evidence, not a release or human/controller acceptance record.
+
 ## Cast shoulder continuity — September 27
 
 Only the six cast turret bodies use `Geometry.cast_surface_rings`: twenty skin

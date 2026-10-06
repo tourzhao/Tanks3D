@@ -27,6 +27,25 @@ const HULL_MIN_CLEARANCE := .066
 # Army woodland olive, Soviet winter whitewash and matte German Panzer gray.
 # Lighting, mechanical materials and player markings remain independent.
 const NATIONAL_PAINT := [Color("55613d"),Color("b8bcaf"),Color("45494b")]
+# Immutable model tables are shared by mesh construction and shell presentation.
+# Keep each vehicle's authored dimensions and mounts independent.
+const ENEMY_TIERS := [1,0,2,3]
+const VEHICLE_CHASSIS := [.82,.88,.94,1.0]
+const VEHICLE_TURRETS := [.70,.80,.90,1.0]
+const VEHICLE_BREADTHS := [[.91,1.0,1.0,.96],[.97,.91,.97,1.0],[.96,.97,.925,.98]]
+const VEHICLE_NAMES := [["M4A3(75) SHERMAN","M26 PERSHING","M60A3","M1A1 ABRAMS"],
+    ["T-34/76","IS-2","T-62","T-90A"],["PANTHER AUSF. A","TIGER II","LEOPARD 1","LEOPARD 2A4"]]
+const VEHICLE_SHAPES := [["sherman","pershing","m60","abrams"],["t34","is2","t62","t90"],
+    ["panther","tiger2","leopard1","leopard2"]]
+const VEHICLE_HULL_TOPS := [[.48,.365,.43,.34],[.385,.39,.345,.345],[.44,.465,.36,.39]]
+const VEHICLE_HEIGHTS := [[.205,.215,.255,.190],[.185,.235,.165,.180],[.210,.250,.205,.225]]
+const VEHICLE_WIDTHS := [[.56,.64,.69,.80],[.55,.66,.72,.78],[.55,.67,.71,.81]]
+const VEHICLE_LENGTHS := [[.61,.76,.91,1.02],[.58,.75,.80,.89],[.63,.80,.87,1.01]]
+const VEHICLE_CENTERS := [[-.055,-.03,-.015,.02],[-.22,-.10,-.065,-.075],[-.08,-.055,-.02,.015]]
+const VEHICLE_GUN_TIPS := [[.87,1.36,1.44,1.38],[.82,1.49,1.40,1.52],[1.19,1.43,1.48,1.43]]
+const VEHICLE_GUN_HEIGHTS := [[.5974,.4872,.5714,.455],[.4952,.5218,.4456,.4504],[.5622,.6064,.4774,.5194]]
+const VEHICLE_TRACK_HEIGHTS := [[.40,.36,.37,.34],[.34,.36,.34,.34],[.39,.40,.35,.35]]
+const VEHICLE_GUN_RADII := [.032,.035,.038,.042]
 static var _visual_time: float = 0.0
 
 static func set_visual_time(seconds: float) -> void:
@@ -61,6 +80,22 @@ class Geometry:
         var n := (b - a).cross(d - a).normalized()
         tri(a, b, c, color, group, n)
         tri(a, c, d, color, group, n)
+
+    func smooth_quad(points: Array[Vector3], normals: Array[Vector3], color: Color, group: String) -> void:
+        if not surfaces.has(group):
+            var stream := SurfaceTool.new()
+            stream.begin(Mesh.PRIMITIVE_TRIANGLES)
+            surfaces[group] = stream
+        var stream: SurfaceTool = surfaces[group]
+        for corner in [0,2,1,0,3,2]:
+            var n := normals[corner]
+            var tint := color
+            if group == "paint" or group == "armor":
+                tint = color.lerp(Color(.84,.79,.56),maxf(n.y,0.0)*.13)
+                tint = tint.lerp(Color(.13,.21,.22),maxf(-n.y,0.0)*.25)
+            stream.set_normal(n)
+            stream.set_color(tint)
+            stream.add_vertex(points[corner])
 
     func box(center: Vector3, size: Vector3, color: Color, group: String = "paint") -> void:
         var a := center - size * 0.5
@@ -98,7 +133,7 @@ class Geometry:
             tri(top[0],top[i+1],top[i],color,group)
             tri(bottom[0],bottom[i],bottom[i+1],color.darkened(.2),group)
 
-    func tube(a: Vector3, b: Vector3, radius_a: float, radius_b: float, color: Color, group: String = "metal", count: int = 10, phase: float = 0.0) -> void:
+    func tube(a: Vector3, b: Vector3, radius_a: float, radius_b: float, color: Color, group: String = "metal", count: int = 10, phase: float = 0.0, smooth_sides: bool = false) -> void:
         var axis := (b-a).normalized()
         var u := axis.cross(Vector3.RIGHT if absf(axis.x) < .8 else Vector3.UP).normalized()
         var v := axis.cross(u)
@@ -107,7 +142,16 @@ class Geometry:
             var q := TAU * (i+1) / count + phase
             var d0 := u*cos(t)+v*sin(t)
             var d1 := u*cos(q)+v*sin(q)
-            quad(a+d0*radius_a,a+d1*radius_a,b+d1*radius_b,b+d0*radius_b,color,group)
+            if smooth_sides:
+                # A tapered tube needs an axial normal component; radial-only
+                # normals would light a cone as a cylinder. Caps stay flat.
+                var slope := axis*(radius_a-radius_b)/a.distance_to(b)
+                var n0 := (d0+slope).normalized()
+                var n1 := (d1+slope).normalized()
+                smooth_quad([a+d0*radius_a,a+d1*radius_a,b+d1*radius_b,b+d0*radius_b],
+                    [n0,n1,n1,n0],color,group)
+            else:
+                quad(a+d0*radius_a,a+d1*radius_a,b+d1*radius_b,b+d0*radius_b,color,group)
             tri(a,a+d1*radius_a,a+d0*radius_a,color,group)
             tri(b,b+d0*radius_b,b+d1*radius_b,color,group)
 
@@ -549,18 +593,18 @@ void fragment() {
     mat.roughness = .88
     mat.metallic_specular = .22
     if group == "armor":
-        # Broad, matte armor keeps a readable middle tone on curved cheeks.
-        # This material group belongs only to vehicles; world paint and the
-        # separate exposed metal/rubber surfaces keep their existing response.
-        mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-        mat.roughness = .72
-        mat.metallic_specular = .10
+        # Painted armor stays nonmetallic. A broad highlight and unwrapped
+        # diffuse response reveal curved shoulders without glossing the paint.
+        mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
+        mat.roughness = .68
+        mat.metallic_specular = .28
     elif group == "rubber":
         mat.roughness = 1.0
         mat.metallic_specular = .05
     elif group == "metal":
-        mat.metallic = .30
-        mat.roughness = .67
+        mat.metallic = .45
+        mat.roughness = .48
+        mat.metallic_specular = .32
     elif group == "optic":
         mat.roughness = .3
         mat.emission_enabled = true
@@ -622,8 +666,8 @@ static func _camouflage_armor_material(nation: int) -> StandardMaterial3D:
         # Winter whitewash needs an unwrapped dark side and highlight headroom.
         # This is a vehicle-only material; world light/exposure are untouched.
         mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT
-        mat.roughness = .90
-        mat.metallic_specular = .04
+        mat.roughness = .80
+        mat.metallic_specular = .16
     mat.albedo_texture = ImageTexture.create_from_image(image)
     mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
     mat.uv1_triplanar = true
@@ -652,41 +696,35 @@ static func _instance(key: String, geometry: Geometry) -> Node3D:
 static func _cached(key: String) -> Node3D:
     return _instance(key, null) if _meshes.has(key) else null
 
+static func vehicle_muzzle(nation: int, enemy: bool = false, role: int = 0, level: int = 0) -> Vector3:
+    nation = clampi(nation,0,2)
+    var tier: int = ENEMY_TIERS[clampi(role,0,3)] if enemy else clampi(level,0,3)
+    return Vector3(0,VEHICLE_GUN_HEIGHTS[nation][tier],-VEHICLE_GUN_TIPS[nation][tier])
+
 static func _vehicle_profile(nation: int, enemy: bool, role: int, level: int) -> Dictionary:
     nation = clampi(nation,0,2)
-    var tier: int = [1,0,2,3][clampi(role,0,3)] if enemy else clampi(level,0,3)
-    var chassis: float = [.82,.88,.94,1.0][tier]
-    var turret: float = [.70,.80,.90,1.0][tier]
+    var tier: int = ENEMY_TIERS[clampi(role,0,3)] if enemy else clampi(level,0,3)
+    var chassis: float = VEHICLE_CHASSIS[tier]
+    var turret: float = VEHICLE_TURRETS[tier]
     # Source-informed chassis silhouettes, with equal plan area at each tier.
     # Track length is not hull length; see TANK_MODELING_STANDARD.md and the
     # proportion study. Wheel radii, heights and gun mounts remain independent.
-    var breadth: float = [[.91,1.0,1.0,.96],[.97,.91,.97,1.0],[.96,.97,.925,.98]][nation][tier]
+    var breadth: float = VEHICLE_BREADTHS[nation][tier]
     var chassis_x: float = chassis*breadth*VEHICLE_WIDTH_SCALE
     var chassis_z: float = chassis/breadth
-    var names := [["M4A3(75) SHERMAN","M26 PERSHING","M60A3","M1A1 ABRAMS"],
-        ["T-34/76","IS-2","T-62","T-90A"],["PANTHER AUSF. A","TIGER II","LEOPARD 1","LEOPARD 2A4"]]
-    var shapes := [["sherman","pershing","m60","abrams"],["t34","is2","t62","t90"],
-        ["panther","tiger2","leopard1","leopard2"]]
     # Recognizable historical silhouettes with modest arcade volume. Gun tips
     # stay at the prior visual mounts; native spawning and collisions are separate.
-    var hull_tops := [[.48,.365,.43,.34],[.385,.39,.345,.345],[.44,.465,.36,.39]]
-    var heights := [[.205,.215,.255,.190],[.185,.235,.165,.180],[.210,.250,.205,.225]]
-    var widths := [[.56,.64,.69,.80],[.55,.66,.72,.78],[.55,.67,.71,.81]]
-    var lengths := [[.61,.76,.91,1.02],[.58,.75,.80,.89],[.63,.80,.87,1.01]]
-    var centers := [[-.055,-.03,-.015,.02],[-.22,-.10,-.065,-.075],[-.08,-.055,-.02,.015]]
-    var tips := [[.87,1.36,1.44,1.38],[.82,1.49,1.40,1.52],[1.19,1.43,1.48,1.43]]
-    var base: float = hull_tops[nation][tier]+.006
-    var height: float = heights[nation][tier]
-    var gun_heights := [[.5974,.4872,.5714,.455],[.4952,.5218,.4456,.4504],[.5622,.6064,.4774,.5194]]
-    var muzzle := Vector3(0,gun_heights[nation][tier],-tips[nation][tier])
-    return {"nation":nation,"tier":tier,"enemy":enemy,"role":role,"name":names[nation][tier],
-        "shape":shapes[nation][tier],"chassis":chassis,"chassis_x":chassis_x,"chassis_z":chassis_z,"turret":turret,
-        "w":widths[nation][tier]*.52*TURRET_WIDTH_SCALE,"length":lengths[nation][tier],
-        "center":centers[nation][tier]/breadth,"h":height,
-        "base":base,"hull_top":hull_tops[nation][tier]*HULL_DECK_SCALE,"hull_width":.35*chassis_x,
-        "track_length":1.90*chassis_z,"track_height":[[.40,.36,.37,.34],[.34,.36,.34,.34],[.39,.40,.35,.35]][nation][tier]*chassis,"track_center":.38*chassis_x,
+    var base: float = VEHICLE_HULL_TOPS[nation][tier]+.006
+    var height: float = VEHICLE_HEIGHTS[nation][tier]
+    var muzzle := vehicle_muzzle(nation,enemy,role,level)
+    return {"nation":nation,"tier":tier,"enemy":enemy,"role":role,"name":VEHICLE_NAMES[nation][tier],
+        "shape":VEHICLE_SHAPES[nation][tier],"chassis":chassis,"chassis_x":chassis_x,"chassis_z":chassis_z,"turret":turret,
+        "w":VEHICLE_WIDTHS[nation][tier]*.52*TURRET_WIDTH_SCALE,"length":VEHICLE_LENGTHS[nation][tier],
+        "center":VEHICLE_CENTERS[nation][tier]/breadth,"h":height,
+        "base":base,"hull_top":VEHICLE_HULL_TOPS[nation][tier]*HULL_DECK_SCALE,"hull_width":.35*chassis_x,
+        "track_length":1.90*chassis_z,"track_height":VEHICLE_TRACK_HEIGHTS[nation][tier]*chassis,"track_center":.38*chassis_x,
         "track_width":.24*chassis_x,"offset":0.0,"muzzle":muzzle,
-        "gun_radius":[.032,.035,.038,.042][tier]*GUN_RADIUS_SCALE,"wheeled":false,"casemate":false,
+        "gun_radius":VEHICLE_GUN_RADII[tier]*GUN_RADIUS_SCALE,"wheeled":false,"casemate":false,
         "skirts":tier == 3,"auxiliary":false,"coaxial":false}
 
 # Wheel locations are authored in a normalized chassis, not scaled copies of
@@ -922,9 +960,20 @@ static func _cannon(g: Geometry, muzzle: Vector3, root: float, radius: float, pa
         rings.append(ring)
     var steel := Color("687671")
     for j in 5:
+        # Smooth around each authored barrel section, not across the collar,
+        # taper changes or brake shoulders. Oval rear rings retain their shape.
+        var normals: Array[Vector3] = []
+        for ring_index in [j,j+1]:
+            var vertical := .82 if ring_index < 2 else 1.0
+            for i in 10:
+                var angle := TAU*i/10.0
+                var tangent := Vector3(-sin(angle),cos(angle)*vertical,0.0)
+                normals.append((rings[j+1][i]-rings[j][i]).cross(tangent).normalized())
         for i in 10:
             var k := (i+1)%10
-            g.quad(rings[j][i],rings[j+1][i],rings[j+1][k],rings[j][k],paint if j < 3 else steel,"armor" if j < 3 else "metal")
+            g.smooth_quad([rings[j][i],rings[j+1][i],rings[j+1][k],rings[j][k]],
+                [normals[i],normals[10+i],normals[10+k],normals[k]],
+                paint if j < 3 else steel,"armor" if j < 3 else "metal")
     for i in 10:
         var a := TAU*i/10.0
         var b := TAU*(i+1)/10.0
@@ -1505,11 +1554,11 @@ static func make_tank(nation: int, enemy: bool = false, role: int = 0, player_id
         # Rounded mantlet on the trapezoid Panther / cast Leopard 1, unlike
         # Tiger II's broad plate or the rectangular modern A4 gun opening.
         g.tube(Vector3(-d.w*.53,d.muzzle.y,gun_root+.035),Vector3(d.w*.53,d.muzzle.y,gun_root+.035),
-            .105,.105,deep,"armor",10)
+            .105,.105,deep,"armor",10,0.0,true)
     elif d.shape == "tiger2":
         # Production turret: flat front plate around a compact rounded collar.
         g.tube(Vector3(0,d.muzzle.y,gun_root+.045),Vector3(0,d.muzzle.y,gun_root-.045),
-            .125,.084,deep,"armor",10)
+            .125,.084,deep,"armor",10,0.0,true)
     elif d.shape in ["sherman","pershing","m60","abrams","leopard2"]:
         _seated_mantlet(g,d,gun_root,paint)
     _cannon(g,d.muzzle,gun_root,d.gun_radius,paint,d.shape in ["pershing","is2","panther","tiger2"])
@@ -1587,7 +1636,7 @@ static func make_tank(nation: int, enemy: bool = false, role: int = 0, player_id
         var front_z: float = d.muzzle.z+span*(.25 if d.shape == "t62" else .35)
         # Bore evacuator stays on the existing barrel; the firing mount is fixed.
         g.tube(Vector3(0,d.muzzle.y,rear_z),Vector3(0,d.muzzle.y,front_z),
-            d.gun_radius*1.31,d.gun_radius*1.24,paint.darkened(.10),"armor",10)
+            d.gun_radius*1.31,d.gun_radius*1.24,paint.darkened(.10),"armor",10,0.0,true)
     if d.shape == "leopard2":
         var sight := Vector3(d.w*.58,roof_y+.052,roof[2]+.115)
         g.box(sight,Vector3(.10,.067,.11),deep,"armor")
@@ -2024,6 +2073,11 @@ static func make_tile(tile: String, brick_mask: int, row: int, col: int) -> Node
         # Water shape is independent of lot, parity and brick damage. Sharing
         # the startup instance's mesh also retains its prepared material.
         key = "water"
+    elif tile == "@":
+        # Steel and ice have one authored shape; neither uses lot/damage data.
+        key = "steel"
+    elif tile == "-":
+        key = "ice"
     var cached := _cached(key)
     if cached:
         return cached

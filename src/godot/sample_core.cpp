@@ -324,7 +324,7 @@ std::string digest(const GameSession &game)
     return out.str();
 }
 
-std::string snapshot(const Sample &sample)
+std::string snapshot(const Sample &sample, bool includeDigest = true)
 {
     if (!sample.game)
         throw std::logic_error("Reset is required before reading the sample");
@@ -334,8 +334,10 @@ std::string snapshot(const Sample &sample)
     out << std::setprecision(std::numeric_limits<float>::max_digits10)
         << std::boolalpha << "{\"schema\":1,\"stage\":" << game.stage()
         << ",\"player_count\":" << game.playerCount()
-        << ",\"tick\":" << sample.tick << ",\"digest\":\"" << digest(game)
-        << "\",\"game_over\":" << game.gameOver() << ",\"settling\":" << game.settling()
+        << ",\"tick\":" << sample.tick;
+    if (includeDigest)
+        out << ",\"digest\":\"" << digest(game) << '"';
+    out << ",\"game_over\":" << game.gameOver() << ",\"settling\":" << game.settling()
         << ",\"settlement_counting\":" << game.settlementCounting()
         << ",\"high_score\":" << game.highScoreDisplay()
         << ",\"intro\":" << game.stageIntro()
@@ -637,6 +639,14 @@ const char *tanks_sample_snapshot(void *handle)
 {
     using namespace tanks3d::godot_sample;
     if (guarded(handle, [](Sample &sample) { sample.snapshot = snapshot(sample); }) < 0)
+        return nullptr;
+    return get(handle).snapshot.c_str();
+}
+
+const char *tanks_sample_presentation_snapshot(void *handle)
+{
+    using namespace tanks3d::godot_sample;
+    if (guarded(handle, [](Sample &sample) { sample.snapshot = snapshot(sample, false); }) < 0)
         return nullptr;
     return get(handle).snapshot.c_str();
 }

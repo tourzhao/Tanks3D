@@ -224,6 +224,40 @@ Sample &sample(const Handle &handle)
     return *static_cast<Sample *>(handle.get());
 }
 
+void requirePresentationSnapshot(const Handle &handle)
+{
+    const auto &current = sample(handle);
+    const auto world = current.game->sessionDigest();
+    const auto tick = current.tick;
+    const auto previous = current.previous;
+    const auto decisions = current.ai.decisions();
+    const auto audio = current.audio->commands;
+    const std::string full = tanks_sample_snapshot(handle.get());
+    std::string expected = full;
+    const std::string field = ",\"digest\":\"";
+    const auto begin = expected.find(field);
+    require(begin != std::string::npos, "full snapshot lost its diagnostic digest");
+    const auto end = expected.find('"', begin + field.size());
+    require(end == begin + field.size() + 16, "full snapshot digest format changed");
+    expected.erase(begin, end - begin + 1);
+    const char *value = tanks_sample_presentation_snapshot(handle.get());
+    require(value != nullptr, "presentation snapshot failed");
+    const std::string presentation = value;
+    require(presentation == expected && presentation == tanks_sample_presentation_snapshot(handle.get()),
+            "presentation snapshot must retain every field except the digest");
+    require(full == tanks_sample_snapshot(handle.get()) && current.game->sessionDigest() == world &&
+                current.tick == tick && current.previous == previous && current.ai.decisions() == decisions,
+            "presentation reads must preserve full snapshot, events, world/RNG, inputs and AI");
+    require(audio.size() == current.audio->commands.size() &&
+                std::equal(audio.begin(), audio.end(), current.audio->commands.begin(),
+                           [](const AudioCommand &first, const AudioCommand &second)
+                           {
+                               return first.operation == second.operation && first.cue == second.cue &&
+                                      first.active == second.active && first.moving == second.moving;
+                           }),
+            "presentation reads must preserve ordered pending audio commands");
+}
+
 // Kept independent of the bridge's mask conversion to catch edge/order errors.
 PlayerControlFrame expectedInput(unsigned bits, unsigned previous)
 {
@@ -529,9 +563,12 @@ void testInvalidInputAndReadOnlySnapshot()
             "missing resource root must report an error");
     require(tanks_sample_step(nullptr, kStep, 0, 0) == -1,
             "null handle must fail cleanly");
+    require(tanks_sample_presentation_snapshot(nullptr) == nullptr,
+            "null presentation snapshot must fail cleanly");
     tanks_sample_destroy(nullptr);
     auto handle = create();
     require(tanks_sample_snapshot(handle.get()) == nullptr &&
+                tanks_sample_presentation_snapshot(handle.get()) == nullptr &&
                 tanks_sample_step(handle.get(), kStep, 0, 0) == -1,
             "unstarted sample must reject reads/steps");
     require(tanks_sample_reset(handle.get(), 12, 1, 2, 1) == 0, "reset failed");
@@ -565,6 +602,24 @@ void testInvalidInputAndReadOnlySnapshot()
     reference.update(0.05f, {});
     require(reference.sessionDigest() == sample(handle).game->sessionDigest(),
             "clamping must retain production 0.05 second rule");
+}
+
+void testPresentationSnapshot()
+{
+    auto handle = create();
+    require(tanks_sample_reset(handle.get(), 731, 1, 2, 0) == 0, "presentation reset failed");
+    requirePresentationSnapshot(handle);
+    auto &game = *sample(handle).game;
+    require(Game3DTestAccess::prepareGameEventScenario(game), "presentation battle fixture failed");
+    require(tanks_sample_step(handle.get(), kStep, 17, 24) == 0 && !sample(handle).events.empty(),
+            "presentation fixture must retain pending combat events");
+    requirePresentationSnapshot(handle);
+    require(tanks_sample_step(handle.get(), kStep, 64, 0) == 0 && game.paused(),
+            "presentation pause fixture failed");
+    requirePresentationSnapshot(handle);
+    Game3DTestAccess::setPlayerDirectKillTally(game, 0, 0, 100);
+    Game3DTestAccess::beginSettlement(game, false, true);
+    requirePresentationSnapshot(handle);
 }
 
 void testSeededProductionParity()
@@ -1021,6 +1076,8 @@ void testLanBridge(Nation guestNation)
                 sample(host).game->cameraYawDegrees() == 0 && sample(guest).game->cameraYawDegrees() == 45,
             "host rules/guest nation must agree while each camera remains local");
     const std::string before = tanks_sample_snapshot(host.get());
+    requirePresentationSnapshot(host);
+    requirePresentationSnapshot(guest);
     require(tanks_sample_step(host.get(), kStep, 0, 0) == -1 &&
                 tanks_sample_lan_poll(host.get(), now - 1, 0) == -1 &&
                 before == tanks_sample_snapshot(host.get()),
@@ -1325,6 +1382,7 @@ int main(int argc, char **argv)
         }
         testShellFlightPresentation();
         testInvalidInputAndReadOnlySnapshot();
+        testPresentationSnapshot();
         testTankOverlapRecovery();
         testTankCreationOccupancy();
         testSeededProductionParity();
@@ -1339,7 +1397,7 @@ int main(int argc, char **argv)
         testNativePad();
         testPrecisePlayerTurns();
         testMenuSessionContinuation();
-        std::cout << "PASS Godot C bridge: 35-stage production parity, read-only snapshots, "
+        std::cout << "PASS Godot C bridge: 35-stage production parity, read-only full/presentation snapshots, "
                      "overlap recovery/creation occupancy, full setup/restart, solo/human/AI opponent nations, input validation, native AI/P2 isolation, pause, reports, "
                      "same/different-nation LAN handshake/state/RNG/events native controller mapping and precise wall-corner turns\n";
     }

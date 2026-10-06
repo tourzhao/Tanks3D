@@ -28,6 +28,12 @@ migration. `scripts/prepare_godot_sample.py` copies the
 existing OGG files and both existing `resources/textures/*.png` files without
 changing their bytes or source licenses; their original provenance below still
 applies. Godot import output is generated from those recorded source files.
+The production Godot PCK uses the recorded grass and 22 OGG assets through
+their retained `.import` mappings and generated import output, omitting the
+duplicate raw `battlefield_grass.png` and OGG payloads. It also omits the unused
+`urban_masonry.png` and its generated import output. All originals remain in
+the repository and development staging. Standalone diagnostics, including
+`art_review.gd`, remain development tools rather than production pack resources.
 The shared `src/app/game_session.h` and Godot bridge are project-owned
 code; neither embeds a third-party engine nor adds assets. The Godot app does
 not ship the raylib runtime. It reuses raylib's bitmap font as described below;
@@ -35,6 +41,8 @@ the complete third-party notice collection accompanies the app.
 Engine/tool source URLs, exact revisions and hashes are in
 `godot/DEPENDENCIES.json`. Notices in `godot/licenses/`, the root license/provenance
 documents and `LICENSES/` are retained in the staged project and local app.
+The app keeps the complete originals in `Contents/Resources/licenses/` without
+duplicating them inside its PCK.
 The app's package manifest records the source and imported-resource SHA-256
 mapping, and its external build receipt records final signed file hashes.
 

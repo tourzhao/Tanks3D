@@ -87,6 +87,12 @@ random sources, and game events over raylib input or audio calls in rule code.
 
 ## Testing Guidelines
 
+Judge optimization by whole-frame latency, stalls, memory, startup/build time
+or total shipped size. A large percentage in a microsecond-scale helper does
+not establish a meaningful game improvement. Add caching, extra state or a
+larger test/maintenance burden only when measured overall benefit justifies
+that complexity; prefer simpler changes and remove experiments that do not.
+
 Run `make clean`, then `make test`, after rule, collision, resource, or build
 changes; run `make test-sanitize` before submitting refactors. Treat
 `docs/GAMEPLAY_INVARIANTS.md` as a behavior contract. Use

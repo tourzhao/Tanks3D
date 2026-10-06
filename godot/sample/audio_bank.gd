@@ -28,16 +28,38 @@ func _ready() -> void:
     for index in range(CUES.size()):
         var stream: AudioStream = load("res://resources/sounds/%s.ogg" % CUES[index])
         streams.append(stream)
+        # Keep recordings resident before any playback; allocate mixer players
+        # only when requested, then reuse them for this bank's lifetime.
         var group: Array[AudioStreamPlayer] = []
-        for voice_index in range(1 if index in SINGLE else VOICE_LIMIT):
-            var voice := AudioStreamPlayer.new()
-            voice.stream = stream
-            voice.bus = bus
-            voice.volume_db = linear_to_db(VOLUMES[index] * volume)
-            voice.set_meta("cue_gain", VOLUMES[index])
-            add_child(voice)
-            group.append(voice)
         voices.append(group)
+
+
+func _create_voice(cue: int) -> AudioStreamPlayer:
+    var group: Array[AudioStreamPlayer] = voices[cue]
+    if group.size() >= (1 if cue in SINGLE else VOICE_LIMIT):
+        return null
+    var voice := AudioStreamPlayer.new()
+    voice.stream = streams[cue]
+    voice.bus = bus
+    voice.volume_db = linear_to_db(VOLUMES[cue] * volume)
+    voice.set_meta("cue_gain", VOLUMES[cue])
+    add_child(voice)
+    group.append(voice)
+    return voice
+
+
+# Keep the driver's playback lifecycle separate from allocation and policy so
+# headless checks can control completion without queuing Dummy mixer streams.
+func _voice_playing(voice: AudioStreamPlayer) -> bool:
+    return voice.playing
+
+
+func _play_voice(voice: AudioStreamPlayer) -> void:
+    voice.play()
+
+
+func _stop_voice(voice: AudioStreamPlayer) -> void:
+    voice.stop()
 
 
 func set_volume(value: float) -> void:
@@ -56,7 +78,7 @@ func set_enabled(value: bool) -> void:
 
 func highest_priority_playing() -> bool:
     for cue in PRIORITY:
-        if voices[cue][0].playing:
+        if not voices[cue].is_empty() and _voice_playing(voices[cue][0]):
             return true
     return false
 
@@ -71,16 +93,18 @@ func play(cue: int) -> void:
     var available: AudioStreamPlayer
     var active := 0
     for voice in voices[cue]:
-        if voice.playing:
+        if _voice_playing(voice):
             active += 1
         elif available == null:
             available = voice
     if available == null:
-        return
+        available = _create_voice(cue)
+        if available == null:
+            return
     var gain: float = VOLUMES[cue] * pow(OVERLAP[cue], active)
     available.set_meta("cue_gain", gain)
     available.volume_db = linear_to_db(gain * volume)
-    available.play()
+    _play_voice(available)
 
 
 func update_engine(active: bool, moving: bool) -> void:
@@ -90,24 +114,24 @@ func update_engine(active: bool, moving: bool) -> void:
 
 
 func refresh_engine() -> void:
-    var idle: AudioStreamPlayer = voices[17][0]
-    var drive: AudioStreamPlayer = voices[19][0]
     if not enabled or not engine_active or highest_priority_playing():
-        idle.stop()
-        drive.stop()
+        for cue in [17, 19]:
+            for voice in voices[cue]: _stop_voice(voice)
         return
-    var wanted := drive if engine_moving else idle
-    var other := idle if engine_moving else drive
-    other.stop()
+    var wanted_cue := 19 if engine_moving else 17
+    var other_cue := 17 if engine_moving else 19
+    for voice in voices[other_cue]: _stop_voice(voice)
+    var wanted: AudioStreamPlayer = (
+        _create_voice(wanted_cue) if voices[wanted_cue].is_empty() else voices[wanted_cue][0])
     # The original restarts each complete recording; do not add an OGG loop.
-    if not wanted.playing:
-        wanted.play()
+    if not _voice_playing(wanted):
+        _play_voice(wanted)
 
 
 func stop_all() -> void:
     for group in voices:
         for voice in group:
-            voice.stop()
+            _stop_voice(voice)
     engine_active = false
 
 

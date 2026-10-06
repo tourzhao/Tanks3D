@@ -149,5 +149,8 @@ as listed in [GitHub's runner documentation](https://docs.github.com/en/actions/
 It installs the pinned tools, then runs release-tool fixtures, native sanitizers,
 real loopback TCP, import/UI/presentation, bundle and two-process LAN checks.
 The separate shared-rules job retains historical adapter/regression coverage.
-Both jobs are required for a mainline change. Hosted headless checks cannot
-replace a real Metal performance run, physical controllers or a second Mac.
+Both jobs are expected to pass for a mainline change. The workflow alone does
+not enforce this: required status checks must be configured in a GitHub branch
+protection rule or ruleset. The 2026-10-06 audit found no such protection on
+`main`. Hosted headless checks cannot replace a real Metal performance run,
+physical controllers or a second Mac.
