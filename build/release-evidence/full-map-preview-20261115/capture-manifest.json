@@ -1,0 +1,31 @@
+{
+  "capture_date": "2026-11-15",
+  "kind": "development-preview-not-candidate-QA",
+  "renderer": "Mobile / Metal",
+  "settings": {
+    "full_map": true,
+    "players": 2,
+    "stage": 1,
+    "camera_yaw": 0,
+    "camera_elevation": 50
+  },
+  "source_sha256": {
+    "main.gd": "626496869f239c764c82249af6aae826acb68dd518ce9e3d2440cad995e0739e",
+    "frontend.gd": "fb998ff01642277c71a80802f1c657f5b1db9d690b8e13c046923cafabefb5d3",
+    "battlefield_camera.gd": "9f197abf6a7e612574801860a10c7c7ee420eb447ed831f5c784e0b509f3dd2a",
+    "ui_checks.gd": "f29b0e3c97a8c352d4658d76530b23d82348d66e7e2da6f24c572d45197d14e8"
+  },
+  "images_sha256": {
+    "overview.png": "b2dd8e2d8171ef279ac17c518a06f46c707bac11fe4e1c8e9331c73feba0ac41",
+    "status-translucent.png": "1804dd58fde7090012780d3657819c9b3d30e09adc7e0bba948dd53d7d828647"
+  },
+  "checks": [
+    "real window coverage at1280x800,960x960,1600x720,800x1000",
+    "Tab press/repeat/release and paused toggles",
+    "camera/native state preserved; radar hidden"
+  ],
+  "limits": [
+    "Tagged synthetic input; unrelated physical events suppressed",
+    "No candidate-bound human/hardware QA"
+  ]
+}

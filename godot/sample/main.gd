@@ -153,6 +153,8 @@ func _ready() -> void:
             demo_command = clampi(int(arg.get_slice("=", 1)), 0, 31)
         elif arg == "--pixel":
             pixel_style = true
+        elif arg == "--full-map":
+            cli_settings.full_map = true
         elif arg == "--close-up":
             close_up = true
         elif arg == "--benchmark":
@@ -255,6 +257,8 @@ func _ready() -> void:
     frontend.configure(configuration, pixel_style, audio_volume)
     if not quick_start and not demo and frame_limit == 0:
         frontend.show_menu()
+    else:
+        frontend.show_battle()
     restart()
     if capture_menu:
         frontend.show_menu()
@@ -268,6 +272,7 @@ func _ready() -> void:
 
 
 func create_scene() -> void:
+    update_window_aspect()
     render_size = desired_render_size(get_window().size)
     viewport = SubViewport.new()
     viewport.size = render_size
@@ -374,6 +379,13 @@ func create_scene() -> void:
 func desired_render_size(window_pixels: Vector2i) -> Vector2i:
     if fixed_render_size != Vector2i.ZERO:
         return fixed_render_size
+    if configuration.get("full_map", false):
+        # Preserve the actual window shape so the overview can use its entire
+        # height. Bound GPU work to the same 720p / 1080p dimensions as before.
+        var limit := Vector2(1280, 720) if pixel_style else Vector2(1920, 1080)
+        var pixels := Vector2(window_pixels).max(Vector2.ONE)
+        var scale := minf(1.0, minf(limit.x / pixels.x, limit.y / pixels.y))
+        return Vector2i(maxi(1, roundi(pixels.x * scale)), maxi(1, roundi(pixels.y * scale)))
     # Fit the letterboxed 16:9 scene in actual window pixels. Window.size already
     # accounts for high DPI; the stretched 1280x720 canvas is not a pixel budget.
     # Preserve the existing Pixel grid and bound normal rendering to 1080p.
@@ -382,8 +394,18 @@ func desired_render_size(window_pixels: Vector2i) -> Vector2i:
     return Vector2i(units * 16, units * 9)
 
 
+func update_window_aspect() -> void:
+    # Expand the UI canvas with the scene; otherwise the root viewport itself
+    # still letterboxes a non-16:9 window. Diagnostic captures stay reproducible.
+    var aspect := Window.CONTENT_SCALE_ASPECT_EXPAND if configuration.get("full_map", false) and \
+        fixed_render_size == Vector2i.ZERO else Window.CONTENT_SCALE_ASPECT_KEEP
+    if get_window().content_scale_aspect != aspect:
+        get_window().content_scale_aspect = aspect
+
+
 func update_render_size() -> void:
     presentation_dirty = true
+    update_window_aspect()
     var desired := desired_render_size(get_window().size)
     if desired == render_size:
         return
@@ -430,10 +452,11 @@ func restart(reset_stage: int = -1) -> void:
     value.stage = stage if reset_stage < 0 else reset_stage
     value.players = player_count
     value.ai_p2 = ai_p2
-    if not core.reset_config(seed_value, value):
+    if not core.reset_config(seed_value, Frontend.native_settings(value)):
         frontend.show_menu(core.error())
         return
     configuration = value
+    update_render_size()
     clear_effects()
     queued_commands = 0
     queued_players = [0, 0]
@@ -447,10 +470,11 @@ func start_from_menu(value: Dictionary) -> void:
         core.lan_stop()
         network_active = false
         network_state = {}
-    if not core.start_config(value):
+    if not core.start_config(Frontend.native_settings(value)):
         frontend.set_status(core.error())
         return
     configuration = value.duplicate()
+    update_render_size()
     stage = int(value.stage)
     player_count = int(value.players)
     ai_p2 = bool(value.ai_p2)
@@ -463,6 +487,7 @@ func start_from_menu(value: Dictionary) -> void:
     if player_count == 2 and not ai_p2:
         input_bits(1)
     clear_battle_input()
+    frontend.configure(configuration, pixel_style, audio_volume)
     frontend.show_battle()
     clear_effects()
     queued_commands = 0
@@ -553,7 +578,7 @@ func start_network(host: bool, address: String, port: int, value: Dictionary) ->
     network_state = {}
     var success: bool
     if host:
-        success = core.lan_host(seed_value, value, port, now)
+        success = core.lan_host(seed_value, Frontend.native_settings(value), port, now)
     else:
         success = core.lan_join("%s:%d" % [address, port], int(value.nation_p1), int(value.camera_yaw), int(value.camera_elevation), now)
     if not success:
@@ -584,12 +609,19 @@ func update_network(local_bits: int) -> bool:
     if network_state.get("phase", "") == "playing" and not network_started:
         network_started = true
         var connected_snapshot: Dictionary = JSON.parse_string(core.presentation_snapshot())
+        var full_map := bool(configuration.get("full_map", false))
         configuration = connected_snapshot.get("settings", configuration).duplicate()
         for key in configuration:
             configuration[key] = bool(configuration[key]) if key == "ai_p2" else int(configuration[key])
+        # The room owns gameplay settings; full-map framing is a local display
+        # preference and is deliberately absent from the native LAN protocol.
+        configuration.full_map = full_map
+        update_render_size()
         stage = int(connected_snapshot.get("stage", stage))
         player_count = 2
         ai_p2 = false
+        frontend.configure(configuration, pixel_style, audio_volume)
+        save_profile()
         frontend.set_network_pending(false)
         frontend.show_battle()
     if network_state.get("phase", "") in ["failed", "disconnected", "closed"]:
@@ -1008,26 +1040,31 @@ func update_world(dt: float, reset_gear: bool = false) -> void:
             "position": Vector3(position_data[0], position_data[1], position_data[2]),
             "target": Vector3(target_data[0], target_data[1], target_data[2]),
             "span": float(rig.span)}
-        var players: Array = []
-        for player in state.get("players", []):
-            var key := "p%d" % int(player.id)
-            if player.get("active", false) and vehicles.has(key):
-                var vehicle: Node3D = vehicles[key]
-                var bounds: AABB = vehicle.get_meta("visual_bounds")
-                players.append({"center": vehicle.global_position,
-                    "bounds": vehicle.global_transform * bounds})
-        # Fit the actual animated silhouettes and road context below the HUD.
-        # This is presentation only: the native rig and simulation stay intact.
-        presentation = CoopCamera.fit(presentation, float(render_size.x) / render_size.y,
-            coop_safe_rect(), players)
-        # Preserve that scale and direction while spending less of the view on
-        # the apron outside the map. Player/road clearance takes precedence.
-        presentation = BattlefieldCamera.constrain(presentation, float(render_size.x) / render_size.y,
-            coop_safe_rect(), players)
+        if configuration.get("full_map", false):
+            presentation = BattlefieldCamera.overview(float(configuration.camera_yaw),
+                float(configuration.camera_elevation), float(render_size.x) / render_size.y,
+                coop_safe_rect())
+        else:
+            var players: Array = []
+            for player in state.get("players", []):
+                var key := "p%d" % int(player.id)
+                if player.get("active", false) and vehicles.has(key):
+                    var vehicle: Node3D = vehicles[key]
+                    var bounds: AABB = vehicle.get_meta("visual_bounds")
+                    players.append({"center": vehicle.global_position,
+                        "bounds": vehicle.global_transform * bounds})
+            # Fit the actual animated silhouettes and road context below the HUD.
+            # This is presentation only: the native rig and simulation stay intact.
+            presentation = CoopCamera.fit(presentation, float(render_size.x) / render_size.y,
+                coop_safe_rect(), players)
+            # Preserve that scale and direction while spending less of the view on
+            # the apron outside the map. Player/road clearance takes precedence.
+            presentation = BattlefieldCamera.constrain(presentation, float(render_size.x) / render_size.y,
+                coop_safe_rect(), players)
         camera.position = presentation.position
         var target: Vector3 = presentation.target
         camera.size = presentation.span
-        if close_up and not state.players.is_empty():
+        if close_up and not configuration.get("full_map", false) and not state.players.is_empty():
             var player: Dictionary = state.players[0]
             target = Vector3(player.x, 0.65, player.z)
             camera.position = target + Vector3(3.0, 4.5, 5.0)
@@ -1040,6 +1077,8 @@ func update_world(dt: float, reset_gear: bool = false) -> void:
 
 
 func coop_safe_rect() -> Rect2:
+    if configuration.get("full_map", false):
+        return BattlefieldCamera.OVERVIEW_SAFE_RECT
     # TextureRect letterboxes the scene. HUD controls use canvas coordinates,
     # so subtract only their overlap with the displayed 3D image, not a fixed
     # count of physical pixels (which fails on resized / Retina windows).
@@ -1052,7 +1091,9 @@ func coop_safe_rect() -> Rect2:
         return Rect2(0.035, 0.15, 0.93, 0.81)
     var scene := Rect2(available.position + (available.size - scene_size) * 0.5, scene_size)
     var top := 0.025
-    if frontend.hud_root.is_visible_in_tree():
+    # Keep the normal following camera's framing stable when Tab hides its
+    # status overlay. Full-map framing above uses the entire scene instead.
+    if not frontend.menu_open:
         var hud: Rect2 = frontend.hud_root.get_global_rect()
         if scene.intersects(hud):
             top = clampf((hud.end.y - scene.position.y) / scene.size.y + 0.025, top, 0.75)
@@ -1322,12 +1363,12 @@ func _input(event: InputEvent) -> void:
         # gameplay, without consuming an input or changing player ownership.
         frontend.note_input(event, frontend.menu_open or assigned_pads.has(event.device))
     if event is InputEventKey:
-        # Tab is the published presentation shortcut, including while paused.
-        # Consume it before a focused pause/report button can navigate with it.
-        if event.keycode == KEY_TAB and event.pressed and not event.echo and \
-                not frontend.menu_open and not capturing and not paused_for_capture and \
+        # Status overlays are local UI, including while paused. Consume held
+        # repeats and releases too, so Tab never moves pause/report focus.
+        if event.keycode == KEY_TAB and not frontend.menu_open and \
                 not get_viewport().gui_disable_input:
-            set_pixel_style(not pixel_style)
+            if event.pressed and not event.echo and not capturing and not paused_for_capture:
+                frontend.cycle_player_hud()
             get_viewport().set_input_as_handled()
             return
         # Always observe releases, including one consumed by a focused Control

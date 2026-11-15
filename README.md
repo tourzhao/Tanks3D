@@ -115,9 +115,14 @@ Alpha 4 is an early pre-release and is not Apple notarized.
   `B`/`Y`/`R`/`ZR` fires; `+` starts or pauses; `-` returns.
 - `Enter` pauses · `Esc` returns to setup · `R` restarts (LAN host only) ·
   `F11` toggles fullscreen.
+- `Tab` toggles player status panels between 50% opacity and hidden.
+  Full Map View starts with them hidden; normal view starts with them shown.
+  Toggling panels does not change the camera framing.
 - **Advanced Settings:** `View Horizontal` and `View Elevation` adjust the
   camera. Default: 0° horizontal, 50° elevation. `Pixel Style` toggles the
   optional pixel treatment (default OFF); left/right or confirm changes it.
+  `Full Map View` fits the complete centered battlefield to the window's actual
+  shape with a 1% border and hides the minimap.
 
 ## More
 

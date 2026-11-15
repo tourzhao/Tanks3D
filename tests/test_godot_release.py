@@ -231,9 +231,42 @@ class GodotReleaseTests(unittest.TestCase):
         self.assertIn("fire_hits_and_shell_cancellation", groups["two_player"])
         self.assertIn("pickup_bandage_disabled_at_max_hp_1", groups)
         self.assertIn("controller_disconnect_reconnect_without_stuck_input", groups["controls"])
-        self.assertIn("tab_pixel_toggle", groups["controls"])
+        self.assertIn("tab_status_translucent_hidden_toggle", groups["controls"])
+        self.assertNotIn("tab_pixel_toggle", groups["controls"])
         self.assertNotIn("f8_quality_toggle", groups["controls"])
+        self.assertNotIn("n_b_stage_navigation", groups["controls"])
+        self.assertIn("pixel_style_menu_toggle_and_saved_preference", groups["advanced_settings"])
+        self.assertIn("full_map_default_off_and_reset", groups["advanced_settings"])
+        self.assertEqual(set(groups["full_map"]), {
+            "complete_map_and_elevated_edges_at_all_camera_angles",
+            "window_aspect_fills_canvas_without_cropping",
+            "camera_fixed_as_players_move_solo_local_and_ai",
+            "radar_hidden_during_battle_pause_and_restart",
+            "status_initially_hidden_and_tab_toggles_50_percent_opacity",
+            "status_toggle_preserves_camera_focus_and_pixel_style",
+            "off_restores_follow_camera_radar_and_translucent_status",
+            "selection_survives_menu_restart_and_profile_reload",
+            "lan_local_preference_does_not_change_peer_view"})
+        self.assertIn("two_controllers_independent", groups["physical_bluetooth"])
+        self.assertIn("same_candidate_sha256", groups["lan_two_macs"])
+        self.assertIn("browser_download_quarantine_preserved", groups["gatekeeper"])
         self.assertIn("at_least_30_minutes", groups["extended_session"])
+
+    def test_former_tab_pixel_checklist_cannot_approve_current_candidate_or_qa(self):
+        previous = RELEASE.requirements()
+        previous.pop("full_map")
+        previous["controls"] = ["tab_pixel_toggle" if check == "tab_status_translucent_hidden_toggle"
+                                else check for check in previous["controls"]]
+        previous["advanced_settings"] = [check for check in previous["advanced_settings"]
+            if check not in ["pixel_style_menu_toggle_and_saved_preference", "full_map_default_off_and_reset"]]
+        with mock.patch.object(RELEASE, "requirements", return_value=previous):
+            candidate, data = self.candidate()
+            status = self.root / "qa.json"
+            RELEASE.init_status(candidate, data, status)
+        with self.verifier_fixture(), self.assertRaisesRegex(RuntimeError, "QA requirements differ"):
+            RELEASE.verify_candidate(candidate, smoke=False)
+        with self.assertRaisesRegex(RuntimeError, "exact Godot candidate/contract"):
+            RELEASE.verify_status(status, data)
 
     def test_checkboxes_alone_cannot_approve_release(self):
         candidate, data = self.candidate()
