@@ -40,9 +40,11 @@ The script's `--prepare-only` selects preparation, while the existing
 native/UI gameplay smoke checks.
 
 The default is the setup menu, using Mobile rendering through native Metal.
-Normal clear rendering fits the window's actual pixels at 16:9, up to
+Normal following mode fits the window's actual pixels at 16:9, up to
 1920×1080; Pixel Style keeps a 1280×720 ceiling. The minimum internal size is
-640×360. Resizing or changing Pixel Style updates the viewport and redraws a
+640×360. Interactive Full Map View uses the window's actual aspect ratio,
+including taller or wider windows, without 16:9 letterboxing.
+Resizing or changing Pixel Style updates the viewport and redraws a
 frozen menu background once. Diagnostic captures, benchmarks and fixed-frame
 runs retain their original 1280×720 default; `--render-size=WIDTHxHEIGHT`
 explicitly fixes a diagnostic size (16:9, up to 3840×2160).
@@ -52,7 +54,21 @@ existing saved crew preferences are retained. **2 PLAYERS** and **AI AS P2**
 remain available. Setup offers nations, stages 1–35, and 1–99 lives per player.
 The separate Advanced page exposes HP 1–6, enemy speed/fire/spawn adjustments
 from −30% to +30% in 5% steps, camera yaw −45° to +45°, elevation 40°–70° in
-5° steps, Pixel Style, and the Godot-only volume setting. Preferences are saved to
+5° steps, Full Map View, Pixel Style, and the Godot-only volume setting.
+**FULL MAP VIEW: ON** fits the complete battlefield and its 3D height bounds
+to a fixed centered view with a 1% border and no reserved status band. It hides
+the radar and starts with player status cards hidden. Press **Tab** to show
+those cards at 50% opacity; press again to hide them. This toggles only the
+upper player cards and their combat feedback; stage, remaining enemies and
+base status stay visible.
+The camera stays fixed as tanks move or status cards toggle; turning Full Map
+**OFF** restores the normal following camera and radar. It defaults to OFF.
+Normal following mode starts with player cards shown at 50% opacity and uses
+the same Tab toggle. The card display choice lasts for that deployment and is
+preserved when pausing or resuming; it is not a saved gameplay setting.
+Yaw and elevation still use the selected angles. Full Map View is a local
+preference, including in LAN games; `--full-map` also enables it for captures.
+Preferences are saved to
 `user://deployment.cfg`, under the platform application-support directory for
 `Tanks3D-Godot`. High scores currently persist within a running native session,
 not across application launches.
@@ -113,9 +129,11 @@ the separate, candidate-specific human/hardware QA required before publication.
 | WASD / F, left Ctrl or left Alt | P2 movement / fire in local two-human mode |
 | Enter | Pause / resume during battle; count or continue the battle report |
 | Escape | Return to setup; leave an active LAN room |
-| Tab | Pixel Style on / off; HUD stays clear |
+| Tab | Toggle player status cards: 50% opacity / hidden (during battle) |
 | R | Restart the current stage through the native rules, preserving the session RNG stream |
 | F11 | Toggle fullscreen |
+
+Pixel Style remains available in **Advanced Options**.
 
 During battle, Godot supplies controller samples to the existing native pad
 mapper, preserving its dead zone, dominant-axis hysteresis, D-pad priority,
@@ -242,7 +260,9 @@ two-Mac play and local-network permission prompts still need manual validation.
   clear. Stage, enemy total and base-steel status appear once above the shared
   lower-right radar, whose 130×130 map uses integer five-pixel cells.
   The transparent `hud_root` stays 74 pixels tall: taller corner panels do not
-  enlarge the camera safety band or change native/presentation camera settings.
+  enlarge the following camera's safety band. The common parent gives cards,
+  text and combat feedback the same 50% opacity; Tab toggles their visibility.
+  Full Map fits the whole scene independently of player-card visibility.
   `arcade_plate.gd` continues to draw mission and report plates.
   `radar.gd` reads native brick masks, headquarters walls, pickups, spawning
   enemies and bonus carriers for the minimap; it does not infer gameplay rules.
@@ -305,9 +325,12 @@ changing that span or direction. Both tank bounds and three world units of
 nearby road take precedence over showing more map. Interior views that already
 use the available battlefield stay unchanged. These adjustments are
 presentation-only and do not mutate the native camera, input mapping or
-deterministic state. The viewport keeps a 16:9 aspect
-ratio; a resized window letterboxes the scene, and only the HUD's overlap with
-that scene is reserved. A diagnostic
+deterministic state. The normal following viewport keeps a 16:9 aspect
+ratio; a resized window letterboxes that scene, and only the HUD's overlap with
+it is reserved. Interactive Full Map View instead uses the full window aspect
+and centers the projected 3D battlefield bounds within a 1% border. It never
+reserves space for the HUD or shows the radar. Fixed diagnostic captures retain
+their specified 16:9 resolution. A diagnostic
 `--close-up` flag explicitly changes the camera and is not a normal-game
 comparison. No speed, collision, shell spawn, upgrade, map or random-sequence
 changes are introduced in the production game.
@@ -824,7 +847,7 @@ for the latest smoke/forest revisions and their actual-render checks.
 Sustained frame pacing and dense-combat results must be reviewed separately from
 a completed workload. Physical Bluetooth controls, audible listening, two-Mac
 LAN, a full human 35-stage run and a clean second-Mac launch remain unverified.
-The fixed 16:9 scene is a presentation constraint. Game-over, earned-record,
+Normal following mode retains a fixed 16:9 scene. Game-over, earned-record,
 record timeout and session continuation now have actual native/UI checks.
 Local packaging and the immutable Godot candidate workflow are available.
 Bundles use ad-hoc signing; Developer ID signing/notarization and publication

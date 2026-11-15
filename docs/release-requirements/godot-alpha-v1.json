@@ -2,6 +2,7 @@
   "schema": "tanks3d-godot-release-requirements-v1",
   "inherits_semantic_checklists": "macos-alpha-v2.json",
   "groups": {
+    "full_map": ["complete_map_and_elevated_edges_at_all_camera_angles", "window_aspect_fills_canvas_without_cropping", "camera_fixed_as_players_move_solo_local_and_ai", "radar_hidden_during_battle_pause_and_restart", "status_initially_hidden_and_tab_toggles_50_percent_opacity", "status_toggle_preserves_camera_focus_and_pixel_style", "off_restores_follow_camera_radar_and_translucent_status", "selection_survives_menu_restart_and_profile_reload", "lan_local_preference_does_not_change_peer_view"],
     "lan_two_macs": ["same_candidate_sha256", "host_and_join", "same_and_different_nations", "both_players_move_fire_pause", "disconnect_ends_both_sessions", "no_silent_offline_fallback"],
     "physical_bluetooth": ["controller_model_and_os_recorded", "menu_bindings", "fire_and_pause_latency", "held_stick_return_and_release", "two_controllers_independent", "disconnect_and_reconnect"],
     "clean_mac": ["downloaded_exact_candidate_over_https", "checksum_matches", "source_checkout_absent", "homebrew_libraries_unused", "minimum_macos_tested", "menu_game_audio_and_exit"],

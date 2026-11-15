@@ -174,9 +174,11 @@ def requirements():
     groups.update({"base_" + nation: old["base_checks"] for nation in old["base_ids"]})
     groups.update({"pickup_" + item["id"]: item["checks"] for item in old["pickup_requirements"]})
     groups["settlement"] = old["settlement_ids"]
-    groups["advanced_settings"] = old["advanced_settings_checks"]
+    groups["advanced_settings"] = old["advanced_settings_checks"] + [
+        "pixel_style_menu_toggle_and_saved_preference", "full_map_default_off_and_reset"]
     groups["controls"] = [item for item in old["published_control_checks"]
-                          if item not in ["f8_quality_toggle", "n_b_stage_navigation"]] + ["tab_pixel_toggle"]
+                          if item not in ["f8_quality_toggle", "n_b_stage_navigation"]] + [
+                              "tab_status_translucent_hidden_toggle"]
     groups.update(read_json(ROOT / "docs/release-requirements/godot-alpha-v1.json")["groups"])
     return groups
 

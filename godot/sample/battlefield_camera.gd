@@ -1,10 +1,34 @@
 extends RefCounted
-## Presentation-only edge constraint after co-op framing. Translation is in
-## the camera image plane, so projection size, view direction and world-point
-## depths remain unchanged. Player silhouettes and road context take priority.
+## Presentation-only camera framing for the active battlefield.
 const ROAD_MARGIN := 3.0
 const EPSILON := 0.00001
+const OVERVIEW_SAFE_RECT := Rect2(.01,.01,.98,.98)
 
+static func overview(yaw: float, elevation: float, aspect: float, safe: Rect2) -> Dictionary:
+    var a := deg_to_rad(yaw)
+    var e := deg_to_rad(elevation)
+    var backward := Vector3(sin(a)*cos(e),sin(e),cos(a)*cos(e))
+    var right := Vector3(cos(a),0,-sin(a))
+    var up := backward.cross(right)
+    # A half-cell border and two units of height include the current roof,
+    # canopy and vehicle silhouettes. Center this complete envelope, including
+    # its height, so the lower edge does not retain unused ground-center space.
+    # Player status overlays never reserve space or change the overview scale.
+    var envelope := AABB(Vector3(-.5,-.1,-.5),Vector3(27,2.1,27))
+    var target := envelope.get_center()
+    var span := 0.0
+    for corner in 8:
+        var relative := envelope.get_endpoint(corner)-target
+        span = maxf(span,2.0*absf(right.dot(relative))/(aspect*safe.size.x))
+        span = maxf(span,2.0*absf(up.dot(relative))/safe.size.y)
+    var offset := Vector2(.5,.5)-safe.get_center()
+    target += right*offset.x*span*aspect-up*offset.y*span
+    # Orthographic scale is independent of orbit distance. This fixed distance
+    # keeps the entire map between near .1 and far 70 for all supported angles.
+    return {"position":target+backward*35.0,"target":target,"span":span}
+
+# Translate only in the camera image plane after co-op fitting; scale,
+# direction and depth remain unchanged. Player/road clearance takes priority.
 static func constrain(rig: Dictionary, aspect: float, safe: Rect2, players: Array,
         board: Rect2 = Rect2(0,0,26,26)) -> Dictionary:
     var result := rig.duplicate(true)

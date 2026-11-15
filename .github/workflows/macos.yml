@@ -48,8 +48,27 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Install raylib
-        run: brew install raylib
+      - name: Install hash-pinned raylib 6.0
+        run: |
+          raylib_work="$RUNNER_TEMP/tanks3d-raylib-6.0"
+          raylib_prefix="$raylib_work/prefix"
+          mkdir -p "$raylib_prefix/include" "$raylib_prefix/lib" "$raylib_prefix/share/licenses/raylib"
+          curl --fail --location --retry 3 \
+            https://github.com/raysan5/raylib/releases/download/6.0/raylib-6.0_macos.tar.gz \
+            --output "$raylib_work/raylib-6.0_macos.tar.gz"
+          printf '%s  %s\n' \
+            6ae5947fbd36aee4c280e3a2b3e1893316c433e292bda6e94e0f2b037498ad70 \
+            "$raylib_work/raylib-6.0_macos.tar.gz" | shasum -a 256 --check
+          tar -xzf "$raylib_work/raylib-6.0_macos.tar.gz" -C "$raylib_work"
+          cmp "$raylib_work/raylib-6.0_macos/LICENSE" LICENSES/Zlib-raylib.txt
+          cp "$raylib_work/raylib-6.0_macos/include/"*.h "$raylib_prefix/include/"
+          # The official archive is universal; existing package gates require
+          # one architecture. Keep only the runner's static slice, so ordinary
+          # test binaries cannot accidentally link an unbundled raylib dylib.
+          lipo "$raylib_work/raylib-6.0_macos/lib/libraylib.a" \
+            -thin "$(uname -m)" -output "$raylib_prefix/lib/libraylib.a"
+          cp "$raylib_work/raylib-6.0_macos/LICENSE" "$raylib_prefix/share/licenses/raylib/LICENSE"
+          printf 'RAYLIB_PREFIX=%s\n' "$raylib_prefix" >> "$GITHUB_ENV"
 
       - name: Clean previous outputs
         run: make clean

@@ -219,7 +219,10 @@ func check_rows(frontend: CanvasLayer, viewport: SubViewport, keys: Array) -> vo
 func check_menu(frontend: CanvasLayer, viewport: SubViewport) -> void:
     expect(int(Frontend.DEFAULTS.players) == 1 and not Frontend.DEFAULTS.ai_p2,
         "a fresh profile no longer matches original solo default")
-    frontend.configure(Frontend.DEFAULTS.duplicate(),false,.75)
+    var native_settings: Dictionary = Frontend.DEFAULTS.duplicate()
+    native_settings.erase("full_map")
+    frontend.configure(native_settings,false,.75)
+    expect(not frontend.read_settings().full_map,"native settings without Full Map no longer default to OFF")
     frontend.show_menu()
     await settle(viewport)
     var bounds := Rect2(Vector2.ZERO,Vector2(viewport.size))
@@ -264,7 +267,25 @@ func check_menu(frontend: CanvasLayer, viewport: SubViewport) -> void:
     expect(frontend.menu_page == "advanced" and frontend.advanced.is_visible_in_tree() and
         not frontend.network_box.is_visible_in_tree(),"Advanced is not an independent settings page")
     await check_rows(frontend,viewport,["row_max_hp","row_enemy_speed","row_enemy_fire","row_enemy_spawn",
-        "row_camera_yaw","row_camera_elevation","row_pixel","row_volume","row_back"])
+        "row_full_map","row_camera_yaw","row_camera_elevation","row_pixel","row_volume","row_back"])
+    expect(frontend.menu_panel.get_global_rect().encloses(frontend.controls.row_back.get_global_rect()),
+        "Advanced back row leaves its panel")
+    expect(frontend.menu_panel.get_global_rect().end.y <= frontend.menu_help.get_global_rect().position.y,
+        "Advanced panel overlaps its help text")
+    expect(frontend.menu_help.get_global_rect().position.y+frontend.menu_help.get_minimum_size().y <=
+        frontend.menu_confirm.get_global_rect().position.y,"Advanced help text overlaps the Play/Select hint")
+    await reachable(frontend.controls.row_enemy_spawn,viewport,"spawn pace")
+    await menu_key(viewport,KEY_DOWN)
+    expect(viewport.gui_get_focus_owner() == frontend.controls.row_full_map,"Full Map skipped by keyboard navigation")
+    await menu_key(viewport,KEY_ENTER)
+    expect(frontend.read_settings().full_map and frontend.row_value("full_map") == "ON",
+        "Full Map Enter does not enable the option")
+    await menu_key(viewport,KEY_LEFT)
+    expect(not frontend.read_settings().full_map,"Full Map left does not turn the option OFF")
+    await menu_key(viewport,KEY_RIGHT)
+    expect(frontend.read_settings().full_map,"Full Map right does not turn the option ON")
+    await menu_key(viewport,KEY_DOWN)
+    expect(viewport.gui_get_focus_owner() == frontend.controls.row_camera_yaw,"Full Map navigation traps focus")
     frontend.controls.enemy_fire.value = 0
     await reachable(frontend.controls.row_enemy_fire,viewport,"enemy fire")
     await menu_key(viewport,KEY_RIGHT)
@@ -273,7 +294,7 @@ func check_menu(frontend: CanvasLayer, viewport: SubViewport) -> void:
     await menu_key(viewport,KEY_ENTER)
     expect(frontend.controls.pixel.button_pressed,"Pixel Enter does not toggle the presentation option")
     await menu_key(viewport,KEY_R)
-    for key in ["max_hp","enemy_speed","enemy_fire","enemy_spawn","camera_yaw","camera_elevation"]:
+    for key in ["max_hp","enemy_speed","enemy_fire","enemy_spawn","camera_yaw","camera_elevation","full_map"]:
         expect(frontend.read_settings()[key] == Frontend.DEFAULTS[key],"R does not reset advanced "+key)
     expect(not frontend.controls.pixel.button_pressed and is_equal_approx(frontend.controls.volume.value,.75),
         "advanced reset changes volume or leaves Pixel on")
@@ -310,10 +331,98 @@ func check_menu(frontend: CanvasLayer, viewport: SubViewport) -> void:
     frontend.quit_requested.disconnect(count_quit)
 
 
+func check_full_map_radar(frontend: CanvasLayer, viewport: SubViewport, fixture: Dictionary) -> void:
+    frontend.configure(fixture.settings,false,.75)
+    frontend.show_battle()
+    frontend.refresh(fixture.snapshot,false,.025)
+    var previous_snapshot := JSON.stringify(frontend.radar.snapshot)
+    var previous_clock: float = frontend.radar.refresh_clock
+    var configuration: Dictionary = fixture.settings.duplicate()
+    configuration.full_map = true
+    frontend.show_menu()
+    frontend.configure(configuration,false,.75)
+    expect(frontend.read_settings().full_map,"configured Full Map preference does not reach the menu")
+    frontend.show_battle()
+    var changed_snapshot: Dictionary = fixture.snapshot.duplicate(true)
+    changed_snapshot.enemies_left = int(changed_snapshot.enemies_left)+1
+    frontend.refresh(changed_snapshot,false,.025)
+    await settle(viewport)
+    expect(not frontend.radar.is_visible_in_tree(),"Full Map still displays the radar")
+    expect(frontend.mission_card.is_visible_in_tree(),"hiding the radar also removed the mission status")
+    expect(JSON.stringify(frontend.radar.snapshot) == previous_snapshot and
+        is_equal_approx(frontend.radar.refresh_clock,previous_clock),"hidden radar still consumes snapshot updates")
+    frontend.show_menu()
+    configuration.full_map = false
+    frontend.configure(configuration,false,.75)
+    frontend.show_battle()
+    frontend.refresh(changed_snapshot,false,.025)
+    await settle(viewport)
+    expect(frontend.radar.is_visible_in_tree() and frontend.radar.snapshot.enemies_left == changed_snapshot.enemies_left,
+        "turning Full Map OFF does not restore the radar and its current snapshot")
+
+
+func check_player_hud_cycle(frontend: CanvasLayer, viewport: SubViewport, fixture: Dictionary) -> void:
+    var configuration: Dictionary = fixture.settings.duplicate()
+    var value: Dictionary = fixture.snapshot.duplicate(true)
+    value.intro = false
+    value.paused = false
+    value.events = []
+    for full_map in [true,false]:
+        configuration.full_map = full_map
+        frontend.configure(configuration,false,.75)
+        frontend.show_battle()
+        frontend.refresh(value,false,0)
+        await settle(viewport)
+        expect(frontend.hud_root.is_visible_in_tree() == not full_map and
+            frontend.player_hud_mode == (Frontend.PlayerHudMode.HIDDEN if full_map else Frontend.PlayerHudMode.TRANSLUCENT),
+            "new deployment has the wrong player status default")
+        if not full_map:
+            frontend.cycle_player_hud()
+        var saved_settings := JSON.stringify(frontend.read_settings())
+        var mission_text: String = frontend.stage_label.text
+        for mode in [Frontend.PlayerHudMode.TRANSLUCENT,Frontend.PlayerHudMode.HIDDEN]:
+            frontend.cycle_player_hud()
+            value.tick += 1
+            value.events = [{"type":"TankDamaged","target_player":0}]
+            frontend.refresh(value,false,0)
+            expect(frontend.player_hud_mode == mode and
+                frontend.hud_root.is_visible_in_tree() == (mode != Frontend.PlayerHudMode.HIDDEN),
+                "player status does not toggle between translucent and hidden")
+            expect(is_equal_approx(frontend.hud_root.modulate.a,.5),
+                "player status must always use the translucent style")
+            for control in [frontend.p1_card,frontend.p1_label,frontend.feedback_labels[0],frontend.feedback_plates[0]]:
+                expect(control.is_visible_in_tree() == (mode != Frontend.PlayerHudMode.HIDDEN),
+                    "player status card, text or live damage feedback bypasses its visibility mode")
+            expect(frontend.mission_card.is_visible_in_tree() and frontend.stage_label.text == mission_text and
+                is_equal_approx(frontend.mission_card.modulate.a,1.0) and frontend.radar.is_visible_in_tree() == not full_map,
+                "player status cycle changes mission information or radar visibility")
+            expect(JSON.stringify(frontend.read_settings()) == saved_settings and not frontend.pixel,
+                "player status cycle mutates saved settings or Pixel Style")
+        frontend.cycle_player_hud()
+        value.paused = true
+        frontend.refresh(value,false,0)
+        value.paused = false
+        frontend.refresh(value,false,0)
+        expect(frontend.player_hud_mode == Frontend.PlayerHudMode.TRANSLUCENT and
+            is_equal_approx(frontend.hud_root.modulate.a,.5),"pause/resume resets player status choice")
+        expect(frontend.help.text.contains("TAB STATUS") and frontend.pause_controls.text.contains("TAB STATUS: SHOW / HIDE") and
+            not frontend.pause_controls.text.contains("TAB  PIXEL"),"status shortcut hints are missing or stale")
+        frontend.show_menu()
+        frontend.configure(configuration,false,.75)
+        frontend.cycle_player_hud()
+        expect(not frontend.hud_root.is_visible_in_tree() and frontend.player_hud_mode == Frontend.PlayerHudMode.TRANSLUCENT,
+            "menu configuration or Tab resets or reveals the transient player status choice")
+        frontend.show_battle()
+        expect(frontend.hud_root.is_visible_in_tree() == not full_map and is_equal_approx(frontend.hud_root.modulate.a,.5),
+            "new deployment does not retain the translucent-only player status style")
+
+
 func check_network_requests(frontend: CanvasLayer, viewport: SubViewport) -> void:
     # Observe production UI signals only; this isolated canvas never creates a
     # socket. Native invalid-IP/handshake behavior belongs to the bridge tests.
     var requests: Array = []
+    var previous_full_map: bool = frontend.controls.full_map.button_pressed
+    frontend.controls.full_map.button_pressed = true
     var record := func(host: bool,address: String,port: int,configuration: Dictionary):
         requests.append({"host":host,"address":address,"port":port,"settings":configuration.duplicate(true)})
     frontend.network_requested.connect(record)
@@ -322,8 +431,8 @@ func check_network_requests(frontend: CanvasLayer, viewport: SubViewport) -> voi
     await menu_key(viewport,KEY_ENTER)
     expect(requests.size() == 1 and requests[0].address == "192.168.2.8" and requests[0].port == 43123 and
         not requests[0].host and requests[0].settings.players == 2 and not requests[0].settings.ai_p2 and
-        requests[0].settings.nation_p1 == frontend.controls.nation_p1.selected,
-        "IPv4:port Join does not preserve selected local nation or human two-player mode")
+        requests[0].settings.nation_p1 == frontend.controls.nation_p1.selected and requests[0].settings.full_map,
+        "IPv4:port Join does not preserve local view/nation or human two-player mode")
     for invalid in ["127.0.0.1:0","127.0.0.1:65536","127.0.0.1:-1"]:
         frontend.network_ip.text = invalid
         await menu_key(viewport,KEY_ENTER)
@@ -335,7 +444,8 @@ func check_network_requests(frontend: CanvasLayer, viewport: SubViewport) -> voi
     frontend.network_port.value = 65535
     await reachable(frontend.controls.network_host,viewport,"host maximum port")
     await menu_key(viewport,KEY_ENTER)
-    expect(requests.size() == 3 and requests[2].host and requests[2].port == 65535,"valid highest host port rejected")
+    expect(requests.size() == 3 and requests[2].host and requests[2].port == 65535 and requests[2].settings.full_map,
+        "host request rejects valid highest port or drops local Full Map setting")
     frontend.network_ip.text = ""
     await reachable(frontend.controls.network_join,viewport,"join empty address")
     await menu_key(viewport,KEY_ENTER)
@@ -359,6 +469,7 @@ func check_network_requests(frontend: CanvasLayer, viewport: SubViewport) -> voi
     expect(cancels[0] == 1,"waiting Esc does not cancel the active connection once")
     frontend.network_cancel_requested.disconnect(count_cancel)
     frontend.network_requested.disconnect(record)
+    frontend.controls.full_map.button_pressed = previous_full_map
     frontend.set_network_pending(false)
     await activate(frontend.controls.network_toggle,viewport,"return to LAN")
     await activate(frontend.controls.network_back,viewport,"LAN back action")
@@ -712,6 +823,8 @@ func run(parent: Node, fixtures: Array) -> Dictionary:
         await check_vehicle_columns(frontend,viewport,fixtures[0].snapshot)
         await check_feedback_and_hints(frontend,viewport,fixtures[0].snapshot)
         await check_lan_pause_hints(frontend,viewport,fixtures[0].snapshot)
+        await check_full_map_radar(frontend,viewport,fixtures[0])
+        await check_player_hud_cycle(frontend,viewport,fixtures[0])
         await check_menu(frontend,viewport)
         viewport.free()
     return {"passed":failures.is_empty(),"samples":samples,"layouts":receipts,"failures":failures.slice(0,20)}

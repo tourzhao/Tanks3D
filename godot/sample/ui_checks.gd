@@ -43,6 +43,26 @@ static func read_state(app: Node) -> Dictionary:
     return {}
 
 
+static func startup_presentation_checks(app: Node) -> bool:
+    # Inspect the first real _ready result before setup/deployment fixtures can
+    # initialize the overlays and conceal a quick-start-only regression.
+    var menu_expected: bool = app.capture_menu or (not app.quick_start and not app.demo and app.frame_limit == 0)
+    var full_map: bool = app.configuration.get("full_map",false)
+    var frontend: CanvasLayer = app.frontend
+    if not check(frontend.menu_open == menu_expected and frontend.menu.visible == menu_expected,
+            "startup selects the setup menu or battle from the requested launch mode"):
+        return false
+    if not check(frontend.hud_root.visible == (not menu_expected and not full_map) and
+            frontend.radar.visible == (not menu_expected and not full_map),
+            "startup full-map battle hides status and radar; normal battle shows both"):
+        return false
+    if not menu_expected:
+        return check(is_equal_approx(frontend.hud_root.modulate.a,.5) and
+            frontend.player_hud_mode == (Frontend.PlayerHudMode.HIDDEN if full_map else Frontend.PlayerHudMode.TRANSLUCENT),
+            "startup battle initializes translucent status and its matching Tab state")
+    return true
+
+
 static func presentation_snapshot_checks(app: Node) -> bool:
     var before: String = app.core.snapshot()
     var full: Dictionary = JSON.parse_string(before)
@@ -60,10 +80,12 @@ static func render_resolution_checks(app: Node) -> bool:
     var original_window: Vector2i = app.get_window().size
     var original_fixed: Vector2i = app.fixed_render_size
     var original_pixel: bool = app.pixel_style
+    var original_full_map: bool = app.configuration.get("full_map",false)
     var before: String = app.core.snapshot()
     var passed := true
     app.fixed_render_size = Vector2i.ZERO
     app.pixel_style = false
+    app.configuration.full_map = false
     for fixture in [
             [Vector2i(960,540),Vector2i(960,540)],
             [Vector2i(1920,1080),Vector2i(1920,1080)],
@@ -97,7 +119,22 @@ static func render_resolution_checks(app: Node) -> bool:
         app.get_viewport().size_changed.emit()
         passed = check(app.render_size == Vector2i(1600,900) and app.viewport.size == app.render_size,
             "explicit diagnostic render size survives Pixel changes and resize notifications") and passed
+    app.configuration.full_map = true
+    passed = check(app.desired_render_size(Vector2i(800,1200)) == Vector2i(1600,900),
+        "full map retains the explicit diagnostic size") and passed
+    app.fixed_render_size = Vector2i.ZERO
+    for pixel in [false,true]:
+        app.pixel_style = pixel
+        for fixture in [
+                [Vector2i(1280,960),Vector2i(1280,960),Vector2i(960,720)],
+                [Vector2i(1920,720),Vector2i(1920,720),Vector2i(1280,480)],
+                [Vector2i(800,1200),Vector2i(720,1080),Vector2i(480,720)],
+                [Vector2i(3840,2160),Vector2i(1920,1080),Vector2i(1280,720)],
+                [Vector2i(320,180),Vector2i(320,180),Vector2i(320,180)]]:
+            passed = check(app.desired_render_size(fixture[0]) == fixture[2 if pixel else 1],
+                "full-map window aspect and bounded render dimensions: "+str(fixture[0])) and passed
     app.fixed_render_size = original_fixed
+    app.configuration.full_map = original_full_map
     app.get_window().size = original_window
     app.set_pixel_style(original_pixel)
     return check(app.core.snapshot() == before, "resolution changes preserve the native session") and passed
@@ -317,7 +354,7 @@ static func controller_menu_checks(app: Node) -> bool:
     app.player_count = int(configuration.players)
     app.ai_p2 = bool(configuration.ai_p2)
     app.elapsed = elapsed
-    var restored: bool = app.core.reset_config(app.seed_value, configuration)
+    var restored: bool = app.core.reset_config(app.seed_value,Frontend.native_settings(configuration))
     app.clear_effects()
     app.clear_battle_input()
     frontend.configure(configuration, app.pixel_style, app.audio_volume)
@@ -844,7 +881,7 @@ static func coop_camera_scenarios(app: Node) -> bool:
     app.close_up = false
     app.frontend.configure(settings,false,app.audio_volume)
     app.frontend.show_battle()
-    if not check(app.core.reset_config(20260916,settings),"co-op camera seeded native deployment"): return false
+    if not check(app.core.reset_config(20260916,Frontend.native_settings(settings)),"co-op camera seeded native deployment"): return false
     for tick in 525:
         if not check(app.core.step(STEP,17,0),"co-op camera reproduction native step "+str(tick)): return false
     app.state = read_state(app)
@@ -890,7 +927,7 @@ static func coop_camera_scenarios(app: Node) -> bool:
     for angles in [Vector2i(-45,40),Vector2i(0,40),Vector2i(45,40),Vector2i(-45,70),Vector2i(45,70)]:
         settings.camera_yaw = angles.x
         settings.camera_elevation = angles.y
-        if not check(app.core.reset_config(20260916,settings),"camera depth native deployment"): return false
+        if not check(app.core.reset_config(20260916,Frontend.native_settings(settings)),"camera depth native deployment"): return false
         for tick in 525:
             if not check(app.core.step(STEP,17,0),"camera depth native movement tape"): return false
         app.state = read_state(app)
@@ -910,7 +947,7 @@ static func coop_camera_scenarios(app: Node) -> bool:
         settings.players = players
         app.configuration = settings.duplicate()
         app.player_count = players
-        if not check(app.core.reset_config(20260916,settings),"fresh camera reset "+str(players)): return false
+        if not check(app.core.reset_config(20260916,Frontend.native_settings(settings)),"fresh camera reset "+str(players)): return false
         app.state = read_state(app)
         var before: Dictionary = app.state.duplicate(true)
         app.frontend.refresh(app.state,app.pixel_style,0.0)
@@ -937,7 +974,7 @@ static func visibility_native_scenarios(app: Node) -> bool:
         var settings: Dictionary = Frontend.DEFAULTS.duplicate()
         settings.merge({"stage":fixture.stage,"players":2,"ai_p2":false,"max_hp":3,"lives":10,
             "camera_yaw":0,"camera_elevation":fixture.elevation},true)
-        if not check(app.core.reset_config(20260916,settings),"visibility native deployment"): return false
+        if not check(app.core.reset_config(20260916,Frontend.native_settings(settings)),"visibility native deployment"): return false
         app.clear_effects()
         var turn_origin: Dictionary = {}
         for command in fixture.commands:
@@ -985,6 +1022,8 @@ static func check_coop_camera(app: Node) -> bool:
     var heard: Dictionary = app.get_meta("ui_audio_requests",{}).duplicate(true)
     var initial := read_state(app)
     var passed: bool = await coop_camera_scenarios(app)
+    if passed:
+        passed = await full_map_scenarios(app)
     app.configuration = configuration
     app.seed_value = seed
     app.stage = stage
@@ -993,7 +1032,7 @@ static func check_coop_camera(app: Node) -> bool:
     app.set_pixel_style(pixel)
     app.close_up = close_up
     app.get_window().size = window_size
-    var restored: bool = app.core.reset_config(seed,configuration)
+    var restored: bool = app.core.reset_config(seed,Frontend.native_settings(configuration))
     app.clear_effects()
     app.clear_battle_input()
     app.frontend.configure(configuration,pixel,app.audio_volume)
@@ -1007,6 +1046,184 @@ static func check_coop_camera(app: Node) -> bool:
     if passed:
         print("TANKS_UI_COOP_CAMERA_CHECKS_PASSED "+JSON.stringify(app.get_meta("coop_camera_receipts",[])))
     return passed
+
+
+static func full_map_scenarios(app: Node) -> bool:
+    var settings: Dictionary = Frontend.DEFAULTS.duplicate()
+    settings.merge({"full_map":true,"max_hp":6,"lives":99},true)
+    app.frontend.configure(settings,app.pixel_style,app.audio_volume)
+    app.frontend.show_menu()
+    app.frontend.set_menu_page("advanced")
+    app.frontend.controls.row_full_map.grab_focus()
+    if not await capture(app,"advanced-full-map"): return false
+    var receipts: Array = []
+    for crew in [[1,false],[2,false],[2,true]]:
+        settings.players = crew[0]
+        settings.ai_p2 = crew[1]
+        settings.stage = 35 if crew[1] else 1
+        app.start_from_menu(settings)
+        for frame in 2: await app.get_tree().process_frame
+        app.update_world(0.0)
+        var pose: Transform3D = app.camera.transform
+        var span: float = app.camera.size
+        var initial := read_state(app)
+        if not check(not app.frontend.radar.visible and not app.frontend.menu_open and
+                app.frontend.read_settings().full_map and not app.frontend.hud_root.visible,
+                "full-map deployment hides radar and top status for solo, local co-op and AI"):
+            return false
+        if not check(span < 23.0,
+                "default full map tightly centers the whole scene without the old HUD band"):
+            return false
+        for tick in 525:
+            if not check(app.core.step(STEP,17,0),"full-map native movement tape"): return false
+        app.state = read_state(app)
+        var before: String = app.core.snapshot()
+        app.update_world(0.0)
+        if not check(app.camera.transform == pose and float(app.camera.size) == span and
+                app.core.snapshot() == before and app.state.camera != initial.camera,
+                "full-map camera stays fixed while the native follow camera and players move"):
+            return false
+        # Project map edges and elevated terrain through the actual scene camera.
+        var safe: Rect2 = app.coop_safe_rect()
+        for x in [0.0,26.0]:
+            for z in [0.0,26.0]:
+                for y in [0.0,2.0]:
+                    var point := Vector3(x,y,z)
+                    var screen: Vector2 = app.camera.unproject_position(point)/Vector2(app.viewport.size)
+                    var depth: float = (-app.camera.global_basis.z).dot(point-app.camera.global_position)
+                    if not check(safe.has_point(screen) and depth > app.camera.near and depth < app.camera.far,
+                            "full map and elevated corners fit the window without depth clipping"):
+                        return false
+        if not await capture(app,"full-map-"+str(crew[0])+str(crew[1])): return false
+        var screenshots := "full-map-status" if int(crew[0]) == 2 and not crew[1] else ""
+        if not await player_hud_tab_checks(app,screenshots): return false
+        if not check(app.core.step(STEP,64,0),"full-map pause command"): return false
+        app.state = read_state(app)
+        app.update_world(0.0)
+        if not check(app.state.paused and app.frontend.pause_panel.visible and
+                app.camera.transform == pose and float(app.camera.size) == span and
+                not app.frontend.radar.visible,"full-map pause retains the fixed view"):
+            return false
+        if not await player_hud_tab_checks(app): return false
+        app.request_restart()
+        if not check(app.configuration.full_map and app.camera.transform == pose and
+                float(app.camera.size) == span and not app.frontend.radar.visible,
+                "restart retains full-map framing"):
+            return false
+        app.return_to_menu()
+        if not check(app.frontend.read_settings().full_map,"return to setup retains full-map selection"):
+            return false
+        receipts.append({"players":crew[0],"ai_p2":crew[1],"stage":settings.stage,"span":span})
+    if not await full_map_window_checks(app,settings): return false
+    settings.full_map = false
+    app.start_from_menu(settings)
+    if not check(app.frontend.radar.visible and app.camera.size < float(receipts[-1].span),
+            "turning full map off restores the radar and normal camera"):
+        return false
+    print("TANKS_UI_FULL_MAP_PASSED "+JSON.stringify(receipts))
+    return true
+
+
+static func full_map_window_checks(app: Node, settings: Dictionary) -> bool:
+    var original_fixed: Vector2i = app.fixed_render_size
+    var original_window: Vector2i = app.get_window().size
+    var original_pixel: bool = app.pixel_style
+    app.fixed_render_size = Vector2i.ZERO
+    app.start_from_menu(settings)
+    var before: String = app.core.snapshot()
+    var receipts: Array = []
+    var passed := true
+    var dimensions_to_check := [Vector2i(1280,720)] if DisplayServer.get_name() == "headless" else \
+        [Vector2i(1280,800),Vector2i(960,960),Vector2i(1600,720),Vector2i(800,1000)]
+    for dimensions in dimensions_to_check:
+        app.get_window().size = dimensions
+        for pixel in [false,true]:
+            app.set_pixel_style(pixel)
+            for frame in 3: await app.get_tree().process_frame
+            app.update_world(0.0)
+            passed = check(app.get_window().content_scale_aspect == Window.CONTENT_SCALE_ASPECT_EXPAND and
+                app.render_size == app.desired_render_size(dimensions),
+                "interactive full map expands both the canvas and render target") and passed
+            if DisplayServer.get_name() != "headless":
+                var canvas: Rect2 = app.get_viewport().get_visible_rect()
+                var display: Rect2 = app.display.get_global_rect()
+                var physical: Vector2 = Vector2(app.get_window().size)
+                passed = check(display.is_equal_approx(canvas) and
+                    absf(display.size.aspect()-physical.aspect()) < .002 and
+                    absf(Vector2(app.render_size).aspect()-physical.aspect()) < .002,
+                    "full-map scene covers the actual window without fixed 16:9 bars") and passed
+                if not pixel:
+                    passed = await capture(app,"full-map-window-%dx%d"%[dimensions.x,dimensions.y]) and passed
+                receipts.append({"window":str(physical),"canvas":str(canvas),"render":str(app.render_size),"pixel":pixel})
+            passed = check(not app.frontend.radar.visible and app.core.snapshot() == before,
+                "window and Pixel changes preserve native state and hide the full-map radar") and passed
+    app.return_to_menu()
+    for frame in 3: await app.get_tree().process_frame
+    passed = check(app.frontend.menu_open and not app.frontend.radar.visible and
+        app.get_viewport().get_visible_rect().encloses(app.frontend.menu.get_global_rect()),
+        "full-map setup remains inside the expanded canvas") and passed
+    var following := settings.duplicate()
+    following.full_map = false
+    app.start_from_menu(following)
+    for frame in 3: await app.get_tree().process_frame
+    passed = check(app.get_window().content_scale_aspect == Window.CONTENT_SCALE_ASPECT_KEEP and
+        app.render_size.x*9 == app.render_size.y*16 and app.frontend.radar.visible and
+        app.frontend.hud_root.visible and is_equal_approx(app.frontend.hud_root.modulate.a,.5),
+        "turning full map off restores normal window framing, radar and translucent status") and passed
+    app.fixed_render_size = original_fixed
+    app.get_window().size = original_window
+    app.set_pixel_style(original_pixel)
+    for frame in 3: await app.get_tree().process_frame
+    app.update_world(0.0)
+    if passed: print("TANKS_UI_FULL_MAP_WINDOW_PASSED "+JSON.stringify(receipts))
+    return passed
+
+
+static func player_hud_tab_checks(app: Node, screenshots: String = "") -> bool:
+    var frontend: CanvasLayer = app.frontend
+    var mode: int = frontend.player_hud_mode
+    var pose: Transform3D = app.camera.transform
+    var span: float = app.camera.size
+    var pixel: bool = app.pixel_style
+    var before: String = app.core.snapshot()
+    var focus: Control = app.get_viewport().gui_get_focus_owner()
+    for step in 2:
+        var expected: int = (mode+step+1)%2
+        await keyboard_event(app,KEY_TAB,true)
+        if not check(frontend.player_hud_mode == expected,
+                "Tab toggles status hidden -> translucent -> hidden: "+JSON.stringify({
+                    "expected":expected,"actual":frontend.player_hud_mode,"menu":frontend.menu_open,
+                    "gui_disabled":app.get_viewport().gui_disable_input,"focused":app.get_window().has_focus(),
+                    "capturing":app.capturing,"capture_paused":app.paused_for_capture})):
+            return false
+        var repeat := key_event(KEY_TAB,KEY_LOCATION_UNSPECIFIED,true)
+        repeat.echo = true
+        Input.parse_input_event(repeat)
+        Input.flush_buffered_events()
+        await app.get_tree().process_frame
+        await keyboard_event(app,KEY_TAB,false)
+        app.update_world(0.0)
+        var visible: bool = expected != Frontend.PlayerHudMode.HIDDEN
+        var alpha := .5
+        if not check(frontend.player_hud_mode == expected and frontend.hud_root.visible == visible and
+                is_equal_approx(frontend.hud_root.modulate.a,alpha) and
+                app.camera.transform == pose and float(app.camera.size) == span and app.pixel_style == pixel and
+                app.core.snapshot() == before and app.get_viewport().gui_get_focus_owner() == focus,
+                "status repeat/release preserves opacity, camera, Pixel Style, native state and focus"):
+            return false
+        if not screenshots.is_empty() and not await capture(app,screenshots+"-"+str(expected)):
+            return false
+    # Capture and focus gates must suppress a new toggle, not just key repeat.
+    app.paused_for_capture = true
+    await keyboard_event(app,KEY_TAB,true)
+    await keyboard_event(app,KEY_TAB,false)
+    app.paused_for_capture = false
+    app._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+    await keyboard_event(app,KEY_TAB,true)
+    await keyboard_event(app,KEY_TAB,false)
+    app._notification(Node.NOTIFICATION_APPLICATION_FOCUS_IN)
+    return check(frontend.player_hud_mode == mode and app.pixel_style == pixel,
+        "capture and background Tab leave status and Pixel Style unchanged")
 
 
 static func gear_phase(vehicle: Node3D) -> Array:
@@ -1039,7 +1256,7 @@ static func running_gear_scenarios(app: Node) -> bool:
     app.seed_value = 20260916
     app.frontend.configure(settings,false,app.audio_volume)
     app.frontend.show_battle()
-    if not check(app.core.reset_config(20260916,settings),"running-gear fresh native deployment"): return false
+    if not check(app.core.reset_config(20260916,Frontend.native_settings(settings)),"running-gear fresh native deployment"): return false
     if not present_native_gear(app,0.0): return false
     var player: Node3D = app.vehicles.p0
     var node_id := player.get_instance_id()
@@ -1106,7 +1323,7 @@ static func running_gear_scenarios(app: Node) -> bool:
     # Start an actual native stage, then use ordinary update_world without its
     # explicit reset argument. This checks the stage/tick/intro boundary path.
     settings.stage = 2
-    if not check(app.core.start_config(settings),"running-gear native stage-two deployment"): return false
+    if not check(app.core.start_config(Frontend.native_settings(settings)),"running-gear native stage-two deployment"): return false
     if not present_native_gear(app,STEP): return false
     if not check(int(app.state.stage) == 2 and app.vehicles.p0.get_instance_id() == node_id and
             gear_phase(app.vehicles.p0) == [0.0,0.0,0,0],"native stage boundary resets reused gear without a caller reset flag"):
@@ -1134,7 +1351,7 @@ static func check_running_gear(app: Node) -> bool:
     app.player_count = players
     app.ai_p2 = ai_p2
     app.elapsed = elapsed
-    var restored: bool = app.core.reset_config(seed,configuration)
+    var restored: bool = app.core.reset_config(seed,Frontend.native_settings(configuration))
     app.clear_effects()
     app.clear_battle_input()
     app.frontend.configure(configuration,app.pixel_style,app.audio_volume)
@@ -1179,7 +1396,7 @@ static func native_fire_scenarios(app: Node) -> bool:
         app.seed_value = 20260916
         app.frontend.configure(settings,false,app.audio_volume)
         app.frontend.show_battle()
-        if not check(app.core.reset_config(20260916,settings),"fire-effects fresh native deployment"): return false
+        if not check(app.core.reset_config(20260916,Frontend.native_settings(settings)),"fire-effects fresh native deployment"): return false
         app.clear_effects()
         app.state = read_state(app)
         app.update_world(0.0,true)
@@ -1305,7 +1522,7 @@ static func check_native_fire(app: Node) -> bool:
     app.player_count = players
     app.ai_p2 = ai_p2
     app.elapsed = elapsed
-    var restored: bool = app.core.reset_config(seed,configuration)
+    var restored: bool = app.core.reset_config(seed,Frontend.native_settings(configuration))
     app.clear_effects()
     app.clear_battle_input()
     app.frontend.configure(configuration,app.pixel_style,app.audio_volume)
@@ -1337,17 +1554,20 @@ static func paused_frame_cache_checks(app: Node) -> bool:
         return false
     var original: bool = app.pixel_style
     app.frontend.resume_button.grab_focus()
-    for pixel in [not original, original]:
+    var initial_mode: int = app.frontend.player_hud_mode
+    var pose: Transform3D = app.camera.transform
+    var span: float = app.camera.size
+    for step in 2:
         await keyboard_event(app, KEY_TAB, true)
         await keyboard_event(app, KEY_TAB, false)
         app.ui_self_test = false
         app.process_game_frame(STEP, Time.get_ticks_usec())
         app.ui_self_test = true
-        updates += 1
-        if not check(app.presentation_updates == updates + 1 and app.pixel_style == pixel and
+        if not check(app.presentation_updates == updates + 1 and app.pixel_style == original and
                 app.get_viewport().gui_get_focus_owner() == app.frontend.resume_button and
-                app.frontend.pause_style.text.ends_with("ON" if pixel else "OFF"),
-                "Tab reaches pixel style through real GUI dispatch without changing pause-button focus"):
+                app.frontend.player_hud_mode == (initial_mode+step+1)%2 and
+                app.camera.transform == pose and float(app.camera.size) == span,
+                "paused Tab updates only the status overlay without rerendering the scene or moving focus"):
             return false
     return true
 
@@ -1377,23 +1597,24 @@ static func check_arcade_hud(app: Node) -> bool:
         var settings: Dictionary = app.configuration.duplicate(true)
         settings.players = crew[0]
         settings.ai_p2 = crew[1]
-        if not check(app.core.reset_config(app.seed_value,settings),"arcade HUD native crew fixture"):
-            app.core.reset_config(app.seed_value,app.configuration)
+        if not check(app.core.reset_config(app.seed_value,Frontend.native_settings(settings)),"arcade HUD native crew fixture"):
+            app.core.reset_config(app.seed_value,Frontend.native_settings(app.configuration))
             app.core.drain_audio()
             return false
         fixtures.append({"name":crew[2],"settings":settings,"snapshot":read_state(app)})
     var native_before: String = app.core.snapshot()
     var layout = ArcadeUI.new()
     var result: Dictionary = await layout.run(app,fixtures)
-    var preserved: bool = app.core.snapshot() == native_before and app.camera.transform == root_pose and \
-        float(app.camera.size) == span and arcade_model_state(app) == model_state and \
-        [app.queued_commands,app.queued_players,app.modifier_fire_held] == inputs
-    var restored: bool = app.core.reset_config(app.seed_value,app.configuration)
+    var preserved := {"native":app.core.snapshot() == native_before,"camera_pose":app.camera.transform == root_pose,
+        "camera_span":float(app.camera.size) == span,"models":arcade_model_state(app) == model_state,
+        "inputs":[app.queued_commands,app.queued_players,app.modifier_fire_held] == inputs}
+    var restored: bool = app.core.reset_config(app.seed_value,Frontend.native_settings(app.configuration))
     # _ready already drained the fresh preview's StageStart cue. Discard only
     # the replacement startup cue introduced by restoring this test fixture.
     app.core.drain_audio()
-    if not check(preserved and restored and app.core.snapshot() == initial,
-            "HUD/menu layout preserves native state, model camera and existing input state"):
+    preserved.restored = restored and app.core.snapshot() == initial
+    if not check(not preserved.values().has(false),
+            "HUD/menu layout preserves native state, model camera and existing input state: "+JSON.stringify(preserved)):
         return false
     if not check(bool(result.passed) and int(result.samples) == 36 and result.layouts.size() == 9,
             "arcade HUD completes all native crew/status/layout checks: "+str(result.failures)):
@@ -1405,6 +1626,8 @@ static func check_arcade_hud(app: Node) -> bool:
 
 static func run(app: Node) -> bool:
     if not check(bool(app.ui_self_test), "self-test must own stepping during GUI awaits"):
+        return false
+    if not startup_presentation_checks(app):
         return false
     if not await await_window_ready(app):
         return false
@@ -1523,7 +1746,7 @@ static func run(app: Node) -> bool:
     # scenarios. Reset only the hidden preview; Enter still performs ordinary
     # menu deployment. With precise turns, seed 4 gives P1 an actual Clock at
     # tape tick 1189; its message expires at 1322, before the clear at 3513.
-    if not check(app.core.reset_config(4,app.configuration),
+    if not check(app.core.reset_config(4,Frontend.native_settings(app.configuration)),
             "seeded menu preview for native pickup and report coverage"): return false
     app.core.drain_audio() # Discard the reset preview's unheard StageStart cue.
     frontend.controls.mode.select(2)

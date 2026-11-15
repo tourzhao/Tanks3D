@@ -24,7 +24,14 @@ const TECH := [["M4A3(75) SHERMAN","M26 PERSHING","M60A3","M1A1 ABRAMS"],
     ["T-34/76","IS-2","T-62","T-90A"],
     ["PANTHER AUSF. A","TIGER II","LEOPARD 1","LEOPARD 2A4"]]
 const DEFAULTS := {"stage":1,"players":1,"ai_p2":false,"lives":10,"nation_p1":0,"nation_p2":1,
-    "max_hp":3,"enemy_speed":0,"enemy_fire":0,"enemy_spawn":0,"camera_yaw":0,"camera_elevation":50}
+    "max_hp":3,"enemy_speed":0,"enemy_fire":0,"enemy_spawn":0,"camera_yaw":0,"camera_elevation":50,"full_map":false}
+
+static func native_settings(value: Dictionary) -> Dictionary:
+    # The native core validates an exact gameplay configuration. Keep this
+    # local display preference out of both gameplay and the LAN wire format.
+    var result := value.duplicate()
+    result.erase("full_map")
+    return result
 
 # Code-drawn HUD artwork stays in the existing resource. The bounded plate
 # exposes hierarchy through team paint, a stepped edge and health segments.
@@ -138,6 +145,8 @@ var bonus_message: Label
 var bonus_label: Label
 var help: Label
 var hud_root: Control
+enum PlayerHudMode { HIDDEN, TRANSLUCENT }
+var player_hud_mode := PlayerHudMode.TRANSLUCENT
 var p1_card: PanelContainer
 var p2_card: PanelContainer
 var mission_card: PanelContainer
@@ -261,6 +270,10 @@ func build_models() -> void:
     models.add_child(toggle)
     controls.pixel = toggle
     toggle.toggled.connect(func(value: bool): pixel=value; pixel_changed.emit(value); selection_changed.emit(); refresh_menu())
+    var full_map_toggle := CheckButton.new()
+    models.add_child(full_map_toggle)
+    controls.full_map = full_map_toggle
+    full_map_toggle.toggled.connect(func(_value: bool): selection_changed.emit(); refresh_menu())
     var slider := HSlider.new()
     slider.min_value = 0
     slider.max_value = 1
@@ -327,7 +340,7 @@ func build_menu() -> void:
         line.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         line.add_theme_color_override("font_color",Color("f0b441") if index == 0 else Color("58dd8e"))
         tech_labels.append(line)
-    var captions := {"max_hp":"PLAYER HP","enemy_speed":"ENEMY SPEED","enemy_fire":"FIRE FREQUENCY","enemy_spawn":"SPAWN PACE","camera_yaw":"VIEW HORIZONTAL","camera_elevation":"VIEW ELEVATION","pixel":"PIXEL STYLE","volume":"SOUND VOLUME"}
+    var captions := {"max_hp":"PLAYER HP","enemy_speed":"ENEMY SPEED","enemy_fire":"FIRE FREQUENCY","enemy_spawn":"SPAWN PACE","full_map":"FULL MAP VIEW","camera_yaw":"VIEW HORIZONTAL","camera_elevation":"VIEW ELEVATION","pixel":"PIXEL STYLE","volume":"SOUND VOLUME"}
     for key in captions:
         var item := add_row("advanced",key,captions[key],advanced)
         item.custom_minimum_size.y = 36
@@ -401,7 +414,7 @@ func refresh_menu() -> void:
     var mode: int = controls.mode.selected
     controls.row_nation_p2.visible = mode != 0
     controls.nation_p2.disabled = mode == 0
-    for key in ["mode","stage","lives","nation_p1","nation_p2","max_hp","enemy_speed","enemy_fire","enemy_spawn","camera_yaw","camera_elevation","pixel","volume","network_port"]:
+    for key in ["mode","stage","lives","nation_p1","nation_p2","max_hp","enemy_speed","enemy_fire","enemy_spawn","full_map","camera_yaw","camera_elevation","pixel","volume","network_port"]:
         controls["row_"+key].set_value(row_value(key))
     for key in ["advanced","network"]: controls["row_"+key].set_value("OPEN")
     controls.row_back.set_value("RETURN")
@@ -414,7 +427,7 @@ func refresh_menu() -> void:
         var nation: int = controls["nation_p%d"%(index+1)].selected
         tech_labels[index].text = "P%d TECH  %s"%[index+1," > ".join(TECH[nation])]
     menu_subtitle.text = {"setup":"TILTED TOP-DOWN ARMORED COMBAT","advanced":"ADVANCED SETTINGS","network":"LOCAL NETWORK CO-OP"}[menu_page]
-    menu_panel.offset_bottom = 570 if menu_page == "setup" else (548 if menu_page == "advanced" else 480)
+    menu_panel.offset_bottom = 570 if menu_page == "setup" else (584 if menu_page == "advanced" else 480)
     menu_confirm.visible = menu_page in ["setup", "advanced"]
     menu_confirm.offset_top = -76 if menu_page == "advanced" else -94
     crew_help.visible = menu_page == "setup"
@@ -423,7 +436,7 @@ func refresh_menu() -> void:
         crew_help.text = "P1 YOU: PAD / ARROWS   P2 AI TEAMMATE" if mode == 2 else "PLAYERS: 1 PLAYER / 2 PLAYERS / AI AS P2"
         device_help.text = "GAMEPADS %d   %s   F11 FULLSCREEN   MINUS / ESC QUIT"%[Input.get_connected_joypads().size(),"1P/AI: EITHER PAD" if mode != 1 else "FIRST=P1 SECOND=P2"]
     elif menu_page == "advanced":
-        menu_help.text = "HP 1-6   RATES -30% TO +30% (STEP 5%)\nVIEW LEFT 45 TO RIGHT 45 / ELEVATION 40 TO 70 (STEP 5 DEG)\nMINUS / ESC: RETURN   TOP FACE / R: RESET"
+        menu_help.text = "FULL MAP ON: FIXED CENTER, NO RADAR\nMINUS / ESC: RETURN   TOP FACE / R: RESET"
         device_help.text = "F11 FULLSCREEN"
     else:
         menu_help.text = "YOUR NATION: %s   HOST STAGE: %d   LIVES: %d\nChoose your nation and host rules in the main setup menu.\n%s"%[NATIONS[controls.nation_p1.selected],int(controls.stage.value),int(controls.lives.value),"ESC / MINUS: CANCEL" if network_pending else "ARROWS / PAD: SELECT   ENTER: OPEN   ESC: BACK"]
@@ -433,7 +446,7 @@ func refresh_menu() -> void:
 func row_value(key: String) -> String:
     if key == "mode": return ["1 PLAYER","2 PLAYERS","AI AS P2"][controls.mode.selected]
     if key.begins_with("nation_"): return NATIONS[controls[key].selected]
-    if key == "pixel": return "ON" if controls.pixel.button_pressed else "OFF"
+    if key in ["pixel","full_map"]: return "ON" if controls[key].button_pressed else "OFF"
     if key == "volume": return "%d%%"%roundi(controls.volume.value*100)
     var value: int = int(controls[key].value)
     if key == "max_hp": return "1  BANDAGE OFF" if value == 1 else str(value)
@@ -456,7 +469,7 @@ func activate_row(key: String) -> void:
         network_ip.show()
         network_ip.grab_focus()
         network_ip.caret_column = network_ip.text.length()
-    elif key == "pixel": controls.pixel.button_pressed = not controls.pixel.button_pressed
+    elif key in ["pixel","full_map"]: controls[key].button_pressed = not controls[key].button_pressed
     elif menu_page == "setup":
         settings = read_settings()
         start_requested.emit(settings.duplicate())
@@ -467,7 +480,7 @@ func adjust_row(key: String, direction: int, coarse: bool) -> void:
     elif key.begins_with("nation_"): controls[key].select(posmod(controls[key].selected+direction,3))
     elif key == "stage": controls.stage.value = posmod(int(controls.stage.value)-1+direction*step,35)+1
     elif key == "lives": controls.lives.value += direction*step
-    elif key == "pixel": controls.pixel.button_pressed = not controls.pixel.button_pressed
+    elif key in ["pixel","full_map"]: controls[key].button_pressed = not controls[key].button_pressed
     elif key == "volume": controls.volume.value += direction*.05
     elif controls.has(key) and controls[key] is SpinBox: controls[key].value += direction*controls[key].step
     else: return
@@ -569,11 +582,14 @@ func set_network_pending(value: bool, host: bool = false) -> void:
     elif menu_open: set_menu_page("setup")
 
 func configure(value: Dictionary, pixel_value: bool, volume_value: float) -> void:
-    settings = value.duplicate()
+    # Native/LAN settings omit presentation-only preferences.
+    settings = DEFAULTS.duplicate()
+    settings.merge(value,true)
     controls.mode.select(2 if settings.ai_p2 else (1 if int(settings.players)==2 else 0))
     for key in ["nation_p1","nation_p2"]: controls[key].select(int(settings[key]))
     for key in ["stage","lives","max_hp","enemy_speed","enemy_fire","enemy_spawn","camera_yaw","camera_elevation"]: controls[key].value = settings[key]
     controls.pixel.set_pressed_no_signal(pixel_value)
+    controls.full_map.set_pressed_no_signal(bool(settings.full_map))
     controls.volume.set_value_no_signal(volume_value)
     pixel = pixel_value
     volume = volume_value
@@ -585,11 +601,13 @@ func read_settings() -> Dictionary:
     result.ai_p2 = controls.mode.selected == 2
     for key in ["nation_p1","nation_p2"]: result[key] = controls[key].selected
     for key in ["stage","lives","max_hp","enemy_speed","enemy_fire","enemy_spawn","camera_yaw","camera_elevation"]: result[key] = int(controls[key].value)
+    result.full_map = controls.full_map.button_pressed
     return result
 
 func reset_advanced() -> void:
     for key in ["max_hp","enemy_speed","enemy_fire","enemy_spawn","camera_yaw","camera_elevation"]: controls[key].value = DEFAULTS[key]
     controls.pixel.button_pressed = false
+    controls.full_map.button_pressed = false
     selection_changed.emit()
     refresh_menu()
 
@@ -628,8 +646,9 @@ func show_battle() -> void:
     reset_combat_feedback()
     menu_open = false
     menu.hide()
-    hud_root.show()
-    radar.show()
+    player_hud_mode = PlayerHudMode.HIDDEN if bool(settings.full_map) else PlayerHudMode.TRANSLUCENT
+    apply_player_hud_mode()
+    radar.visible = not bool(settings.full_map)
     mission_card.show()
     help.show()
     bonus_message.show()
@@ -637,12 +656,22 @@ func show_battle() -> void:
     var focused := root.get_viewport().gui_get_focus_owner()
     if focused != null: focused.release_focus()
 
+func cycle_player_hud() -> void:
+    if menu_open: return
+    player_hud_mode = PlayerHudMode.TRANSLUCENT if player_hud_mode == PlayerHudMode.HIDDEN else PlayerHudMode.HIDDEN
+    apply_player_hud_mode()
+
+func apply_player_hud_mode() -> void:
+    # Modulate the common parent so cards, text and combat flashes fade together.
+    hud_root.modulate.a = .5
+    hud_root.visible = not menu_open and player_hud_mode != PlayerHudMode.HIDDEN
+
 func set_status(text: String) -> void:
     status_label.text = text
     if menu_page == "network": refresh_menu()
 func hud_card(parent: Control, right_side: bool) -> PanelContainer:
-    # Only these compact corner panels are opaque. The existing transparent
-    # 74px root remains the camera contract and the upper center stays open.
+    # Cards inherit the common HUD opacity. The 74px root remains the
+    # following-camera contract; Full Map ignores HUD bounds.
     var card := CombatPlate.new()
     card.accent = Color("24cd5e") if right_side else Color("ec9118")
     card.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT if right_side else Control.PRESET_TOP_LEFT)
@@ -917,12 +946,13 @@ func refresh_control_hints(value: Dictionary, network: Dictionary) -> void:
         var owner := "LAN P%d %s"%[int(network.get("local_player",0))+1,str(network.get("role","")).to_upper()]
         if network.get("waiting",false): owner += " WAIT"
         help.text = owner+"   "+("STICK MOVE   FACE FIRE   PLUS PAUSE / HELP" if pad else "ARROWS MOVE   SPACE FIRE   ENTER PAUSE / HELP")
+    help.text += "   TAB STATUS"
     pause_controls.text = ("STICK / D-PAD  MOVE     BOTTOM / LEFT FACE  FIRE\nR1 / RT  FIRE     PLUS  RESUME     MINUS  SETUP" if pad else
         "P%d  ARROWS  MOVE     SPACE / RIGHT ALT / CTRL  FIRE"%[int(network.get("local_player",0))+1])
     if not pad and coop: pause_controls.text += "\nP2  WASD  MOVE       F / LEFT ALT / CTRL  FIRE"
     elif network.is_empty() and value.get("ai_p2",false): pause_controls.text += "\nP2  AI TEAMMATE"
     elif pad and coop: pause_controls.text += "\nP1 / P2  USE YOUR ASSIGNED CONTROLLER"
-    pause_controls.text += "\nTAB  PIXEL STYLE     F11  FULLSCREEN\nR  RESTART STAGE (KEYBOARD)"
+    pause_controls.text += "\nTAB STATUS: SHOW / HIDE     F11 FULLSCREEN\nR  RESTART STAGE (KEYBOARD)"
     if not network.is_empty():
         pause_controls.text += "\nLAN "+str(network.get("status",""))
         if network.get("role","")=="guest": pause_controls.text += "  /  HOST RESTARTS"
@@ -1152,7 +1182,7 @@ func refresh(value: Dictionary, pixel_value: bool, dt: float, network: Dictionar
     refresh_control_hints(value,network)
     refresh_combat_feedback(value,dt,reset_feedback)
     bonus_message.text = str(value.get("bonus_message","")) if float(value.get("bonus_message_remaining",0))>0 else ""
-    radar.update_state(value,dt)
+    if radar.visible: radar.update_state(value,dt)
     var paused: bool = value.get("paused",false)
     if paused and not pause_panel.visible:
         pause_panel.show()

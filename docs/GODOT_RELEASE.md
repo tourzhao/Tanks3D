@@ -9,8 +9,12 @@ raylib package by accidentally using the old `make alpha-candidate` entry point.
 
 Use an Apple Silicon Mac with Xcode Command Line Tools and Python 3.9+.
 Run `make godot-setup` for the hash-pinned Godot SDK/runtime. Candidate regression
-also exercises the retained shared-core adapter and needs `brew install raylib`
-(6.0); raylib is never linked into the Godot app.
+also exercises the retained shared-core adapter and requires raylib **6.0**;
+raylib is never linked into the Godot app. The current Homebrew formula can
+install a newer version that the historical package checks correctly reject.
+Use the checksum-pinned 6.0 installation in the shared-rules job of
+[the CI workflow](../.github/workflows/macos.yml), or an existing 6.0 prefix,
+and pass `RAYLIB_PREFIX=<prefix>` to the candidate build.
 
 Commit all intended changes, including new Godot scripts and resources, to a
 clean worktree. Choose the version through `macos/Info.plist` and create the
@@ -74,10 +78,21 @@ make init-godot-release-status GODOT_CHANNEL=alpha.1 \
 Create the containing directory first. Existing statuses are never overwritten.
 The status is bound to this ZIP's hash, source identity and the exact semantic
 checklist. It reuses the established gameplay, bases, pickups, report, control
-and advanced-setting requirements in `macos-alpha-v2.json`. Godot uses Tab for
-Pixel Style; the old raylib F8/N/B shortcuts are not claimed. Godot-specific
-groups add human/AI co-op, two-Mac LAN, Bluetooth devices, clean-Mac/Gatekeeper,
-audio, paused efficiency and an extended session.
+and advanced-setting requirements in `macos-alpha-v2.json`. Godot uses Tab to
+toggle player status between 50% opacity and hidden; Pixel Style is changed in
+Advanced Settings. The old raylib F8/N/B shortcuts are not claimed.
+Godot-specific groups add Full Map View, human/AI co-op, two-Mac LAN, Bluetooth
+devices, clean-Mac/Gatekeeper, audio, paused efficiency and an extended session.
+
+Full Map acceptance covers the complete map and elevated edges at the supported
+angles, fitting different window proportions, a fixed camera as players move,
+and hidden radar through battle, pause and restart. Check the initially hidden
+status cards and both Tab states without camera, focus or Pixel Style changes;
+turning Full Map off must restore the following camera, radar and translucent
+status cards. Also check default/reset behavior, saved preferences, and that
+each LAN peer keeps its own local view selection. Existing gameplay/minimap
+checks still run with Full Map off. Candidate and QA hashes include this
+checklist, so evidence for the former Tab/Pixel contract cannot approve it.
 
 For each observation record the tester, machine, real UTC completion time,
 notes and evidence paths relative to the status file. Each evidence entry has

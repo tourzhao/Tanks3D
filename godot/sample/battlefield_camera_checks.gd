@@ -135,6 +135,53 @@ func exercise(incoming: Dictionary, dimensions: Vector2i, safe: Rect2, players: 
 func _initialize() -> void:
     run_checks.call_deferred()
 
+func check_overview() -> int:
+    var count := 0
+    var points: Array[Vector3] = []
+    # Check the physical board, border and highest permitted silhouettes using
+    # Camera3D's actual projection, independently of the fitting calculations.
+    for x in [-.5,26.5]:
+        for z in [-.5,26.5]:
+            for y in [-.1,0.0,2.0]:
+                points.append(Vector3(x,y,z))
+    camera.far = 70.0
+    for dimensions in [Vector2i(640,360),Vector2i(1280,720),Vector2i(1920,1080),
+            Vector2i(1280,960),Vector2i(1920,720),Vector2i(720,1280)]:
+        var aspect: float = float(dimensions.x)/dimensions.y
+        for safe in [EdgeCamera.OVERVIEW_SAFE_RECT, Rect2(.035,.15,.93,.81),
+                Rect2(.035,74.0/dimensions.y+.025,.93,.935-74.0/dimensions.y)]:
+            for yaw in range(-45,46,5):
+                for elevation in range(40,71,5):
+                    var label := "overview/%s/%s/%s/%s" % [dimensions,safe,yaw,elevation]
+                    var value: Dictionary = EdgeCamera.overview(yaw,elevation,aspect,safe)
+                    configure(value,dimensions)
+                    if safe == EdgeCamera.OVERVIEW_SAFE_RECT:
+                        check((value.target as Vector3).is_equal_approx(Vector3(13,.95,13)),
+                            label+": target left the fixed map envelope center")
+                    check(project(Vector3(13,.95,13)).distance_to(safe.get_center()) < EPSILON,
+                        label+": map envelope is not centered in the available view")
+                    check(absf(rad_to_deg(atan2(camera.basis.z.x,camera.basis.z.z))-yaw) < .001 and
+                        absf(rad_to_deg(asin(camera.basis.z.y))-elevation) < .001,
+                        label+": configured viewing angle changed")
+                    check(fits(points,safe),label+": board or elevated silhouettes leave the safe view")
+                    var lo := Vector2(INF,INF)
+                    var hi := Vector2(-INF,-INF)
+                    for point in points:
+                        lo = lo.min(project(point))
+                        hi = hi.max(project(point))
+                        var depth := -camera.to_local(point).z
+                        check(depth > camera.near and depth < camera.far and not camera.is_position_behind(point),
+                            label+": overview clips at the near/far plane")
+                    check(((lo+hi)*.5).distance_to(safe.get_center()) < EPSILON,
+                        label+": overview leaves unbalanced blank margins")
+                    check(absf((hi-lo).x-safe.size.x) < EPSILON or absf((hi-lo).y-safe.size.y) < EPSILON,
+                        label+": overview does not use the maximum available extent")
+                    # A loose overview would unnecessarily shrink every tank.
+                    camera.size = value.span*.99
+                    check(not fits(points,safe),label+": overview wastes more than one percent of its scale")
+                    count += 1
+    return count
+
 func run_checks() -> void:
     viewport = SubViewport.new()
     viewport.own_world_3d = true
@@ -208,9 +255,12 @@ func run_checks() -> void:
     configure(centered,Vector2i(1280,720))
     check(project(Vector3(13,0,13)).distance_to(safe.get_center()) < EPSILON,"Small map blank margins are not centered")
     check(reduced > 100 and unchanged > 0,"Edge cases neither improve coverage nor preserve fitting views")
+    var overview_cases := check_overview()
     viewport.free()
     if valid:
         print("TANKS_BATTLEFIELD_CAMERA_PASSED "+JSON.stringify({"status":"passed","cases":cases,
             "checks":["only-translation","player-envelope","road-margin","map-coverage","centering",
                 "angles","order","continuity","lag","near-depth","no-players"]}))
+        print("TANKS_FULL_MAP_CAMERA_PASSED "+JSON.stringify({"status":"passed","cases":overview_cases,
+            "checks":["fixed-center","angles","board-height-fit","safe-fit","near-far","tight-fit","balanced-margins"]}))
     quit(0 if valid else 1)
