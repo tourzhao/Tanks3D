@@ -9,8 +9,12 @@ raylib package by accidentally using the old `make alpha-candidate` entry point.
 
 Use an Apple Silicon Mac with Xcode Command Line Tools and Python 3.9+.
 Run `make godot-setup` for the hash-pinned Godot SDK/runtime. Candidate regression
-also exercises the retained shared-core adapter and needs `brew install raylib`
-(6.0); raylib is never linked into the Godot app.
+also exercises the retained shared-core adapter and requires raylib **6.0**;
+raylib is never linked into the Godot app. The current Homebrew formula can
+install a newer version that the historical package checks correctly reject.
+Use the checksum-pinned 6.0 installation in the shared-rules job of
+[the CI workflow](../.github/workflows/macos.yml), or an existing 6.0 prefix,
+and pass `RAYLIB_PREFIX=<prefix>` to the candidate build.
 
 Commit all intended changes, including new Godot scripts and resources, to a
 clean worktree. Choose the version through `macos/Info.plist` and create the
