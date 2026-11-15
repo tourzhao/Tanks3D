@@ -19,19 +19,23 @@ retained raylib targets. Unqualified Make defaults still select that version.
 
 ## Historical raylib main preview
 
-`main` includes the arcade model upgrade: 12 player tank models with substantial
+The retained raylib frontend includes 12 player tank models with substantial
 turrets and short thick cannons, four enemy roles, remodeled buildings and
 ruins, three compact national headquarters, vegetation and painted lighting.
 The terrain follows the original 35 Battle City stages. Each headquarters fits
 the original two-by-two base and eight-cell Π enclosure without clearing
 surrounding map tiles. See the
-[current main preview](../README.md#current-main-preview) and
-[art direction](ART_DIRECTION.md).
+[historical raylib camera screenshots](assets/development/camera-controller/README.md)
+(September 8, 2026) and [art direction](ART_DIRECTION.md). Those screenshots
+document the camera work before later artwork revisions. The
+[current Godot preview](../README.md#current-main-preview) is shown separately
+in the project README.
 
 The published
 [Alpha 4 download](https://github.com/tourzhao/Tanks3D/releases/tag/v0.1.0-alpha.4)
-predates this artwork and the adjustable camera. Build the current source to
-try these changes; the versioned Alpha 4 screenshots document that release.
+predates this artwork and the adjustable camera. The legacy commands below
+build the frozen raylib frontend; the versioned Alpha 4 screenshots document
+that published release.
 
 ## Historical raylib build and run
 
