@@ -12,23 +12,31 @@ contain the Godot features and visuals shown here.
 
 <a id="current-main-preview"></a>
 <a id="current-development-preview"></a>
+<a id="october-6-development-preview"></a>
 
-## October 6 development preview
+## Current Godot development preview
 
-![Godot gameplay with P1 and an AI teammate](build/release-evidence/github-preview-20261006/game/clean.png)
+![Godot Full Map View during two-player co-op with translucent status cards](build/release-evidence/full-map-preview-20261115/status-translucent.png)
 
-*Actual Metal gameplay rendering at 1280×720, with Pixel Style OFF and the
-default camera (0° horizontal, 50° elevation). See the
-[capture details](build/release-evidence/github-preview-20261006/README.md).*
+*November 15, 2026 development capture: actual Mobile/Metal rendering at
+1280×720 with Full Map View enabled, two-player co-op and status cards shown
+at 50% opacity. The camera is fixed at 0° horizontal / 50° elevation, and the
+minimap is hidden. See the
+[capture details](build/release-evidence/full-map-preview-20261115/README.md).*
 
 ## Highlights
 
 - **12 player tanks** across American, Soviet and German upgrade lines, with
   distinct hulls, turrets, running gear and camouflage, plus four enemy roles.
 - **35 Battle City maps** in their original order: defend your headquarters,
-  break through buildings, collect nine kinds of pickups and follow the radar.
-- **Solo, AI teammate, local co-op and LAN co-op.** Two players share a camera
-  that follows both tanks; rotation and elevation are adjustable.
+  break through buildings and collect nine kinds of pickups.
+- **Solo, AI teammate, local co-op and LAN co-op.** Play on your own, with an
+  AI teammate, or with another player on the same Mac or local network.
+- **Following camera or Full Map View.** Follow the action, or fit the complete
+  battlefield to the window with a fixed centered camera and no minimap.
+  Both modes use your selected rotation and elevation.
+- **Toggleable player status.** Press `Tab` to show or hide the half-transparent
+  status cards without changing the camera. Full Map starts with them hidden.
 - **Refined lighting and surfaces:** clearer shadows, continuous highlights
   around gun barrels, and distinct responses for painted armor, metal and rubber.
 - **Window-adaptive rendering up to 1920×1080.** Optional Pixel Style gives the
@@ -108,7 +116,7 @@ Alpha 4 is an early pre-release and is not Apple notarized.
 - **P1:** Arrow keys; `Space`/Right Option/Right Control fires.
 - **P2 (human mode):** `WASD`; `F`/Left Option/Left Control fires.
 - **AI AS P2:** Only P1 needs input; either connected controller can control P1.
-  The right HUD identifies P2 as **AI TEAMMATE**.
+  When status cards are shown, the right card identifies the teammate as **P2 AI**.
 - **Controller:** In battle, the left stick follows the visible map lanes at
   the selected camera angle. The D-pad and keyboard retain one button per
   world-cardinal lane; menu input is unrotated. With Switch-style button labels,
